@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/runner"
+	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 )
 
@@ -36,7 +37,17 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 		return fiber.NewError(fiber.StatusInternalServerError, gateErr.Error())
 	}
 	if !fullValidation.Passed {
-		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation before execution", fullValidation))
+		if !h.Cfg.BaselineBEnabled() {
+			return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation before execution", fullValidation))
+		}
+		userRole := "anonymous"
+		if user := h.currentUser(c); user != nil {
+			userRole = user.Role.Name
+		}
+		h.RegistryValidator.AuditBaselineBypass("plan.RunWorkflow", userRole, workflowvalidator.WorkflowContentHash(workflow.YAML), "plan_validation", "full registry validation would have blocked execution", map[string]interface{}{
+			"failed_rules": append([]string{}, fullValidation.FailedRules...),
+			"errors":       append([]string{}, fullValidation.Errors...),
+		})
 	}
 	if req.DryRun {
 		planned := []map[string]interface{}{}

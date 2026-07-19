@@ -34,3 +34,11 @@ Threshold, sensitive-data, and parameter-rule checks that depend on unresolved t
 | Required parameters are rechecked after template resolution | `TestDeferredRequiredParameterRevalidatedAtDispatch` |
 | Dispatch policy violations mark execution `FAILED` and bypass healing | `TestDispatchViolationMarksExecutionFailedWithoutHealing` |
 | Deferred rules without an evaluator fail closed before tool execution | `TestDeferredCheckWithoutEvaluatorFailsClosed` |
+
+## Baseline B (experiment only)
+
+`EXPERIMENT_BASELINE=B` is an offline research comparison mode that is accepted only when `APP_ENV=experiment`. Startup configuration validation rejects Baseline B in production, development, test, or any other environment. Unset `EXPERIMENT_BASELINE` preserves G1 and G2 exactly as described above.
+
+In the guarded experiment path, plan-gate failures, runner validation-token failures, and dispatch-time policy violations are observed but not enforced, allowing structurally valid workflows with registered runtime tools to execute. Each decision that would otherwise block is written to the audit store with `baseline: "B"`, `would_have_blocked: true`, the decision/reason, registry and workflow hashes, and non-secret evidence. The validator's rules and normal gate code remain unchanged. Baseline B does not modify stored evaluation labels or any workflow's correctness label.
+
+There is currently no separate runner-level approval-pause mechanism. Missing-approval and risk-escalation decisions occur in the plan gate and are covered by the Baseline B plan bypass described above.

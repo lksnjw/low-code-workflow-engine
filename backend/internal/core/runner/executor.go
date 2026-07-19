@@ -16,6 +16,7 @@ type Executor struct {
 	Registry  *tools.Registry
 	Validator *workflowvalidator.RegistryValidator
 	Log       *zap.Logger
+	baselineB bool
 }
 
 // ErrDispatchPolicyViolation is returned before a tool call when a resolved
@@ -45,18 +46,22 @@ func NewExecutor(registry *tools.Registry, validator *workflowvalidator.Registry
 	return &Executor{Registry: registry, Validator: validator, Log: log}
 }
 
+// SetBaselineB enables the gate-off comparison path. Callers must first pass
+// config validation, which restricts this mode to APP_ENV=experiment.
+func (e *Executor) SetBaselineB(enabled bool) {
+	e.baselineB = enabled
+}
+
 func (e *Executor) Run(ctx context.Context, executionID string, workflow models.Workflow, input map[string]interface{}, token *models.ValidationToken) (Result, error) {
-	if token == nil {
-		return Result{}, fmt.Errorf("validation token is required")
-	}
-	if !e.Validator.VerifyToken(token) {
-		return Result{}, fmt.Errorf("validation token proof is invalid")
-	}
-	if actual := workflowvalidator.WorkflowContentHash(workflow.YAML); actual != token.WorkflowContentHash {
-		return Result{}, fmt.Errorf("validation token workflow content hash mismatch")
-	}
-	if actual := e.Validator.RegistryHash(); actual != token.RegistryHash {
-		return Result{}, fmt.Errorf("validation token registry hash mismatch")
+	contentHash := workflowvalidator.WorkflowContentHash(workflow.YAML)
+	if decision, reason, evidence := e.validationTokenBlock(contentHash, token); reason != "" {
+		if !e.baselineB {
+			return Result{}, fmt.Errorf("%s", reason)
+		}
+		e.Validator.AuditBaselineBypass("entry."+executionID, "runtime", contentHash, decision, reason, evidence)
+		if e.Log != nil {
+			e.Log.Warn("Baseline B bypassed validation-token gate", zap.String("baseline", "B"), zap.String("decision", decision), zap.String("execution_id", executionID))
+		}
 	}
 	blueprint, err := workflowvalidator.ParseWorkflowYAMLStrict(workflow.YAML)
 	if err != nil {
@@ -91,7 +96,16 @@ func (e *Executor) Run(ctx context.Context, executionID string, workflow models.
 		}
 
 		params := manager.Resolve(step.Parameters)
-		if violation := e.Validator.EvaluateResolvedStep("dispatch."+executionID, blueprint, index, params, token); violation != nil {
+		if violation := e.Validator.EvaluateResolvedStep("dispatch."+executionID, blueprint, index, params, token); violation != nil && e.baselineB {
+			e.Validator.AuditBaselineBypass("dispatch."+executionID, "runtime", contentHash, "dispatch_revalidation", violation.Reason, map[string]interface{}{
+				"step_index": violation.StepIndex,
+				"param_key":  violation.ParamKey,
+				"rule_id":    violation.RuleID,
+			})
+			if e.Log != nil {
+				e.Log.Warn("Baseline B bypassed dispatch gate", zap.String("baseline", "B"), zap.String("rule_id", violation.RuleID), zap.Int("step_index", violation.StepIndex), zap.String("execution_id", executionID))
+			}
+		} else if violation != nil {
 			completed := time.Now().UTC()
 			duration := completed.Sub(stepStart).Milliseconds()
 			timelineStep.CompletedAt = &completed
@@ -144,6 +158,26 @@ func (e *Executor) Run(ctx context.Context, executionID string, workflow models.
 
 	result.State = manager.Snapshot()
 	return result, nil
+}
+
+func (e *Executor) validationTokenBlock(contentHash string, token *models.ValidationToken) (string, string, map[string]interface{}) {
+	if token == nil {
+		return "validation_token_required", "validation token is required", nil
+	}
+	if !e.Validator.VerifyToken(token) {
+		return "validation_token_proof", "validation token proof is invalid", nil
+	}
+	if contentHash != token.WorkflowContentHash {
+		return "workflow_content_hash", "validation token workflow content hash mismatch", map[string]interface{}{
+			"token_workflow_content_hash": token.WorkflowContentHash,
+		}
+	}
+	if actual := e.Validator.RegistryHash(); actual != token.RegistryHash {
+		return "registry_hash", "validation token registry hash mismatch", map[string]interface{}{
+			"token_registry_hash": token.RegistryHash,
+		}
+	}
+	return "", "", nil
 }
 
 func redactValue(value interface{}) string {

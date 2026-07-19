@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,6 +49,7 @@ type Config struct {
 	CandidateCount                     int
 	ChatTraceBoxes                     bool
 	ChatUserRoleOverride               string
+	ExperimentBaseline                 string
 }
 
 func Load() Config {
@@ -106,7 +108,27 @@ func Load() Config {
 		CandidateCount:                     getEnvInt("CANDIDATE_COUNT", 5),
 		ChatTraceBoxes:                     getEnvBool("CHAT_TRACE_BOXES", strings.EqualFold(environment, "development")),
 		ChatUserRoleOverride:               getEnv("CHAT_USER_ROLE_OVERRIDE", devUserRole),
+		ExperimentBaseline:                 getEnv("EXPERIMENT_BASELINE", ""),
 	}
+}
+
+// Validate rejects unsafe or unknown experiment modes before the server starts.
+func (c Config) Validate() error {
+	switch c.ExperimentBaseline {
+	case "":
+		return nil
+	case "B":
+		if c.Environment != "experiment" {
+			return fmt.Errorf("EXPERIMENT_BASELINE=B requires APP_ENV=experiment")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported EXPERIMENT_BASELINE %q (allowed values: unset or B)", c.ExperimentBaseline)
+	}
+}
+
+func (c Config) BaselineBEnabled() bool {
+	return c.Environment == "experiment" && c.ExperimentBaseline == "B"
 }
 
 func detectBackendRoot() string {

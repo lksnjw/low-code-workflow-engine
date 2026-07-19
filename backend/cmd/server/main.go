@@ -30,6 +30,9 @@ func main() {
 		log.Fatalf("create logger: %v", err)
 	}
 	defer zapLogger.Sync()
+	if err := cfg.Validate(); err != nil {
+		zapLogger.Fatal("invalid server configuration", zap.Error(err))
+	}
 
 	_ = config.NewDatabase(cfg, zapLogger)
 	_ = config.NewRedisCache(cfg, zapLogger)
@@ -76,6 +79,7 @@ func main() {
 	}
 
 	exec := runner.NewExecutor(registry, registryValidator, zapLogger)
+	exec.SetBaselineB(cfg.BaselineBEnabled())
 	healer := healing.NewHealer(synth)
 	handler := handlers.New(cfg, store, synth, validator, registryBundle, registryValidator, searchService, chatOrchestrator, exec, healer, zapLogger)
 
