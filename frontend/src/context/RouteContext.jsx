@@ -43,6 +43,12 @@ export function RouteProvider({ children }) {
     navigateTo("workflows", "detail");
   }, [navigateTo]);
 
+  const startWorkflow = useCallback(() => {
+    setSelectedWorkflowId(null);
+    localStorage.removeItem("workflow.selectedWorkflowId");
+    navigateTo("workflows", "builder");
+  }, [navigateTo]);
+
   const value = useMemo(
     () => ({
       activeMain,
@@ -52,8 +58,9 @@ export function RouteProvider({ children }) {
       navigateTo,
       selectedWorkflowId,
       openWorkflow,
+      startWorkflow,
     }),
-    [activeMain, activeSub, navigateTo, selectedWorkflowId, openWorkflow]
+    [activeMain, activeSub, navigateTo, selectedWorkflowId, openWorkflow, startWorkflow]
   );
 
   return <RouteContext.Provider value={value}>{children}</RouteContext.Provider>;

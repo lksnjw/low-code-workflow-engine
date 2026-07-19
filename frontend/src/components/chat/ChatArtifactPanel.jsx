@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 import { useRoute } from "../../context/RouteContext";
+import usePermissions from "../../hooks/usePermissions";
 import { saveWorkflowForCanvas } from "../../utils/workflowCanvas.utils";
 
 // ── Risk badge colours ──────────────────────────────────────────────────────
@@ -252,7 +253,9 @@ function NextActionBanner({ nextAction }) {
 
 // ── MAIN COMPONENT ──────────────────────────────────────────────────────────
 function ChatArtifactPanel({ artifact }) {
-  const { navigateTo } = useRoute();
+  const { startWorkflow } = useRoute();
+  const { has } = usePermissions();
+	const canEditWorkflow = has("workflow:write");
 
   if (!artifact) {
     return (
@@ -294,7 +297,7 @@ function ChatArtifactPanel({ artifact }) {
       validationSummary: validation_summary,
       source: "chat_semantic_validator",
     });
-    navigateTo("workflows", "builder");
+    startWorkflow();
   };
 
   return (
@@ -325,7 +328,7 @@ function ChatArtifactPanel({ artifact }) {
             {can_execute ? "Executable candidate available" : "No executable candidate"}
           </span>
         </div>
-        {can_execute && selected_workflow_yaml && (
+        {canEditWorkflow && can_execute && selected_workflow_yaml && (
           <button
             type="button"
             onClick={handlePassToCanvas}

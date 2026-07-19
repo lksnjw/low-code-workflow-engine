@@ -26,8 +26,6 @@ import {
   Loader2,
   Mail,
   PackageCheck,
-  Play,
-  Rocket,
   Search,
   ShieldCheck,
   ShoppingCart,
@@ -45,6 +43,7 @@ import { workflowService } from "../../services/workflow.service";
 import { executionService } from "../../services/execution.service";
 import { apiErrorMessage } from "../../services/api";
 import { useNotifications } from "../../context/NotificationContext";
+import BuilderModeControls from "./BuilderModeControls";
 
 const iconMap = {
   AlertCircle,
@@ -247,7 +246,7 @@ function BuilderSidebar({ groups = [], loading, error }) {
   );
 }
 
-function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, statusCounts, workflow }) {
+function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly, statusCounts, workflow }) {
   const stateCopy = {
     idle: "Ready",
     running: "Running workflow",
@@ -273,42 +272,32 @@ function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, statusCou
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onDeploy}
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-        >
-          <Rocket className="h-4 w-4" />
-          Deploy Workflow
-        </button>
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={isExecuting}
-          className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          Run Workflow
-        </button>
-      </div>
+      <BuilderModeControls
+        readOnly={readOnly}
+        isExecuting={isExecuting}
+        onDeploy={onDeploy}
+        onRun={onRun}
+      />
     </header>
   );
 }
 
-function WorkflowBuilderSurface() {
+function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedded = false }) {
   const reactFlowWrapper = useRef(null);
-  const nodeIdRef = useRef(1);
   const { screenToFlowPosition, fitView } = useReactFlow();
-  const [initialCanvasState] = useState(getInitialCanvasState);
+  const [initialCanvasState] = useState(() => initialState ?? getInitialCanvasState());
+  const nodeIdRef = useRef(initialCanvasState.nodes.length + 1);
   const [nodes, setNodes] = useState(initialCanvasState.nodes);
   const [edges, setEdges] = useState(initialCanvasState.edges);
   const [workflow, setWorkflow] = useState(initialCanvasState.workflow);
   const [executionState, setExecutionState] = useState("idle");
   const [isExecuting, setIsExecuting] = useState(false);
   const { notify } = useNotifications();
-  const catalogQuery = useQuery({ queryKey: ["tool-catalog-groups"], queryFn: catalogService.toolGroups });
-
+  const catalogQuery = useQuery({
+    queryKey: ["tool-catalog-groups"],
+    queryFn: catalogService.toolGroups,
+    enabled: !readOnly,
+  });
   const nodeTypes = useMemo(() => ({ erpTool: WorkflowToolNode }), []);
 
   const statusCounts = useMemo(
@@ -461,31 +450,35 @@ function WorkflowBuilderSurface() {
   }, [deployWorkflow, notify]);
 
   return (
-    <div className="fixed inset-y-0 right-0 left-0 z-50 flex overflow-hidden bg-slate-100 text-slate-950 md:left-16">
-      <BuilderSidebar groups={catalogQuery.data || []} loading={catalogQuery.isLoading} error={catalogQuery.error} />
+    <div className={`${embedded ? "relative h-[620px] rounded-2xl border border-slate-200" : "fixed inset-y-0 right-0 left-0 z-50 md:left-16"} flex overflow-hidden bg-slate-100 text-slate-950`}>
+      {!readOnly ? <BuilderSidebar groups={catalogQuery.data || []} loading={catalogQuery.isLoading} error={catalogQuery.error} /> : null}
       <section className="flex min-w-0 flex-1 flex-col">
         <BuilderHeader
           executionState={executionState}
           isExecuting={isExecuting}
           onRun={executeWorkflow}
           onDeploy={handleDeploy}
+          readOnly={readOnly}
           statusCounts={statusCounts}
           workflow={workflow}
         />
         <div className="min-h-0 flex-1 bg-slate-100 p-4">
           <div
             ref={reactFlowWrapper}
-            className="h-full min-h-[640px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.10)]"
+            className={`h-full ${embedded ? "min-h-0" : "min-h-[640px]"} overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.10)]`}
           >
             <ReactFlow
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
+              onNodesChange={readOnly ? undefined : onNodesChange}
+              onEdgesChange={readOnly ? undefined : onEdgesChange}
+              onConnect={readOnly ? undefined : onConnect}
+              onDrop={readOnly ? undefined : handleDrop}
+              onDragOver={readOnly ? undefined : handleDragOver}
+              nodesDraggable={!readOnly}
+              nodesConnectable={!readOnly}
+              elementsSelectable={!readOnly}
               fitView
               defaultEdgeOptions={{
                 type: "smoothstep",
@@ -514,10 +507,52 @@ function WorkflowBuilderSurface() {
   );
 }
 
-function WorkflowBuilderCanvas() {
+function BuilderLoadState({ embedded, error }) {
+  return (
+    <div className={`${embedded ? "relative h-[620px] rounded-2xl border border-slate-200" : "fixed inset-y-0 right-0 left-0 z-50 md:left-16"} grid place-items-center bg-slate-100 p-6 text-center`}>
+      <p className={`text-sm font-semibold ${error ? "text-red-600" : "text-slate-500"}`}>
+        {error ? apiErrorMessage(error, "Workflow preview unavailable.") : "Loading workflow preview..."}
+      </p>
+    </div>
+  );
+}
+
+function WorkflowBuilderCanvas({ readOnly = false, workflowId = null, embedded = false }) {
+  const workflowQuery = useQuery({
+    queryKey: ["builder-workflow", workflowId],
+    queryFn: async () => {
+      const [record, yamlRecord] = await Promise.all([
+        workflowService.getById(workflowId),
+        workflowService.getYAML(workflowId),
+      ]);
+      const canvas = workflowYamlToCanvas(yamlRecord.yaml, {
+        name: record.name,
+        description: record.description,
+      });
+      return {
+        ...canvas,
+        workflow: {
+          ...canvas.workflow,
+          id: record.id,
+          name: record.name,
+          description: record.description,
+        },
+      };
+    },
+    enabled: Boolean(workflowId),
+  });
+
+  if (workflowId && workflowQuery.isLoading) return <BuilderLoadState embedded={embedded} />;
+  if (workflowQuery.error) return <BuilderLoadState embedded={embedded} error={workflowQuery.error} />;
+
   return (
     <ReactFlowProvider>
-      <WorkflowBuilderSurface />
+      <WorkflowBuilderSurface
+        key={workflowId ?? "draft"}
+        readOnly={readOnly}
+        initialState={workflowQuery.data ?? null}
+        embedded={embedded}
+      />
     </ReactFlowProvider>
   );
 }

@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { Icon } from "@iconify/react";
-import Button from "../shared/ui/Button";
 import { useNotifications } from "../../context/NotificationContext";
 import { workflowService } from "../../services/workflow.service";
 import { apiErrorMessage } from "../../services/api";
 import usePermissions from "../../hooks/usePermissions";
+import WorkflowActionControls from "./WorkflowActionControls";
 
 function WorkflowActions({ workflow, onChanged }) {
   const { notify } = useNotifications();
@@ -38,12 +37,7 @@ function WorkflowActions({ workflow, onChanged }) {
     }
   };
 
-  return (
-    <div className="flex flex-wrap gap-3">
-      {hasAny(["workflow:run", "workflow:run_own"]) ? <Button onClick={run} disabled={running}><Icon icon="mdi:play" className="h-5 w-5" />{running ? "Running…" : "Run"}</Button> : null}
-      {has("workflow:read") ? <Button variant="secondary" onClick={exportYAML}><Icon icon="mdi:file-export-outline" className="h-5 w-5" />Export YAML</Button> : null}
-    </div>
-  );
+  return <WorkflowActionControls canRun={hasAny(["workflow:run", "workflow:run_own"])} canExport={has("workflow:write")} running={running} onRun={run} onExport={exportYAML} />;
 }
 
 export default WorkflowActions;

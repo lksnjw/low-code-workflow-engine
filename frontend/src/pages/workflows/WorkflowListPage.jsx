@@ -11,7 +11,7 @@ import { useDebounce } from "../../hooks/useDebounce";
 import usePermissions from "../../hooks/usePermissions";
 
 function WorkflowListPage() {
-  const { navigateTo, openWorkflow } = useRoute();
+  const { openWorkflow, startWorkflow } = useRoute();
   const { has, roleId } = usePermissions();
 	const canWrite = has("workflow:write");
   const [query, setQuery] = useState("");
@@ -29,7 +29,7 @@ function WorkflowListPage() {
             {roleId === "role_client" ? "Run workflows assigned to you and review their execution status." : "Manage YAML-backed workflow definitions, ownership, triggers, and execution health."}
           </p>
         </div>
-        {canWrite ? <Button onClick={() => navigateTo("workflows", "builder")}><Icon icon="mdi:plus" className="h-5 w-5" />New Workflow</Button> : null}
+        {canWrite ? <Button onClick={startWorkflow}><Icon icon="mdi:plus" className="h-5 w-5" />New Workflow</Button> : null}
       </div>
       <WorkflowFilters query={query} status={status} onQueryChange={setQuery} onStatusChange={setStatus} />
       {loading ? <LoadingState label="Loading workflows…" /> : null}
