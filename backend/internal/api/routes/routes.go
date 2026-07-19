@@ -75,6 +75,12 @@ func Register(app *fiber.App, h *handlers.Handler) {
 	protected.Get("/semantic-index/metadata", workflowRead, h.SemanticIndexMetadata)
 	protected.Post("/semantic-index/rebuild", settingsManage, h.RebuildSemanticIndex)
 	protected.Post("/canvas/validate-workflow", workflowRead, h.CanvasValidateWorkflow)
+	protected.Get("/registry/tools", settingsManage, h.AdminToolsRegistry)
+	protected.Post("/registry/tools", settingsManage, h.CreateRegistryTool)
+	protected.Put("/registry/tools/:id", settingsManage, h.UpdateRegistryTool)
+	protected.Get("/registry/rules", settingsManage, h.AdminRulesRegistry)
+	protected.Post("/registry/rules", settingsManage, h.CreateRegistryRule)
+	protected.Put("/registry/rules/:id", settingsManage, h.UpdateRegistryRule)
 
 	protected.Get("/chat/sessions", workflowRead, h.ListChatSessions)
 	protected.Post("/chat/sessions", workflowWrite, h.CreateChatSession)

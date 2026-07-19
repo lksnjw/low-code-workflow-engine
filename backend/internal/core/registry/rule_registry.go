@@ -1,8 +1,12 @@
 package registry
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 type RuleRegistry struct {
+	mu      sync.RWMutex
 	rules   []Rule
 	byID    map[string]Rule
 	version string
@@ -17,14 +21,33 @@ func NewRuleRegistry(rules []Rule, version string) *RuleRegistry {
 }
 
 func (r *RuleRegistry) Add(rule Rule) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.rules = append(r.rules, rule)
 	r.byID[strings.ToLower(strings.TrimSpace(rule.RuleID))] = rule
 }
 
 func (r *RuleRegistry) GetAllRules() []Rule {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]Rule, len(r.rules))
 	copy(out, r.rules)
 	return out
+}
+
+// ReplaceAll atomically publishes a complete validated rule snapshot.
+func (r *RuleRegistry) ReplaceAll(rules []Rule, version string) {
+	byID := make(map[string]Rule, len(rules))
+	snapshot := append([]Rule(nil), rules...)
+	for _, rule := range snapshot {
+		byID[strings.ToLower(strings.TrimSpace(rule.RuleID))] = rule
+	}
+
+	r.mu.Lock()
+	r.rules = snapshot
+	r.byID = byID
+	r.version = version
+	r.mu.Unlock()
 }
 
 func (r *RuleRegistry) GetEnabledRules() []Rule {
@@ -64,6 +87,8 @@ func (r *RuleRegistry) GetGlobalSafetyRules() []Rule {
 }
 
 func (r *RuleRegistry) Version() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.version
 }
 

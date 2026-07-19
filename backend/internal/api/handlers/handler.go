@@ -31,6 +31,7 @@ type Handler struct {
 	Synth             *synthesizer.Service
 	Validator         *workflowvalidator.WorkflowValidator
 	Dataset           *coreregistry.Bundle
+	RegistryManager   *coreregistry.Manager
 	RegistryValidator *workflowvalidator.RegistryValidator
 	Search            *semanticsearch.Service
 	Orchestrator      *orchestrator.ChatOrchestrator
@@ -43,7 +44,7 @@ func New(cfg config.Config, store *repository.Store, synth *synthesizer.Service,
 	if registryValidator == nil {
 		panic("handler requires a registry validator")
 	}
-	return &Handler{Cfg: cfg, Store: store, Synth: synth, Validator: validator, Dataset: dataset, RegistryValidator: registryValidator, Search: search, Orchestrator: chatOrch, Runner: exec, Healer: healer, Log: log}
+	return &Handler{Cfg: cfg, Store: store, Synth: synth, Validator: validator, Dataset: dataset, RegistryManager: coreregistry.NewManager(dataset, cfg.ToolRegistryPath, cfg.RuleRegistryPath), RegistryValidator: registryValidator, Search: search, Orchestrator: chatOrch, Runner: exec, Healer: healer, Log: log}
 }
 
 func (h *Handler) Health(c *fiber.Ctx) error {

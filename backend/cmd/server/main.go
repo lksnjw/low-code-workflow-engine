@@ -82,6 +82,11 @@ func main() {
 	exec.SetBaselineB(cfg.BaselineBEnabled())
 	healer := healing.NewHealer(synth)
 	handler := handlers.New(cfg, store, synth, validator, registryBundle, registryValidator, searchService, chatOrchestrator, exec, healer, zapLogger)
+	handler.RegistryManager.SetToolUpsert(func(toolDef coreregistry.Tool) {
+		if !registry.Has(toolDef.Name) {
+			registry.Register(tools.GenericMCPTool{Action: toolDef.Name, Client: mcp})
+		}
+	})
 
 	app := fiber.New(fiber.Config{
 		AppName:      cfg.AppName,

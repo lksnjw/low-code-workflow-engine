@@ -86,6 +86,14 @@ export const NAVIGATION_GROUPS = [
     ],
   },
   {
+    id: "registry",
+    label: "Registry",
+    description: "Tool schemas and policy rules",
+    icon: "mdi:book-cog-outline",
+    requiredAny: ["settings:manage"],
+    subMenu: [{ id: "overview", label: "Tools & Rules" }],
+  },
+  {
     id: "mcp_bridge",
     label: "MCP Bridge",
     description: "ERP bridge integration",

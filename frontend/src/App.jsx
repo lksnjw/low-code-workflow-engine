@@ -14,6 +14,7 @@ import ProfilePage from "./pages/profile/ProfilePage";
 import McpBridgePage from "./pages/mcp_bridge/McpBridgePage";
 import DatafeedPage from "./pages/datafeed/DatafeedPage";
 import FinetunePage from "./pages/finetune/FinetunePage";
+import RegistryPage from "./pages/registry/RegistryPage";
 import NotFoundPage from "./pages/errors/NotFoundPage";
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
@@ -60,6 +61,7 @@ export const routeComponents = {
   "settings.llm": { Component: SettingsPage, requiredAny: ["settings:manage"] },
   "profile.profile": { Component: ProfilePage, requiredAny: [] },
   "profile.security": { Component: ProfilePage, requiredAny: [] },
+  "registry.overview": { Component: RegistryPage, requiredAny: ["settings:manage"] },
   "mcp_bridge.overview": { Component: McpBridgePage, requiredAny: ["workflow:read"] },
   "datafeed.overview": { Component: DatafeedPage, requiredAny: ["workflow:read"] },
   "datafeed.metrics": { Component: VectorMetricsPage, requiredAny: ["workflow:read"] },

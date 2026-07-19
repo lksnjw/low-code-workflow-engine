@@ -35,6 +35,29 @@ func (r *ToolRegistry) Add(tool Tool) {
 	}
 }
 
+// ReplaceAll atomically publishes a complete validated tool snapshot.
+func (r *ToolRegistry) ReplaceAll(tools []Tool, version string) {
+	byName := make(map[string]Tool, len(tools)*2)
+	byID := make(map[string]Tool, len(tools))
+	snapshot := append([]Tool(nil), tools...)
+	for _, tool := range snapshot {
+		byName[normalizeName(tool.Name)] = tool
+		if tool.ToolID != "" {
+			byID[normalizeName(tool.ToolID)] = tool
+		}
+		if tool.MCPToolName != "" {
+			byName[normalizeName(tool.MCPToolName)] = tool
+		}
+	}
+
+	r.mu.Lock()
+	r.tools = snapshot
+	r.byName = byName
+	r.byID = byID
+	r.version = version
+	r.mu.Unlock()
+}
+
 func (r *ToolRegistry) GetAllTools() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
