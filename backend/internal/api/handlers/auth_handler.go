@@ -93,7 +93,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		}
 	}
 
-	roleID := "role_builder"
+	roleID := "role_client"
 	if len(h.Store.Users) == 0 {
 		// The first registered account bootstraps administration for an empty install.
 		roleID = "role_admin"

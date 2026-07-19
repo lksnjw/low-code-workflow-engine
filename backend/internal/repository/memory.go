@@ -55,6 +55,10 @@ func NewStore() *Store {
 		{Key: "workflow:read", Name: "Read workflows", Description: "View workflows, executions, analytics, and catalogs", Group: "Workflow"},
 		{Key: "workflow:write", Name: "Write workflows", Description: "Create, edit, publish, archive, and import workflows", Group: "Workflow"},
 		{Key: "workflow:run", Name: "Run workflows", Description: "Start, cancel, and retry workflow executions", Group: "Execution"},
+		{Key: "chat:use", Name: "Use chat", Description: "Use owned synthesis chat sessions", Group: "Workflow"},
+		{Key: "workflow:read_own", Name: "Read assigned workflows", Description: "View workflows owned by or assigned to the current user", Group: "Workflow"},
+		{Key: "workflow:run_own", Name: "Run assigned workflows", Description: "Run workflows owned by or assigned to the current user", Group: "Execution"},
+		{Key: "execution:read_own", Name: "Read own executions", Description: "View executions started by the current user", Group: "Execution"},
 		{Key: "settings:manage", Name: "Manage settings", Description: "Manage runtime settings, integrations, webhooks, and API keys", Group: "Administration"},
 		{Key: "user:manage", Name: "Manage users", Description: "Manage users, roles, and invitations", Group: "Administration"},
 		{Key: "audit:read", Name: "Read audit logs", Description: "View and export governance audit records", Group: "Governance"},
@@ -106,6 +110,10 @@ func NewStore() *Store {
 	store.Roles["role_auditor"] = &models.Role{
 		ID: "role_auditor", Name: "Auditor", Description: "Reads workflow and audit evidence",
 		Permissions: []string{"workflow:read", "audit:read"}, CreatedAt: now,
+	}
+	store.Roles["role_client"] = &models.Role{
+		ID: "role_client", Name: "Client", Description: "Uses assigned workflows and views owned execution evidence",
+		Permissions: []string{"chat:use", "workflow:read_own", "workflow:run_own", "execution:read_own"}, CreatedAt: now,
 	}
 
 	return store

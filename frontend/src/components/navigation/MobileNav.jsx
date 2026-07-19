@@ -1,13 +1,16 @@
-import { NAVIGATION_GROUPS } from "../../constants/navigation";
+import { NAVIGATION_GROUPS, filterNavigationGroups } from "../../constants/navigation";
 import { useRoute } from "../../context/RouteContext";
+import usePermissions from "../../hooks/usePermissions";
 
 function MobileNav() {
   const { activeMain, navigateTo } = useRoute();
+  const { hasAny, roleId } = usePermissions();
+  const visibleGroups = filterNavigationGroups(NAVIGATION_GROUPS, hasAny, roleId);
 
   return (
     <div className="border-b border-gray-200 bg-backgroundLight px-4 py-3 dark:border-darkBackgroundVery dark:bg-darkBackground md:hidden">
       <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-        {NAVIGATION_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <button
             key={group.id}
             type="button"

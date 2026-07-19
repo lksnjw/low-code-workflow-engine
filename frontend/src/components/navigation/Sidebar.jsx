@@ -1,10 +1,13 @@
 import { Icon } from "@iconify/react";
-import { NAVIGATION_GROUPS, getNavigationGroup } from "../../constants/navigation";
+import { NAVIGATION_GROUPS, filterNavigationGroups } from "../../constants/navigation";
 import { useRoute } from "../../context/RouteContext";
+import usePermissions from "../../hooks/usePermissions";
 
 function Sidebar({ isCollapsed, onToggle }) {
   const { activeMain, activeSub, navigateTo, setActiveSub } = useRoute();
-  const activeGroup = getNavigationGroup(activeMain);
+  const { hasAny, roleId } = usePermissions();
+  const visibleGroups = filterNavigationGroups(NAVIGATION_GROUPS, hasAny, roleId);
+  const activeGroup = visibleGroups.find((group) => group.id === activeMain) ?? visibleGroups[0];
 
   return (
     <aside className="hidden h-screen shrink-0 md:flex">
@@ -23,7 +26,7 @@ function Sidebar({ isCollapsed, onToggle }) {
         </div>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 scrollbar-hide">
-          {NAVIGATION_GROUPS.map((item) => (
+          {visibleGroups.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -54,7 +57,7 @@ function Sidebar({ isCollapsed, onToggle }) {
           isCollapsed ? "w-0" : "w-64"
         }`}
       >
-        {!isCollapsed && (
+        {!isCollapsed && activeGroup && (
           <div className="flex h-full w-64 flex-col">
             <div className="border-b border-gray-200 p-4 dark:border-darkBackgroundVery">
               <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">

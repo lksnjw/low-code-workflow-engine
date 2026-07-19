@@ -4,6 +4,7 @@ export const NAVIGATION_GROUPS = [
     label: "Dashboard",
     description: "Operational overview",
     icon: "mdi:chart-pie",
+		requiredAny: ["workflow:read"],
     subMenu: [
       { id: "overview", label: "Overview" },
       { id: "activity", label: "Activity" },
@@ -14,11 +15,13 @@ export const NAVIGATION_GROUPS = [
     label: "Workflows",
     description: "Blueprints and builder",
     icon: "tabler:git-branch",
+		clientLabel: "My Workflows",
+		requiredAny: ["workflow:read", "workflow:read_own"],
     subMenu: [
-      { id: "list", label: "All Workflows" },
-      { id: "builder", label: "Flow Builder" },
-      { id: "templates", label: "Templates" },
-      { id: "detail", label: "Runbook Detail" },
+      { id: "list", label: "All Workflows", clientLabel: "My Workflows", requiredAny: ["workflow:read", "workflow:read_own"] },
+      { id: "builder", label: "Flow Builder", requiredAny: ["workflow:write"] },
+      { id: "templates", label: "Templates", requiredAny: ["workflow:read"] },
+      { id: "detail", label: "Runbook Detail", requiredAny: ["workflow:read", "workflow:read_own"] },
     ],
   },
   {
@@ -26,6 +29,8 @@ export const NAVIGATION_GROUPS = [
     label: "Agent Chat",
     description: "Natural language synthesis",
     icon: "hugeicons:ai-magic",
+		clientLabel: "Chat",
+		requiredAny: ["chat:use", "workflow:write"],
     subMenu: [
       { id: "session", label: "Synthesis Chat" },
       { id: "history", label: "Chat History" },
@@ -36,6 +41,8 @@ export const NAVIGATION_GROUPS = [
     label: "Executions",
     description: "Runs, logs, and healing",
     icon: "mdi:play-circle-outline",
+		clientLabel: "My Executions",
+		requiredAny: ["workflow:read", "execution:read_own"],
     subMenu: [
       { id: "history", label: "Run History" },
       { id: "live", label: "Live Logs", hasNotification: true },
@@ -47,6 +54,7 @@ export const NAVIGATION_GROUPS = [
     label: "Analytics",
     description: "Performance and cost",
     icon: "mdi:chart-bar",
+		requiredAny: ["workflow:read"],
     subMenu: [
       { id: "performance", label: "Performance" },
       { id: "usage", label: "Usage & Cost" },
@@ -58,6 +66,7 @@ export const NAVIGATION_GROUPS = [
     label: "Users",
     description: "Roles and audit trails",
     icon: "solar:users-group-rounded-linear",
+		requiredAny: ["user:manage", "audit:read"],
     subMenu: [
       { id: "directory", label: "Directory" },
       { id: "roles", label: "Roles" },
@@ -69,6 +78,7 @@ export const NAVIGATION_GROUPS = [
     label: "Settings",
     description: "Platform configuration",
     icon: "mdi:cog-outline",
+		requiredAny: ["settings:manage"],
     subMenu: [
       { id: "general", label: "General" },
       { id: "integrations", label: "Integrations" },
@@ -80,6 +90,7 @@ export const NAVIGATION_GROUPS = [
     label: "MCP Bridge",
     description: "ERP bridge integration",
     icon: "mdi:lan-connect",
+		requiredAny: ["workflow:read"],
     subMenu: [{ id: "overview", label: "Bridge Overview", path: "/mcp-bridge" }],
   },
   {
@@ -87,6 +98,7 @@ export const NAVIGATION_GROUPS = [
     label: "Datafeed",
     description: "Vector DB & Pipeline",
     icon: "mdi:database-sync-outline",
+		requiredAny: ["workflow:read"],
     subMenu: [
       { id: "overview", label: "Pipeline Status" },
       { id: "metrics", label: "Vector Metrics" },
@@ -98,6 +110,7 @@ export const NAVIGATION_GROUPS = [
     label: "ERP Models",
     description: "ERP data & queries",
     icon: "mdi:robot-industrial",
+		requiredAny: ["workflow:read"],
     subMenu: [{ id: "overview", label: "Model Integration", path: "/finetune" }],
   },
   {
@@ -119,3 +132,22 @@ export const DEFAULT_ROUTE = {
 
 export const getNavigationGroup = (id) =>
   NAVIGATION_GROUPS.find((group) => group.id === id) ?? NAVIGATION_GROUPS[0];
+
+export function filterNavigationGroups(groups, hasAny, roleId) {
+  return groups
+    .filter((group) => !group.requiredAny?.length || hasAny(group.requiredAny))
+    .map((group) => {
+      const subMenu = group.subMenu.filter(
+        (item) => !item.requiredAny?.length || hasAny(item.requiredAny)
+      );
+      return {
+        ...group,
+        label: roleId === "role_client" && group.clientLabel ? group.clientLabel : group.label,
+        subMenu: subMenu.map((item) => ({
+          ...item,
+          label: roleId === "role_client" && item.clientLabel ? item.clientLabel : item.label,
+        })),
+      };
+    })
+    .filter((group) => group.subMenu.length > 0);
+}
