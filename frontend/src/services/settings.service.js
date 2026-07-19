@@ -22,4 +22,19 @@ export const settingsService = {
   async createWebhook(payload) {
     return unwrap(await apiClient.post("/settings/webhooks", payload));
   },
+  async providers() {
+    return unwrap(await apiClient.get("/providers"), []);
+  },
+  async createProvider(payload) {
+    return unwrap(await apiClient.post("/providers", payload), {});
+  },
+  async updateProvider(id, payload) {
+    return unwrap(await apiClient.put(`/providers/${encodeURIComponent(id)}`, payload), {});
+  },
+  async activateProvider(id) {
+    return unwrap(await apiClient.post(`/providers/${encodeURIComponent(id)}/activate`), {});
+  },
+  async testProvider(id) {
+    return unwrap(await apiClient.post(`/providers/${encodeURIComponent(id)}/test`), {});
+  },
 };

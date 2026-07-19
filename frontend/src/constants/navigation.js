@@ -86,6 +86,14 @@ export const NAVIGATION_GROUPS = [
     ],
   },
   {
+    id: "models",
+    label: "Models",
+    description: "Runtime generation providers",
+    icon: "mdi:brain",
+    requiredAny: ["settings:manage"],
+    subMenu: [{ id: "overview", label: "Provider Configs" }],
+  },
+  {
     id: "registry",
     label: "Registry",
     description: "Tool schemas and policy rules",

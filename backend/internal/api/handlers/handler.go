@@ -44,7 +44,11 @@ func New(cfg config.Config, store *repository.Store, synth *synthesizer.Service,
 	if registryValidator == nil {
 		panic("handler requires a registry validator")
 	}
-	return &Handler{Cfg: cfg, Store: store, Synth: synth, Validator: validator, Dataset: dataset, RegistryManager: coreregistry.NewManager(dataset, cfg.ToolRegistryPath, cfg.RuleRegistryPath), RegistryValidator: registryValidator, Search: search, Orchestrator: chatOrch, Runner: exec, Healer: healer, Log: log}
+	handler := &Handler{Cfg: cfg, Store: store, Synth: synth, Validator: validator, Dataset: dataset, RegistryManager: coreregistry.NewManager(dataset, cfg.ToolRegistryPath, cfg.RuleRegistryPath), RegistryValidator: registryValidator, Search: search, Orchestrator: chatOrch, Runner: exec, Healer: healer, Log: log}
+	if synth != nil && store != nil {
+		synth.SetProviderResolver(store.ActiveProvider)
+	}
+	return handler
 }
 
 func (h *Handler) Health(c *fiber.Ctx) error {

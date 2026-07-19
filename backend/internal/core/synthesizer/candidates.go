@@ -43,25 +43,15 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 	}
 
 	prompt := s.Prompt.BuildCandidatePrompt(req)
-	raw, provider, err := s.generate(ctx, prompt, req.Model)
+	raw, _, model, err := s.generate(ctx, prompt, req.Model)
 	if err != nil {
 		return nil, err
 	}
-	candidates := ParseCandidateResponse(raw, s.modelName(provider), false)
+	candidates := ParseCandidateResponse(raw, model, false)
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("gemini returned no parseable YAML candidates")
 	}
 	return limitCandidates(candidates, req.CandidateCount), nil
-}
-
-func (s *Service) modelName(provider string) string {
-	if strings.EqualFold(provider, "gemini") && s.Gemini != nil {
-		return s.Gemini.Model
-	}
-	if s.Ollama != nil {
-		return s.Ollama.Model
-	}
-	return provider
 }
 
 func (b PromptBuilder) BuildCandidatePrompt(req CandidateGenerationRequest) string {

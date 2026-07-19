@@ -8,6 +8,17 @@ type SettingsBundle struct {
 	RBAC    map[string]interface{} `json:"rbac"`
 }
 
+type ProviderConfig struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
+	BaseURL   string    `json:"baseUrl,omitempty"`
+	Model     string    `json:"model"`
+	APIKey    string    `json:"-"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type Integration struct {
 	ID           string                 `json:"id"`
 	Name         string                 `json:"name"`

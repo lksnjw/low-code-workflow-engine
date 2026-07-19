@@ -39,6 +39,7 @@ type Store struct {
 	Healing                 map[string]models.HealingReport
 	Chats                   map[string]*models.ChatSessionDetail
 	Settings                models.SettingsBundle
+	Providers               map[string]*models.ProviderConfig
 	Integrations            map[string]*models.Integration
 	Webhooks                map[string]*models.Webhook
 	AuditLogs               map[string]*models.AuditLog
@@ -85,6 +86,7 @@ func NewStore() *Store {
 			RBAC:    map[string]interface{}{},
 		},
 		Integrations:            map[string]*models.Integration{},
+		Providers:               map[string]*models.ProviderConfig{},
 		Webhooks:                map[string]*models.Webhook{},
 		AuditLogs:               map[string]*models.AuditLog{},
 		Notifications:           map[string]*models.Notification{},
@@ -117,6 +119,17 @@ func NewStore() *Store {
 	}
 
 	return store
+}
+
+func (s *Store) ActiveProvider() (models.ProviderConfig, bool) {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	for _, provider := range s.Providers {
+		if provider.Active {
+			return *provider, true
+		}
+	}
+	return models.ProviderConfig{}, false
 }
 
 func permissionKeys(permissions []models.Permission) []string {

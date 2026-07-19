@@ -67,7 +67,7 @@ func (c *GeminiClient) Generate(ctx context.Context, prompt, overrideModel strin
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("call gemini: %w", err)
+		return "", fmt.Errorf("gemini request failed")
 	}
 	defer resp.Body.Close()
 
@@ -91,7 +91,7 @@ func (c *GeminiClient) Generate(ctx context.Context, prompt, overrideModel strin
 		if payload.Error.Message == "" {
 			payload.Error.Message = resp.Status
 		}
-		return "", fmt.Errorf("gemini returned %d: %s", resp.StatusCode, payload.Error.Message)
+		return "", fmt.Errorf("gemini returned HTTP %d", resp.StatusCode)
 	}
 
 	for _, candidate := range payload.Candidates {

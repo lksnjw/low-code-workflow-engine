@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 )
 
 type OllamaClient struct {
@@ -22,6 +25,14 @@ type Service struct {
 	Gemini   *GeminiClient
 	Provider string
 	Prompt   PromptBuilder
+	mu       sync.RWMutex
+	resolver func() (models.ProviderConfig, bool)
+}
+
+func (s *Service) SetProviderResolver(resolver func() (models.ProviderConfig, bool)) {
+	s.mu.Lock()
+	s.resolver = resolver
+	s.mu.Unlock()
 }
 
 type Result struct {
@@ -55,7 +66,7 @@ func NewServiceWithProvider(baseURL, ollamaModel string, ollamaEnabled bool, pro
 
 func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string, context map[string]interface{}) (Result, error) {
 	prompt := s.Prompt.Build(userPrompt, mode, context)
-	yamlText, provider, err := s.generate(ctx, prompt, model)
+	yamlText, provider, selectedModel, err := s.generate(ctx, prompt, model)
 	if err != nil {
 		return Result{}, err
 	}
@@ -68,27 +79,77 @@ func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string
 			"outputTokens": 0,
 			"costUsd":      0.0,
 			"provider":     provider,
+			"model":        selectedModel,
 			"measured":     false,
 		},
 	}, nil
 }
 
-func (s *Service) generate(ctx context.Context, prompt, overrideModel string) (string, string, error) {
+func (s *Service) generate(ctx context.Context, prompt, overrideModel string) (string, string, string, error) {
+	if config, ok := s.activeProvider(); ok {
+		return s.generateWithConfig(ctx, config, prompt, overrideModel)
+	}
 	if strings.EqualFold(s.Provider, "gemini") {
 		if s.Gemini == nil {
-			return "", "gemini", fmt.Errorf("gemini client is not configured")
+			return "", "gemini", "", fmt.Errorf("gemini client is not configured")
 		}
 		text, err := s.Gemini.Generate(ctx, prompt, overrideModel)
-		return text, "gemini", err
+		return text, "gemini", selectedModel(s.Gemini.Model, overrideModel), err
 	}
 	if strings.EqualFold(s.Provider, "ollama") {
 		if s.Ollama == nil {
-			return "", "ollama", fmt.Errorf("ollama client is not configured")
+			return "", "ollama", "", fmt.Errorf("ollama client is not configured")
 		}
 		text, err := s.Ollama.Generate(ctx, prompt, overrideModel)
-		return text, "ollama", err
+		return text, "ollama", selectedModel(s.Ollama.Model, overrideModel), err
 	}
-	return "", s.Provider, fmt.Errorf("unsupported workflow-generation provider %q", s.Provider)
+	return "", s.Provider, "", fmt.Errorf("unsupported workflow-generation provider %q", s.Provider)
+}
+
+func (s *Service) activeProvider() (models.ProviderConfig, bool) {
+	s.mu.RLock()
+	resolver := s.resolver
+	s.mu.RUnlock()
+	if resolver == nil {
+		return models.ProviderConfig{}, false
+	}
+	config, ok := resolver()
+	return config, ok && config.Active
+}
+
+func (s *Service) generateWithConfig(ctx context.Context, config models.ProviderConfig, prompt, overrideModel string) (string, string, string, error) {
+	model := selectedModel(config.Model, overrideModel)
+	switch strings.ToLower(strings.TrimSpace(config.Type)) {
+	case "gemini":
+		client := NewGeminiClient(config.APIKey, config.Model)
+		if strings.TrimSpace(config.BaseURL) != "" {
+			client.BaseURL = strings.TrimRight(config.BaseURL, "/")
+		}
+		text, err := client.Generate(ctx, prompt, overrideModel)
+		return text, "gemini", model, err
+	case "ollama":
+		client := &OllamaClient{BaseURL: strings.TrimRight(config.BaseURL, "/"), Model: config.Model, Enabled: true, HTTP: &http.Client{Timeout: 45 * time.Second}}
+		text, err := client.Generate(ctx, prompt, overrideModel)
+		return text, "ollama", model, err
+	case "openai_compatible":
+		client := NewOpenAICompatibleClient(config.BaseURL, config.APIKey, config.Model)
+		text, err := client.Generate(ctx, prompt, overrideModel)
+		return text, "openai_compatible", model, err
+	default:
+		return "", config.Type, model, fmt.Errorf("unsupported workflow-generation provider %q", config.Type)
+	}
+}
+
+func (s *Service) TestProvider(ctx context.Context, config models.ProviderConfig) error {
+	_, _, _, err := s.generateWithConfig(ctx, config, "Reply with the single word OK.", "")
+	return err
+}
+
+func selectedModel(fallback, override string) string {
+	if strings.TrimSpace(override) != "" {
+		return strings.TrimSpace(override)
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func (c *OllamaClient) Generate(ctx context.Context, prompt, overrideModel string) (string, error) {
