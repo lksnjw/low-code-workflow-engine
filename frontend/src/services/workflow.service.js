@@ -66,4 +66,10 @@ export const workflowService = {
       }),
     );
   },
+  async assignUser(id, userId) {
+    return normalizeWorkflow(unwrap(await apiClient.post(`/workflows/${id}/assign`, { userId })));
+  },
+  async unassignUser(id, userId) {
+    return normalizeWorkflow(unwrap(await apiClient.delete(`/workflows/${id}/assign/${encodeURIComponent(userId)}`)));
+  },
 };

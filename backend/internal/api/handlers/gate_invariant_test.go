@@ -267,7 +267,7 @@ func newGateTestHandler() (*Handler, *repository.Store, *fiber.App, *handlerSpyT
 	registryValidator, store, executor, spy := newGateComponents()
 	handler := New(config.Config{}, store, nil, workflowvalidator.NewWorkflowValidator(), nil, registryValidator, nil, nil, executor, nil, zap.NewNop())
 	app := fiber.New()
-	store.Users["test-admin"] = &models.User{ID: "test-admin", Name: "Test Admin", Role: models.RoleRef{ID: "role_admin", Name: "Platform Admin"}}
+	store.Users["test-admin"] = &models.User{ID: "test-admin", Name: "Test Admin", Role: models.RoleRef{ID: "role_admin", Name: "Platform Admin"}, Permissions: append([]string{}, store.Roles["role_admin"].Permissions...)}
 	app.Use(func(c *fiber.Ctx) error {
 		c.Locals(middlewares.UserIDKey, "test-admin")
 		return c.Next()

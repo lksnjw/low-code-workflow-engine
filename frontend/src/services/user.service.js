@@ -21,4 +21,7 @@ export const userService = {
   async create(payload) {
     return normalizeUser(unwrap(await apiClient.post("/users", payload)));
   },
+  async assignable() {
+    return unwrap(await apiClient.get("/workflows/assignable-users"), []);
+  },
 };

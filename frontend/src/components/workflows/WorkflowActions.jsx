@@ -4,9 +4,11 @@ import Button from "../shared/ui/Button";
 import { useNotifications } from "../../context/NotificationContext";
 import { workflowService } from "../../services/workflow.service";
 import { apiErrorMessage } from "../../services/api";
+import usePermissions from "../../hooks/usePermissions";
 
 function WorkflowActions({ workflow, onChanged }) {
   const { notify } = useNotifications();
+  const { has, hasAny } = usePermissions();
   const [running, setRunning] = useState(false);
 
   const run = async () => {
@@ -38,8 +40,8 @@ function WorkflowActions({ workflow, onChanged }) {
 
   return (
     <div className="flex flex-wrap gap-3">
-      <Button onClick={run} disabled={running}><Icon icon="mdi:play" className="h-5 w-5" />{running ? "Running…" : "Run"}</Button>
-      <Button variant="secondary" onClick={exportYAML}><Icon icon="mdi:file-export-outline" className="h-5 w-5" />Export YAML</Button>
+      {hasAny(["workflow:run", "workflow:run_own"]) ? <Button onClick={run} disabled={running}><Icon icon="mdi:play" className="h-5 w-5" />{running ? "Running…" : "Run"}</Button> : null}
+      {has("workflow:read") ? <Button variant="secondary" onClick={exportYAML}><Icon icon="mdi:file-export-outline" className="h-5 w-5" />Export YAML</Button> : null}
     </div>
   );
 }

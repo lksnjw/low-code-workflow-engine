@@ -41,6 +41,7 @@ type Workflow struct {
 	Name             string                 `json:"name"`
 	Description      string                 `json:"description"`
 	Owner            Principal              `json:"owner"`
+	AssignedUserIDs  []string               `json:"assignedUserIds"`
 	Status           string                 `json:"status"`
 	Trigger          map[string]interface{} `json:"trigger"`
 	Steps            int                    `json:"steps"`

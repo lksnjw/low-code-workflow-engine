@@ -42,6 +42,7 @@ type Webhook struct {
 
 type ChatSession struct {
 	ID           string    `json:"id"`
+	OwnerID      string    `json:"ownerId"`
 	Title        string    `json:"title"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`

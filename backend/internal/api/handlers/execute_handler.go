@@ -25,6 +25,10 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
 	}
+	user := h.currentUser(c)
+	if !canRunWorkflow(user, workflow) {
+		return fiber.NewError(fiber.StatusForbidden, "Workflow is not assigned to the current user")
+	}
 	if workflow.Status == models.StatusDraftUnvalidated {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow canvas has unvalidated execution changes", map[string]interface{}{"status": workflow.Status}))
 	}
@@ -118,9 +122,13 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 
 func (h *Handler) ListExecutions(c *fiber.Ctx) error {
 	page, limit := pageLimit(c)
+	user := h.currentUser(c)
 	h.Store.Mu.RLock()
 	items := make([]models.Execution, 0, len(h.Store.Executions))
 	for _, execution := range h.Store.Executions {
+		if !canReadExecution(user, execution) {
+			continue
+		}
 		if workflowID := c.Query("workflowId"); workflowID != "" && execution.WorkflowID != workflowID {
 			continue
 		}
@@ -155,9 +163,7 @@ func executionCutoff(value string, now time.Time) time.Time {
 }
 
 func (h *Handler) GetExecution(c *fiber.Ctx) error {
-	h.Store.Mu.RLock()
-	execution, ok := h.Store.Executions[c.Params("id")]
-	h.Store.Mu.RUnlock()
+	execution, ok := h.executionForRead(c, c.Params("id"))
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Execution not found")
 	}
@@ -165,6 +171,9 @@ func (h *Handler) GetExecution(c *fiber.Ctx) error {
 }
 
 func (h *Handler) ExecutionLogs(c *fiber.Ctx) error {
+	if _, ok := h.executionForRead(c, c.Params("id")); !ok {
+		return fiber.NewError(fiber.StatusNotFound, "Execution not found")
+	}
 	h.Store.Mu.RLock()
 	logs := append([]models.ExecutionLog{}, h.Store.ExecutionLogs[c.Params("id")]...)
 	h.Store.Mu.RUnlock()
@@ -172,6 +181,9 @@ func (h *Handler) ExecutionLogs(c *fiber.Ctx) error {
 }
 
 func (h *Handler) ExecutionTimeline(c *fiber.Ctx) error {
+	if _, ok := h.executionForRead(c, c.Params("id")); !ok {
+		return fiber.NewError(fiber.StatusNotFound, "Execution not found")
+	}
 	h.Store.Mu.RLock()
 	timeline := append([]models.ExecutionStep{}, h.Store.Timelines[c.Params("id")]...)
 	h.Store.Mu.RUnlock()
@@ -179,6 +191,9 @@ func (h *Handler) ExecutionTimeline(c *fiber.Ctx) error {
 }
 
 func (h *Handler) ExecutionHealingReport(c *fiber.Ctx) error {
+	if _, ok := h.executionForRead(c, c.Params("id")); !ok {
+		return fiber.NewError(fiber.StatusNotFound, "Execution not found")
+	}
 	h.Store.Mu.RLock()
 	report, ok := h.Store.Healing[c.Params("id")]
 	h.Store.Mu.RUnlock()
@@ -207,16 +222,32 @@ func (h *Handler) RetryExecution(c *fiber.Ctx) error {
 func (h *Handler) WorkflowExecutions(c *fiber.Ctx) error {
 	page, limit := pageLimit(c)
 	workflowID := c.Params("id")
+	user := h.currentUser(c)
+	workflow, ok := h.workflowByID(workflowID)
+	if !ok || !canReadWorkflow(user, workflow) {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
 	h.Store.Mu.RLock()
 	items := make([]models.Execution, 0, len(h.Store.Executions))
 	for _, execution := range h.Store.Executions {
-		if execution.WorkflowID == workflowID {
+		if execution.WorkflowID == workflowID && canReadExecution(user, execution) {
 			items = append(items, *execution)
 		}
 	}
 	h.Store.Mu.RUnlock()
 	paged, meta := paginate(items, page, limit)
 	return c.JSON(models.OK(paged, "OK", meta))
+}
+
+func (h *Handler) executionForRead(c *fiber.Ctx, id string) (*models.Execution, bool) {
+	user := h.currentUser(c)
+	h.Store.Mu.RLock()
+	execution, ok := h.Store.Executions[id]
+	h.Store.Mu.RUnlock()
+	if !ok || !canReadExecution(user, execution) {
+		return nil, false
+	}
+	return execution, true
 }
 
 // updateWorkflowExecutionMetricsLocked derives workflow metrics from recorded

@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,8 +16,14 @@ import (
 
 func (h *Handler) ListWorkflows(c *fiber.Ctx) error {
 	page, limit := pageLimit(c)
+	user := h.currentUser(c)
 	h.Store.Mu.RLock()
-	items := repository.ListMapValues(h.Store.Workflows)
+	items := make([]models.Workflow, 0, len(h.Store.Workflows))
+	for _, workflow := range h.Store.Workflows {
+		if canReadWorkflow(user, workflow) {
+			items = append(items, *workflow)
+		}
+	}
 	h.Store.Mu.RUnlock()
 
 	items = repository.FilterWorkflows(items, c.Query("q"), c.Query("status"))
@@ -75,7 +83,7 @@ func (h *Handler) CreateWorkflow(c *fiber.Ctx) error {
 
 func (h *Handler) GetWorkflow(c *fiber.Ctx) error {
 	workflow, ok := h.workflowByID(c.Params("id"))
-	if !ok {
+	if !ok || !canReadWorkflow(h.currentUser(c), workflow) {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
 	}
 	return c.JSON(models.OK(workflow, "OK", nil))
@@ -230,7 +238,7 @@ func (h *Handler) ValidateWorkflow(c *fiber.Ctx) error {
 
 func (h *Handler) GetWorkflowYAML(c *fiber.Ctx) error {
 	workflow, ok := h.workflowByID(c.Params("id"))
-	if !ok {
+	if !ok || !canReadWorkflow(h.currentUser(c), workflow) {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
 	}
 	return c.JSON(models.OK(models.WorkflowYAML{WorkflowID: workflow.ID, Version: workflow.DraftVersion, YAML: workflow.YAML, Checksum: parser.Checksum(workflow.YAML), UpdatedAt: workflow.UpdatedAt}, "OK", nil))
@@ -272,7 +280,7 @@ func (h *Handler) PutWorkflowYAML(c *fiber.Ctx) error {
 
 func (h *Handler) GetWorkflowCanvas(c *fiber.Ctx) error {
 	workflow, ok := h.workflowByID(c.Params("id"))
-	if !ok {
+	if !ok || !canReadWorkflow(h.currentUser(c), workflow) {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
 	}
 	return c.JSON(models.OK(workflow.Canvas, "OK", nil))
@@ -299,10 +307,69 @@ func (h *Handler) PutWorkflowCanvas(c *fiber.Ctx) error {
 }
 
 func (h *Handler) WorkflowVersions(c *fiber.Ctx) error {
+	workflow, ok := h.workflowByID(c.Params("id"))
+	if !ok || !canReadWorkflow(h.currentUser(c), workflow) {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
 	h.Store.Mu.RLock()
 	versions := append([]models.WorkflowVersion{}, h.Store.Versions[c.Params("id")]...)
 	h.Store.Mu.RUnlock()
 	return c.JSON(models.OK(versions, "OK", nil))
+}
+
+func (h *Handler) ListAssignableWorkflowUsers(c *fiber.Ctx) error {
+	h.Store.Mu.RLock()
+	users := make([]map[string]interface{}, 0, len(h.Store.Users))
+	for _, user := range h.Store.Users {
+		if !strings.EqualFold(user.Status, "active") {
+			continue
+		}
+		users = append(users, map[string]interface{}{
+			"id": user.ID, "name": user.Name, "email": user.Email, "role": user.Role.Name,
+		})
+	}
+	h.Store.Mu.RUnlock()
+	sort.Slice(users, func(i, j int) bool { return fmt.Sprint(users[i]["name"]) < fmt.Sprint(users[j]["name"]) })
+	return c.JSON(models.OK(users, "Assignable users loaded", map[string]interface{}{"count": len(users)}))
+}
+
+func (h *Handler) AssignWorkflowUser(c *fiber.Ctx) error {
+	body := decodeMap(c)
+	userID := fmt.Sprint(body["userId"])
+	if userID == "" || userID == "<nil>" {
+		return fiber.NewError(fiber.StatusBadRequest, "userId is required")
+	}
+	actor := principalFromUser(h.currentUser(c))
+	h.Store.Mu.Lock()
+	defer h.Store.Mu.Unlock()
+	workflow := h.Store.Workflows[c.Params("id")]
+	if workflow == nil {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
+	if h.Store.Users[userID] == nil {
+		return fiber.NewError(fiber.StatusNotFound, "User not found")
+	}
+	before := append([]string{}, workflow.AssignedUserIDs...)
+	workflow.AssignedUserIDs = appendUniqueUserID(workflow.AssignedUserIDs, userID)
+	workflow.UpdatedAt = time.Now().UTC()
+	h.Store.Audit(actor, "workflow.user_assigned", models.ResourceRef{Type: "workflow", ID: workflow.ID}, map[string]interface{}{"assignedUserIds": before}, map[string]interface{}{"assignedUserIds": append([]string{}, workflow.AssignedUserIDs...), "userId": userID}, c.IP(), c.Get("User-Agent"))
+	return c.JSON(models.OK(workflow, "User assigned to workflow", nil))
+}
+
+func (h *Handler) UnassignWorkflowUser(c *fiber.Ctx) error {
+	userID := c.Params("userId")
+	actor := principalFromUser(h.currentUser(c))
+	h.Store.Mu.Lock()
+	defer h.Store.Mu.Unlock()
+	workflow := h.Store.Workflows[c.Params("id")]
+	if workflow == nil {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
+	before := append([]string{}, workflow.AssignedUserIDs...)
+	workflow.AssignedUserIDs = removeUserID(workflow.AssignedUserIDs, userID)
+	workflow.UpdatedAt = time.Now().UTC()
+	h.Store.Audit(actor, "workflow.user_unassigned", models.ResourceRef{Type: "workflow", ID: workflow.ID}, map[string]interface{}{"assignedUserIds": before}, map[string]interface{}{"assignedUserIds": append([]string{}, workflow.AssignedUserIDs...), "userId": userID}, c.IP(), c.Get("User-Agent"))
+	return c.JSON(models.OK(workflow, "User unassigned from workflow", nil))
 }
 
 func (h *Handler) RestoreWorkflowVersion(c *fiber.Ctx) error {

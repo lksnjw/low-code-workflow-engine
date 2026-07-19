@@ -77,10 +77,13 @@ func (h *Handler) SynthesisExplain(c *fiber.Ctx) error {
 
 func (h *Handler) ListChatSessions(c *fiber.Ctx) error {
 	page, limit := pageLimit(c)
+	user := h.currentUser(c)
 	h.Store.Mu.RLock()
 	sessions := make([]models.ChatSession, 0, len(h.Store.Chats))
 	for _, session := range h.Store.Chats {
-		sessions = append(sessions, session.ChatSession)
+		if canAccessChatSession(user, session) {
+			sessions = append(sessions, session.ChatSession)
+		}
 	}
 	h.Store.Mu.RUnlock()
 	paged, meta := paginate(sessions, page, limit)
@@ -94,7 +97,7 @@ func (h *Handler) CreateChatSession(c *fiber.Ctx) error {
 		title = "New workflow conversation"
 	}
 	now := time.Now().UTC()
-	session := &models.ChatSessionDetail{ChatSession: models.ChatSession{ID: "chat_" + randomHex(4), Title: title, CreatedAt: now, UpdatedAt: now, MessageCount: 0}, Messages: []models.ChatMessage{}}
+	session := &models.ChatSessionDetail{ChatSession: models.ChatSession{ID: "chat_" + randomHex(4), OwnerID: h.currentUserID(c), Title: title, CreatedAt: now, UpdatedAt: now, MessageCount: 0}, Messages: []models.ChatMessage{}}
 	h.Store.Mu.Lock()
 	h.Store.Chats[session.ID] = session
 	h.Store.Mu.Unlock()
@@ -102,10 +105,11 @@ func (h *Handler) CreateChatSession(c *fiber.Ctx) error {
 }
 
 func (h *Handler) GetChatSession(c *fiber.Ctx) error {
+	user := h.currentUser(c)
 	h.Store.Mu.RLock()
 	session, ok := h.Store.Chats[c.Params("id")]
 	h.Store.Mu.RUnlock()
-	if !ok {
+	if !ok || !canAccessChatSession(user, session) {
 		return fiber.NewError(fiber.StatusNotFound, "Chat session not found")
 	}
 	return c.JSON(models.OK(session, "OK", nil))
@@ -113,10 +117,11 @@ func (h *Handler) GetChatSession(c *fiber.Ctx) error {
 
 func (h *Handler) UpdateChatSession(c *fiber.Ctx) error {
 	body := decodeMap(c)
+	user := h.currentUser(c)
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
 	session, ok := h.Store.Chats[c.Params("id")]
-	if !ok {
+	if !ok || !canAccessChatSession(user, session) {
 		return fiber.NewError(fiber.StatusNotFound, "Chat session not found")
 	}
 	if title := fmt.Sprint(body["title"]); title != "" && title != "<nil>" {
@@ -127,7 +132,13 @@ func (h *Handler) UpdateChatSession(c *fiber.Ctx) error {
 }
 
 func (h *Handler) DeleteChatSession(c *fiber.Ctx) error {
+	user := h.currentUser(c)
 	h.Store.Mu.Lock()
+	session, ok := h.Store.Chats[c.Params("id")]
+	if !ok || !canAccessChatSession(user, session) {
+		h.Store.Mu.Unlock()
+		return fiber.NewError(fiber.StatusNotFound, "Chat session not found")
+	}
 	delete(h.Store.Chats, c.Params("id"))
 	h.Store.Mu.Unlock()
 	return c.JSON(models.OK(map[string]bool{"deleted": true}, "Chat session deleted", nil))
@@ -146,13 +157,17 @@ func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
 	mode, _ := body["mode"].(string)
 
 	now := time.Now().UTC()
+	user := h.currentUser(c)
 	userMessage := models.ChatMessage{ID: "msg_" + randomHex(4), Role: "user", Text: message, CreatedAt: now}
 
 	h.Store.Mu.Lock()
 	session, ok := h.Store.Chats[c.Params("id")]
 	if !ok {
-		session = &models.ChatSessionDetail{ChatSession: models.ChatSession{ID: c.Params("id"), Title: "Workflow conversation", CreatedAt: now}, Messages: []models.ChatMessage{}}
+		session = &models.ChatSessionDetail{ChatSession: models.ChatSession{ID: c.Params("id"), OwnerID: h.currentUserID(c), Title: "Workflow conversation", CreatedAt: now}, Messages: []models.ChatMessage{}}
 		h.Store.Chats[session.ID] = session
+	} else if !canAccessChatSession(user, session) {
+		h.Store.Mu.Unlock()
+		return fiber.NewError(fiber.StatusNotFound, "Chat session not found")
 	}
 	session.Messages = append(session.Messages, userMessage)
 	h.Store.Mu.Unlock()
@@ -161,7 +176,6 @@ func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "chat orchestration is not configured")
 	}
 
-	user := h.currentUser(c)
 	userRole := "anonymous"
 	if user != nil {
 		userRole = user.Role.Name

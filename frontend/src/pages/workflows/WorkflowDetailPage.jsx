@@ -4,9 +4,12 @@ import WorkflowBadge from "../../components/workflows/WorkflowBadge";
 import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useRoute } from "../../context/RouteContext";
 import { useWorkflow } from "../../hooks/useWorkflows";
+import usePermissions from "../../hooks/usePermissions";
+import WorkflowAssignments from "../../components/workflows/WorkflowAssignments";
 
 function WorkflowDetailPage() {
   const { selectedWorkflowId, navigateTo } = useRoute();
+  const { has } = usePermissions();
   const { data: workflow, isLoading, error, refetch } = useWorkflow(selectedWorkflowId);
   if (!selectedWorkflowId) return <EmptyState title="No workflow selected" description="Choose a workflow from the workflow list." />;
   if (isLoading) return <LoadingState label="Loading workflow…" />;
@@ -31,6 +34,7 @@ function WorkflowDetailPage() {
           <div><p className="text-xs font-bold uppercase text-gray-500">Success Rate</p><p className="mt-2 font-semibold text-gray-950 dark:text-white">{workflow.successRate}</p></div>
         </div>
       </Card>
+      {has("workflow:write") ? <WorkflowAssignments workflow={workflow} onChanged={refetch} /> : null}
     </div>
   );
 }
