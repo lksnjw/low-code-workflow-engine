@@ -51,10 +51,11 @@ export const authService = {
   },
 
   async logout() {
+    const refreshToken = localStorage.getItem("workflow.refreshToken");
+    await apiClient.post("/auth/logout", { refreshToken }).catch(() => null);
     localStorage.removeItem("workflow.authToken");
     localStorage.removeItem("workflow.refreshToken");
     localStorage.removeItem("workflow.user");
-    await apiClient.post("/auth/logout").catch(() => null);
   },
 
   async oauthAuthorize(provider) {

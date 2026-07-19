@@ -160,15 +160,32 @@ steps:
 	synth := synthesizer.NewServiceWithProvider("", "", false, "gemini", "test-key", "gemini-test")
 	synth.Gemini.BaseURL = geminiServer.URL
 	validator := workflowvalidator.NewWorkflowValidator()
-	registryValidator := workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules)
+	registryValidator := workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules, store)
 	search := semanticsearch.NewServiceFromDataset(bundle, cfg.SemanticSearchMode, cfg.SemanticSearchURL, cfg.SemanticSearchAllowLexicalFallback)
 	orch := orchestrator.NewChatOrchestrator(search, synth, registryValidator)
-	exec := runner.NewExecutor(tools.NewRegistry(nil), zap.NewNop())
+	exec := runner.NewExecutor(tools.NewRegistry(nil), registryValidator, zap.NewNop())
 	healer := healing.NewHealer(synth)
 	handler := handlers.New(cfg, store, synth, validator, bundle, registryValidator, search, orch, exec, healer, zap.NewNop())
 
 	app := fiber.New()
 	routes.Register(app, handler)
+	registrationBody, _ := json.Marshal(map[string]interface{}{
+		"name": "Integration Admin", "email": "integration@example.test", "password": "correct-horse-battery-staple",
+	})
+	registrationRequest := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(registrationBody))
+	registrationRequest.Header.Set("Content-Type", "application/json")
+	registrationResponse, err := app.Test(registrationRequest)
+	if err != nil || registrationResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("register test user: status=%d err=%v", registrationResponse.StatusCode, err)
+	}
+	var registrationPayload struct {
+		Data struct {
+			AccessToken string `json:"accessToken"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(registrationResponse.Body).Decode(&registrationPayload); err != nil || registrationPayload.Data.AccessToken == "" {
+		t.Fatalf("decode registration session: %v", err)
+	}
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"content":             "Create a purchase order for 150 laptops from vendor V-882 and send it for approval.",
@@ -176,7 +193,7 @@ steps:
 		"generate_candidates": "3",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/chat/sessions/chat_test/messages", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer local-dev-token")
+	req.Header.Set("Authorization", "Bearer "+registrationPayload.Data.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
 	if err != nil {

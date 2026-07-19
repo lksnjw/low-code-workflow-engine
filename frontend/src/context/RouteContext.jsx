@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { DEFAULT_ROUTE, getNavigationGroup } from "../constants/navigation";
 
 const RouteContext = createContext(null);
@@ -24,17 +24,24 @@ export function RouteProvider({ children }) {
   const [initialRoute] = useState(getInitialRoute);
   const [activeMain, setActiveMain] = useState(initialRoute.main);
   const [activeSub, setActiveSub] = useState(initialRoute.sub);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(() => localStorage.getItem("workflow.selectedWorkflowId"));
 
   useEffect(() => {
     localStorage.setItem("workflow.activeMain", activeMain);
     localStorage.setItem("workflow.activeSub", activeSub);
   }, [activeMain, activeSub]);
 
-  const navigateTo = (main, sub) => {
+  const navigateTo = useCallback((main, sub) => {
     const group = getNavigationGroup(main);
     setActiveMain(group.id);
     setActiveSub(sub ?? group.subMenu[0]?.id);
-  };
+  }, []);
+
+  const openWorkflow = useCallback((workflowId) => {
+    setSelectedWorkflowId(workflowId);
+    localStorage.setItem("workflow.selectedWorkflowId", workflowId);
+    navigateTo("workflows", "detail");
+  }, [navigateTo]);
 
   const value = useMemo(
     () => ({
@@ -43,8 +50,10 @@ export function RouteProvider({ children }) {
       setActiveMain,
       setActiveSub,
       navigateTo,
+      selectedWorkflowId,
+      openWorkflow,
     }),
-    [activeMain, activeSub]
+    [activeMain, activeSub, navigateTo, selectedWorkflowId, openWorkflow]
   );
 
   return <RouteContext.Provider value={value}>{children}</RouteContext.Provider>;

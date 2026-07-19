@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func (h *Handler) ListUsers(c *fiber.Ctx) error {
@@ -36,22 +37,38 @@ func (h *Handler) ListUsers(c *fiber.Ctx) error {
 
 func (h *Handler) CreateUser(c *fiber.Ctx) error {
 	body := decodeMap(c)
-	name := fmt.Sprint(body["name"])
-	email := fmt.Sprint(body["email"])
+	name := strings.TrimSpace(fmt.Sprint(body["name"]))
+	email := strings.ToLower(strings.TrimSpace(fmt.Sprint(body["email"])))
+	password := fmt.Sprint(body["password"])
+	if name == "" || name == "<nil>" || email == "" || email == "<nil>" || len(password) < 8 {
+		return fiber.NewError(fiber.StatusBadRequest, "Name, email, and a password of at least 8 characters are required")
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Could not secure password")
+	}
 	roleID := fmt.Sprint(body["roleId"])
 	if roleID == "" || roleID == "<nil>" {
 		roleID = "role_builder"
 	}
+	actor := principalFromUser(h.currentUser(c))
 
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
+	for _, existing := range h.Store.Users {
+		if strings.EqualFold(existing.Email, email) {
+			return c.Status(fiber.StatusConflict).JSON(models.Fail("An account with this email already exists", nil))
+		}
+	}
 	role := h.Store.Roles[roleID]
 	if role == nil {
-		role = h.Store.Roles["role_builder"]
+		return fiber.NewError(fiber.StatusBadRequest, "Role not found")
 	}
 	id := h.Store.NextID("usr")
-	user := &models.User{ID: id, Name: name, Email: email, Role: models.RoleRef{ID: role.ID, Name: role.Name}, Permissions: role.Permissions, Status: "Active", Initials: initials(name), CreatedAt: time.Now().UTC(), EmailVerified: true}
+	user := &models.User{ID: id, Name: name, Email: email, Role: models.RoleRef{ID: role.ID, Name: role.Name}, Permissions: append([]string{}, role.Permissions...), Status: "Active", Initials: initials(name), Timezone: "UTC", CreatedAt: time.Now().UTC(), EmailVerified: false}
 	h.Store.Users[id] = user
+	h.Store.PasswordHashes[id] = string(passwordHash)
+	h.Store.Audit(actor, "user.created", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"email": email, "roleId": role.ID}, c.IP(), c.Get("User-Agent"))
 	return c.Status(fiber.StatusCreated).JSON(models.OK(user, "User created", nil))
 }
 
@@ -90,16 +107,24 @@ func (h *Handler) UpdateUser(c *fiber.Ctx) error {
 }
 
 func (h *Handler) DeleteUser(c *fiber.Ctx) error {
+	if c.Params("id") == h.currentUserID(c) {
+		return c.Status(fiber.StatusConflict).JSON(models.Fail("You cannot delete your own active account", nil))
+	}
 	h.Store.Mu.Lock()
-	delete(h.Store.Users, c.Params("id"))
+	userID := c.Params("id")
+	delete(h.Store.Users, userID)
+	delete(h.Store.PasswordHashes, userID)
+	for digest, session := range h.Store.RefreshSessions {
+		if session.UserID == userID {
+			delete(h.Store.RefreshSessions, digest)
+		}
+	}
 	h.Store.Mu.Unlock()
 	return c.JSON(models.OK(map[string]bool{"deleted": true}, "User deleted", nil))
 }
 
 func (h *Handler) InviteUser(c *fiber.Ctx) error {
-	body := decodeMap(c)
-	email := fmt.Sprint(body["email"])
-	return c.JSON(models.OK(map[string]interface{}{"email": email, "sent": true, "inviteUrl": h.Cfg.FrontendURL + "/register?invite=" + randomHex(12)}, "Invitation sent", nil))
+	return featureNotConfigured(c, "Email invitations")
 }
 
 func (h *Handler) ActivateUser(c *fiber.Ctx) error {

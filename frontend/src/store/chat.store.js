@@ -1,7 +1,6 @@
 import { create } from "zustand";
-import { chatMessages } from "../constants/mockData";
 
 export const useChatStore = create((set) => ({
-  messages: chatMessages,
+	messages: [],
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
 }));

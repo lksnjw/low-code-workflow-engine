@@ -8,7 +8,7 @@ function UserRow({ user }) {
         <UserAvatar initials={user.initials} />
         <div>
           <p className="font-bold text-gray-950 dark:text-white">{user.name}</p>
-          <p className="text-xs text-gray-500">{user.name.toLowerCase().replaceAll(" ", ".")}@workflow.local</p>
+          <p className="text-xs text-gray-500">{user.email}</p>
         </div>
       </div>
       <UserBadge>{user.role}</UserBadge>

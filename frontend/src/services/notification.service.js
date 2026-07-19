@@ -1,8 +1,14 @@
+import { apiClient } from "../config/axios";
+import { unwrap } from "./api";
+
 export const notificationService = {
-  async list() {
-    return [
-      { id: "n1", message: "Live log stream healthy", tone: "success" },
-      { id: "n2", message: "ERP connector token expires soon", tone: "warning" },
-    ];
+  async list(params = {}) {
+    return unwrap(await apiClient.get("/notifications", { params }), []);
+  },
+  async markRead(id) {
+    return unwrap(await apiClient.patch(`/notifications/${id}/read`));
+  },
+  async markAllRead() {
+    return unwrap(await apiClient.patch("/notifications/read-all"));
   },
 };

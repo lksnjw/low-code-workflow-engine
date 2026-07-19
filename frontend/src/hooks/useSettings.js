@@ -1,7 +1,9 @@
-import { integrations } from "../constants/mockData";
+import { useQuery } from "@tanstack/react-query";
+import { settingsService } from "../services/settings.service";
 
 export function useSettings() {
-  return { integrations, model: "gpt-5.4" };
+  const query = useQuery({ queryKey: ["settings"], queryFn: settingsService.load });
+  return { data: query.data || null, loading: query.isLoading, error: query.error, reload: query.refetch };
 }
 
 export default useSettings;

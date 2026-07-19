@@ -1,15 +1,24 @@
 package validator
 
 import (
+	"crypto/hmac"
+	cryptorand "crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	playground "github.com/go-playground/validator/v10"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 	"github.com/sanjeewa/agentic-orchestrator/pkg/parser"
+	"gopkg.in/yaml.v3"
 )
 
 type CandidateValidationResult struct {
@@ -32,19 +41,90 @@ type CandidateValidationResult struct {
 	ParsedWorkflow   *models.WorkflowBlueprint `json:"-"`
 	ToolRisks        map[string]string         `json:"tool_risks,omitempty"`
 	Metadata         map[string]interface{}    `json:"metadata,omitempty"`
+	DeferredChecks   []models.DeferredCheck    `json:"deferred_checks,omitempty"`
 }
 
 type RegistryValidator struct {
 	Tools    *registry.ToolRegistry
 	Rules    *registry.RuleRegistry
+	Store    *repository.Store
 	validate *playground.Validate
+	tokenKey [32]byte
 }
 
-func NewRegistryValidator(tools *registry.ToolRegistry, rules *registry.RuleRegistry) *RegistryValidator {
-	return &RegistryValidator{Tools: tools, Rules: rules, validate: playground.New()}
+func NewRegistryValidator(tools *registry.ToolRegistry, rules *registry.RuleRegistry, store *repository.Store) *RegistryValidator {
+	if tools == nil {
+		panic("registry validator requires a tool registry")
+	}
+	if rules == nil {
+		panic("registry validator requires a rule registry")
+	}
+	if store == nil {
+		panic("registry validator requires an audit store")
+	}
+	validator := &RegistryValidator{Tools: tools, Rules: rules, Store: store, validate: playground.New()}
+	if _, err := cryptorand.Read(validator.tokenKey[:]); err != nil {
+		panic("registry validator cannot initialize validation-token proof key: " + err.Error())
+	}
+	return validator
 }
 
 func (v *RegistryValidator) ValidateCandidate(candidateID, rawYAML, userRole string) CandidateValidationResult {
+	_, result, _ := v.ValidateAndIssueToken(candidateID, rawYAML, userRole)
+	return *result
+}
+
+// ValidateAndIssueToken runs the complete deterministic gate. It is the only
+// code path that constructs a ValidationToken, and it does so only on success.
+func (v *RegistryValidator) ValidateAndIssueToken(action, rawYAML, userRole string) (*models.ValidationToken, *CandidateValidationResult, error) {
+	result := v.validateCandidate(action, rawYAML, userRole)
+	contentHash := WorkflowContentHash(rawYAML)
+	registryHash := v.RegistryHash()
+
+	var token *models.ValidationToken
+	if result.Passed {
+		token = &models.ValidationToken{
+			WorkflowContentHash: contentHash,
+			RegistryHash:        registryHash,
+			PassedAt:            time.Now().UTC(),
+			DeferredChecks:      cloneDeferredChecks(result.DeferredChecks),
+		}
+		token.Proof = v.signToken(token)
+	}
+	v.auditDecision(action, userRole, result.Passed, contentHash, registryHash, map[string]interface{}{
+		"schema_ok":        result.SchemaOK,
+		"tool_validity_ok": result.ToolValidityOK,
+		"parameters_ok":    result.ParametersOK,
+		"rbac_ok":          result.RBACOK,
+		"policy_ok":        result.PolicyOK,
+		"process_order_ok": result.ProcessOrderOK,
+		"risk_ok":          result.RiskOK,
+		"failed_rules":     append([]string{}, result.FailedRules...),
+		"errors":           append([]string{}, result.Errors...),
+		"deferred_checks":  cloneDeferredChecks(result.DeferredChecks),
+	})
+	return token, &result, nil
+}
+
+// VerifyToken proves that the token was issued by this validator instance and
+// that none of its gate-bound fields or deferred checks were modified.
+func (v *RegistryValidator) VerifyToken(token *models.ValidationToken) bool {
+	if token == nil || token.Proof == "" {
+		return false
+	}
+	expected := v.signToken(token)
+	provided, err := hex.DecodeString(token.Proof)
+	if err != nil {
+		return false
+	}
+	expectedBytes, err := hex.DecodeString(expected)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(provided, expectedBytes)
+}
+
+func (v *RegistryValidator) validateCandidate(candidateID, rawYAML, userRole string) CandidateValidationResult {
 	result := CandidateValidationResult{
 		CandidateID:      candidateID,
 		SchemaOK:         true,
@@ -61,9 +141,10 @@ func (v *RegistryValidator) ValidateCandidate(candidateID, rawYAML, userRole str
 		EstimatedRisk:    "low",
 		ToolRisks:        map[string]string{},
 		Metadata:         map[string]interface{}{},
+		DeferredChecks:   []models.DeferredCheck{},
 	}
 
-	blueprint, err := parser.ParseWorkflowYAML(rawYAML)
+	blueprint, err := ParseWorkflowYAMLStrict(rawYAML)
 	if err != nil {
 		result.SchemaOK = false
 		result.addError("YAML_PARSE_ERROR", err.Error())
@@ -104,6 +185,7 @@ func (v *RegistryValidator) ValidateCandidate(candidateID, rawYAML, userRole str
 			result.PolicyOK = false
 			result.addRuleError("GLOBAL-SAFETY-002", fmt.Sprintf("Step %s contains sensitive credential-like parameter", step.ID))
 		}
+		v.deferSensitiveTemplateChecks(index, step, tool, userRole, &result)
 	}
 
 	v.evaluateRules(blueprint, stepsByAction, usedTools, userRole, &result)
@@ -193,7 +275,7 @@ func (v *RegistryValidator) evalParameterRule(rule registry.Rule, blueprint mode
 	if len(params) == 0 {
 		return
 	}
-	for _, step := range blueprint.Steps {
+	for stepIndex, step := range blueprint.Steps {
 		tool, ok := v.Tools.FindToolByName(step.Action)
 		if !ok || !ruleAppliesToTool(rule, tool) {
 			continue
@@ -202,6 +284,10 @@ func (v *RegistryValidator) evalParameterRule(rule registry.Rule, blueprint mode
 			if step.Parameters == nil || isEmptyValue(step.Parameters[param]) {
 				result.ParametersOK = false
 				result.addRuleError(rule.RuleID, message(rule, fmt.Sprintf("Step %s missing parameter %s", step.ID, param)))
+				continue
+			}
+			if containsUnresolvedTemplate(step.Parameters[param]) {
+				result.addDeferredCheck(stepIndex, param, rule.RuleID)
 			}
 		}
 	}
@@ -209,23 +295,30 @@ func (v *RegistryValidator) evalParameterRule(rule registry.Rule, blueprint mode
 
 func (v *RegistryValidator) evalThresholdRule(rule registry.Rule, blueprint models.WorkflowBlueprint, result *CandidateValidationResult) {
 	param := rule.Condition.Parameter
-	threshold, ok := numeric(rule.Condition.Value)
-	if !ok || param == "" {
+	if _, ok := numeric(rule.Condition.Value); !ok || param == "" {
 		return
 	}
-	for _, step := range blueprint.Steps {
+	for stepIndex, step := range blueprint.Steps {
 		tool, found := v.Tools.FindToolByName(step.Action)
 		if !found || !ruleAppliesToTool(rule, tool) {
 			continue
 		}
-		value, ok := numeric(step.Parameters[param])
-		if !ok || !compareNumber(value, rule.Condition.Operator, threshold) {
+		rawValue, exists := step.Parameters[param]
+		if !exists {
 			continue
 		}
-		if rule.EnforcementAction == "require_human_approval" && !hasApprovalStep(blueprint) {
+		if containsUnresolvedTemplate(rawValue) {
+			result.addDeferredCheck(stepIndex, param, rule.RuleID)
+			continue
+		}
+		violated, evaluable, reason := evaluateThresholdValue(rule, blueprint, step, rawValue)
+		if !evaluable || !violated {
+			continue
+		}
+		if rule.EnforcementAction == "require_human_approval" || rule.EnforcementAction == "block" {
 			result.PolicyOK = false
 			result.RiskOK = false
-			result.addRuleError(rule.RuleID, message(rule, fmt.Sprintf("Step %s has %s %.2f and requires human approval", step.ID, param, value)))
+			result.addRuleError(rule.RuleID, reason)
 		}
 	}
 }
@@ -287,6 +380,177 @@ func (v *RegistryValidator) evalAuditRule(rule registry.Rule, blueprint models.W
 	}
 }
 
+// ResolvedPolicyViolation is an internal gate result. The runner converts it
+// to ErrDispatchPolicyViolation without retaining the unredacted value.
+type ResolvedPolicyViolation struct {
+	StepIndex int
+	ParamKey  string
+	RuleID    string
+	Value     interface{}
+	Reason    string
+}
+
+// EvaluateResolvedStep runs the shared deterministic rule evaluators against
+// values after state resolution and records the dispatch gate decision.
+func (v *RegistryValidator) EvaluateResolvedStep(action string, blueprint models.WorkflowBlueprint, stepIndex int, params map[string]interface{}, token *models.ValidationToken) *ResolvedPolicyViolation {
+	checkedRuleIDs := []string{}
+	var violation *ResolvedPolicyViolation
+
+	if key, value, found := firstSensitiveEntry(params, ""); found {
+		violation = &ResolvedPolicyViolation{
+			StepIndex: stepIndex,
+			ParamKey:  key,
+			RuleID:    "GLOBAL-SAFETY-002",
+			Value:     value,
+			Reason:    "resolved parameters contain a sensitive credential-like key",
+		}
+	}
+
+	if violation == nil && token != nil {
+		for _, deferred := range token.DeferredChecks {
+			if deferred.StepIndex != stepIndex {
+				continue
+			}
+			for _, ruleID := range deferred.RuleIDs {
+				checkedRuleIDs = append(checkedRuleIDs, ruleID)
+				rule, ok := v.enabledRuleByID(ruleID)
+				if !ok {
+					violation = &ResolvedPolicyViolation{
+						StepIndex: stepIndex,
+						ParamKey:  deferred.ParamKey,
+						RuleID:    ruleID,
+						Value:     params[deferred.ParamKey],
+						Reason:    "deferred rule has no enabled evaluator",
+					}
+					break
+				}
+				failed, evaluable, reason := evaluateResolvedRule(rule, blueprint, blueprint.Steps[stepIndex], deferred.ParamKey, params)
+				if !evaluable || failed {
+					if !evaluable {
+						reason = "deferred rule has no evaluator"
+					}
+					violation = &ResolvedPolicyViolation{
+						StepIndex: stepIndex,
+						ParamKey:  deferred.ParamKey,
+						RuleID:    ruleID,
+						Value:     params[deferred.ParamKey],
+						Reason:    reason,
+					}
+					break
+				}
+			}
+			if violation != nil {
+				break
+			}
+		}
+	}
+
+	contentHash := ""
+	registryHash := v.RegistryHash()
+	if token != nil {
+		contentHash = token.WorkflowContentHash
+		registryHash = token.RegistryHash
+	}
+	ruleResults := map[string]interface{}{
+		"step_index":       stepIndex,
+		"checked_rule_ids": uniqueStrings(checkedRuleIDs),
+		"sensitive_scan":   violation == nil || violation.RuleID != "GLOBAL-SAFETY-002",
+	}
+	if violation != nil {
+		ruleResults["failed_rule"] = violation.RuleID
+		ruleResults["param_key"] = violation.ParamKey
+		ruleResults["reason"] = violation.Reason
+	}
+	v.auditDecision(action, "runtime", violation == nil, contentHash, registryHash, ruleResults)
+	return violation
+}
+
+func evaluateResolvedRule(rule registry.Rule, blueprint models.WorkflowBlueprint, step models.WorkflowStepBlueprint, paramKey string, params map[string]interface{}) (bool, bool, string) {
+	switch rule.RuleType {
+	case "amount_threshold", "quantity_threshold":
+		value, ok := params[paramKey]
+		if !ok || containsUnresolvedTemplate(value) {
+			return true, true, message(rule, fmt.Sprintf("Step %s parameter %s did not resolve to an evaluable value", step.ID, paramKey))
+		}
+		if _, ok := numeric(value); !ok {
+			return true, true, message(rule, fmt.Sprintf("Step %s parameter %s did not resolve to a numeric value", step.ID, paramKey))
+		}
+		return evaluateThresholdValue(rule, blueprint, step, value)
+	case "parameter_required":
+		value, ok := params[paramKey]
+		if !ok || isEmptyValue(value) || containsUnresolvedTemplate(value) {
+			return true, true, message(rule, fmt.Sprintf("Step %s missing resolved parameter %s", step.ID, paramKey))
+		}
+		return false, true, ""
+	case "data_confidentiality":
+		if key, _, found := firstSensitiveEntry(params, ""); found {
+			return true, true, message(rule, fmt.Sprintf("Step %s contains sensitive resolved parameter %s", step.ID, key))
+		}
+		return false, true, ""
+	default:
+		return false, false, ""
+	}
+}
+
+func evaluateThresholdValue(rule registry.Rule, blueprint models.WorkflowBlueprint, step models.WorkflowStepBlueprint, rawValue interface{}) (bool, bool, string) {
+	threshold, thresholdOK := numeric(rule.Condition.Value)
+	value, valueOK := numeric(rawValue)
+	if !thresholdOK || !valueOK || strings.TrimSpace(rule.Condition.Parameter) == "" || !validNumericOperator(rule.Condition.Operator) {
+		return false, false, ""
+	}
+	if !compareNumber(value, rule.Condition.Operator, threshold) {
+		return false, true, ""
+	}
+
+	switch rule.EnforcementAction {
+	case "require_human_approval":
+		if hasApprovalStep(blueprint) {
+			return false, true, ""
+		}
+		return true, true, message(rule, fmt.Sprintf("Step %s has %s %.2f and requires human approval", step.ID, rule.Condition.Parameter, value))
+	case "block":
+		return true, true, message(rule, fmt.Sprintf("Step %s has blocked %s value %.2f", step.ID, rule.Condition.Parameter, value))
+	default:
+		return false, false, ""
+	}
+}
+
+func validNumericOperator(operator string) bool {
+	switch operator {
+	case ">", ">=", "<", "<=", "==", "!=":
+		return true
+	default:
+		return false
+	}
+}
+
+func (v *RegistryValidator) enabledRuleByID(ruleID string) (registry.Rule, bool) {
+	for _, rule := range v.Rules.GetEnabledRules() {
+		if strings.EqualFold(strings.TrimSpace(rule.RuleID), strings.TrimSpace(ruleID)) {
+			return rule, true
+		}
+	}
+	return registry.Rule{}, false
+}
+
+func (v *RegistryValidator) deferSensitiveTemplateChecks(stepIndex int, step models.WorkflowStepBlueprint, tool registry.Tool, userRole string, result *CandidateValidationResult) {
+	for paramKey, value := range step.Parameters {
+		if !containsUnresolvedTemplate(value) {
+			continue
+		}
+		for _, rule := range v.Rules.GetEnabledRules() {
+			if !isSensitivityRule(rule) || !ruleAppliesToCandidate(rule, []registry.Tool{tool}, userRole, tool.RiskLevel) {
+				continue
+			}
+			result.addDeferredCheck(stepIndex, paramKey, rule.RuleID)
+		}
+	}
+}
+
+func isSensitivityRule(rule registry.Rule) bool {
+	return rule.RuleType == "data_confidentiality" || rule.Condition.Type == "sensitive_key"
+}
+
 func (r *CandidateValidationResult) addError(code, text string) {
 	item := code + ": " + text
 	if !containsString(r.Errors, item) {
@@ -301,6 +565,24 @@ func (r *CandidateValidationResult) addRuleError(ruleID, text string) {
 	if ruleID != "" && !containsString(r.FailedRules, ruleID) {
 		r.FailedRules = append(r.FailedRules, ruleID)
 	}
+}
+
+func (r *CandidateValidationResult) addDeferredCheck(stepIndex int, paramKey, ruleID string) {
+	if strings.TrimSpace(ruleID) == "" {
+		return
+	}
+	for index := range r.DeferredChecks {
+		check := &r.DeferredChecks[index]
+		if check.StepIndex != stepIndex || check.ParamKey != paramKey {
+			continue
+		}
+		if !containsString(check.RuleIDs, ruleID) {
+			check.RuleIDs = append(check.RuleIDs, ruleID)
+			sort.Strings(check.RuleIDs)
+		}
+		return
+	}
+	r.DeferredChecks = append(r.DeferredChecks, models.DeferredCheck{StepIndex: stepIndex, ParamKey: paramKey, RuleIDs: []string{ruleID}})
 }
 
 func (r *CandidateValidationResult) finish() {
@@ -347,16 +629,49 @@ func isEmptyValue(value interface{}) bool {
 }
 
 func containsSensitiveKey(value interface{}) bool {
+	_, _, found := firstSensitiveEntry(value, "")
+	return found
+}
+
+func firstSensitiveEntry(value interface{}, path string) (string, interface{}, bool) {
 	switch typed := value.(type) {
 	case map[string]interface{}:
 		for key, item := range typed {
-			if isSensitiveKey(key) || containsSensitiveKey(item) {
+			itemPath := key
+			if path != "" {
+				itemPath = path + "." + key
+			}
+			if isSensitiveKey(key) {
+				return itemPath, item, true
+			}
+			if nestedKey, nestedValue, found := firstSensitiveEntry(item, itemPath); found {
+				return nestedKey, nestedValue, true
+			}
+		}
+	case []interface{}:
+		for index, item := range typed {
+			itemPath := fmt.Sprintf("%s[%d]", path, index)
+			if nestedKey, nestedValue, found := firstSensitiveEntry(item, itemPath); found {
+				return nestedKey, nestedValue, true
+			}
+		}
+	}
+	return "", nil, false
+}
+
+func containsUnresolvedTemplate(value interface{}) bool {
+	switch typed := value.(type) {
+	case string:
+		return strings.Contains(typed, "{{") && strings.Contains(typed, "}}")
+	case map[string]interface{}:
+		for _, item := range typed {
+			if containsUnresolvedTemplate(item) {
 				return true
 			}
 		}
 	case []interface{}:
 		for _, item := range typed {
-			if containsSensitiveKey(item) {
+			if containsUnresolvedTemplate(item) {
 				return true
 			}
 		}
@@ -651,4 +966,92 @@ func message(rule registry.Rule, fallback string) string {
 		return rule.ValidatorMessage
 	}
 	return fallback
+}
+
+// ParseWorkflowYAMLStrict rejects unknown fields and multiple YAML documents.
+func ParseWorkflowYAMLStrict(raw string) (models.WorkflowBlueprint, error) {
+	var blueprint models.WorkflowBlueprint
+	decoder := yaml.NewDecoder(strings.NewReader(parser.StripMarkdownFence(raw)))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&blueprint); err != nil {
+		return blueprint, fmt.Errorf("parse workflow yaml: %w", err)
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return blueprint, fmt.Errorf("parse workflow yaml: multiple YAML documents are not allowed")
+		}
+		return blueprint, fmt.Errorf("parse workflow yaml: %w", err)
+	}
+	return blueprint, nil
+}
+
+// WorkflowContentHash hashes the exact bytes presented to the validation gate.
+func WorkflowContentHash(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func (v *RegistryValidator) RegistryHash() string {
+	sum := sha256.Sum256([]byte(v.Tools.Version() + "\x00" + v.Rules.Version()))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func (v *RegistryValidator) auditDecision(action, actorRole string, passed bool, contentHash, registryHash string, ruleResults map[string]interface{}) {
+	timestamp := time.Now().UTC()
+	actorRole = strings.TrimSpace(actorRole)
+	if actorRole == "" {
+		actorRole = "anonymous"
+	}
+	v.Store.Mu.Lock()
+	defer v.Store.Mu.Unlock()
+	v.Store.Audit(
+		models.Principal{ID: actorRole, Name: actorRole},
+		"validation.gate."+action,
+		models.ResourceRef{Type: "workflow_validation", ID: contentHash},
+		nil,
+		map[string]interface{}{
+			"path_action":           action,
+			"passed":                passed,
+			"rule_results":          ruleResults,
+			"registry_hash":         registryHash,
+			"workflow_content_hash": contentHash,
+			"timestamp":             timestamp,
+		},
+		"",
+		"deterministic-validation-gate",
+	)
+}
+
+func cloneDeferredChecks(checks []models.DeferredCheck) []models.DeferredCheck {
+	out := make([]models.DeferredCheck, len(checks))
+	for index, check := range checks {
+		out[index] = models.DeferredCheck{
+			StepIndex: check.StepIndex,
+			ParamKey:  check.ParamKey,
+			RuleIDs:   append([]string{}, check.RuleIDs...),
+		}
+	}
+	return out
+}
+
+func (v *RegistryValidator) signToken(token *models.ValidationToken) string {
+	payload := struct {
+		WorkflowContentHash string                 `json:"workflow_content_hash"`
+		RegistryHash        string                 `json:"registry_hash"`
+		PassedAt            time.Time              `json:"passed_at"`
+		DeferredChecks      []models.DeferredCheck `json:"deferred_checks"`
+	}{
+		WorkflowContentHash: token.WorkflowContentHash,
+		RegistryHash:        token.RegistryHash,
+		PassedAt:            token.PassedAt,
+		DeferredChecks:      token.DeferredChecks,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		panic("marshal validation token proof payload: " + err.Error())
+	}
+	mac := hmac.New(sha256.New, v.tokenKey[:])
+	_, _ = mac.Write(raw)
+	return hex.EncodeToString(mac.Sum(nil))
 }

@@ -1,8 +1,10 @@
+import { apiClient } from "../config/axios";
+import { unwrap } from "./api";
+
 export const uploadService = {
   async upload(file) {
-    return {
-      id: `file-${Date.now()}`,
-      name: file?.name ?? "workflow.yaml",
-    };
+    const data = new FormData();
+    data.append("file", file);
+    return unwrap(await apiClient.post("/upload", data, { headers: { "Content-Type": "multipart/form-data" } }));
   },
 };

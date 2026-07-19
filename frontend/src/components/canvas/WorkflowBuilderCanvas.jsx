@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { dump as dumpYaml } from "js-yaml";
 import {
   addEdge,
   applyEdgeChanges,
@@ -38,6 +40,11 @@ import {
   takeWorkflowForCanvas,
   workflowYamlToCanvas,
 } from "../../utils/workflowCanvas.utils";
+import { catalogService } from "../../services/catalog.service";
+import { workflowService } from "../../services/workflow.service";
+import { executionService } from "../../services/execution.service";
+import { apiErrorMessage } from "../../services/api";
+import { useNotifications } from "../../context/NotificationContext";
 
 const iconMap = {
   AlertCircle,
@@ -54,84 +61,6 @@ const iconMap = {
   Warehouse,
 };
 
-const toolCatalog = [
-  {
-    title: "HR Tools",
-    description: "Employee records, leave approvals, and HR notifications.",
-    tools: [
-      {
-        label: "Get Employee",
-        action: "fetch_record",
-        description: "Fetch employee profile and department metadata.",
-        iconKey: "UserSearch",
-        role: "hr_manager",
-        tone: "violet",
-      },
-      {
-        label: "Approve Leave",
-        action: "approve_request",
-        description: "Approve a leave request with supervisor controls.",
-        iconKey: "UserCheck",
-        role: "supervisor",
-        tone: "emerald",
-      },
-      {
-        label: "Policy Check",
-        action: "check_policy_limit",
-        description: "Validate HR or travel request against policy limits.",
-        iconKey: "ShieldCheck",
-        role: "supervisor",
-        tone: "blue",
-      },
-      {
-        label: "Send HR Notice",
-        action: "send_email_notification",
-        description: "Notify employee, HR, or supervisor by role.",
-        iconKey: "Mail",
-        role: "hr_manager",
-        tone: "amber",
-      },
-    ],
-  },
-  {
-    title: "Inventory Tools",
-    description: "Purchase-to-pay and inventory execution blocks.",
-    tools: [
-      {
-        label: "Check Stock",
-        action: "fetch_record",
-        description: "Read stock levels and warehouse availability.",
-        iconKey: "Boxes",
-        role: "warehouse_staff",
-        tone: "sky",
-      },
-      {
-        label: "Create PO",
-        action: "create_purchase_order",
-        description: "Create a governed purchase order for a vendor.",
-        iconKey: "ShoppingCart",
-        role: "procurement_officer",
-        tone: "purple",
-      },
-      {
-        label: "Goods Receipt",
-        action: "record_goods_receipt",
-        description: "Record goods received against a purchase order.",
-        iconKey: "PackageCheck",
-        role: "warehouse_staff",
-        tone: "green",
-      },
-      {
-        label: "Clear Invoice",
-        action: "clear_invoice",
-        description: "Clear invoice after receipt and invoice matching.",
-        iconKey: "FileCheck2",
-        role: "finance_officer",
-        tone: "rose",
-      },
-    ],
-  },
-];
 
 const statusMeta = {
   idle: {
@@ -175,70 +104,6 @@ const toneClasses = {
   violet: "bg-violet-50 text-violet-700 border-violet-200",
 };
 
-const initialNodes = [
-  {
-    id: "node-1",
-    type: "erpTool",
-    position: { x: 120, y: 140 },
-    data: {
-      label: "Get Employee",
-      action: "fetch_record",
-      description: "Fetch employee and department context.",
-      iconKey: "UserSearch",
-      role: "hr_manager",
-      status: "idle",
-      tone: "violet",
-    },
-  },
-  {
-    id: "node-2",
-    type: "erpTool",
-    position: { x: 450, y: 140 },
-    data: {
-      label: "Approve Leave",
-      action: "approve_request",
-      description: "Approve governed leave request.",
-      iconKey: "UserCheck",
-      role: "supervisor",
-      status: "idle",
-      tone: "emerald",
-    },
-  },
-  {
-    id: "node-3",
-    type: "erpTool",
-    position: { x: 780, y: 140 },
-    data: {
-      label: "Send HR Notice",
-      action: "send_email_notification",
-      description: "Notify employee and HR team.",
-      iconKey: "Mail",
-      role: "hr_manager",
-      status: "idle",
-      tone: "amber",
-    },
-  },
-];
-
-const initialEdges = [
-  {
-    id: "edge-1-2",
-    source: "node-1",
-    target: "node-2",
-    type: "smoothstep",
-    markerEnd: { type: MarkerType.ArrowClosed },
-    style: { stroke: "#64748b", strokeWidth: 2 },
-  },
-  {
-    id: "edge-2-3",
-    source: "node-2",
-    target: "node-3",
-    type: "smoothstep",
-    markerEnd: { type: MarkerType.ArrowClosed },
-    style: { stroke: "#64748b", strokeWidth: 2 },
-  },
-];
-
 function getInitialCanvasState() {
   const pendingWorkflow = takeWorkflowForCanvas();
   if (pendingWorkflow?.canExecute && pendingWorkflow.yaml) {
@@ -251,11 +116,12 @@ function getInitialCanvasState() {
   }
 
   return {
-    nodes: initialNodes,
-    edges: initialEdges,
+    nodes: [],
+    edges: [],
     workflow: {
-      name: "Agentic Workflow Builder",
-      description: "Drag tools into the canvas and connect them into governed execution flows.",
+      id: null,
+      name: "Untitled workflow",
+      description: "Workflow created in the governed visual builder.",
       yaml: "",
     },
   };
@@ -349,7 +215,7 @@ function ToolCatalogItem({ tool }) {
   );
 }
 
-function BuilderSidebar() {
+function BuilderSidebar({ groups = [], loading, error }) {
   return (
     <aside className="flex h-screen w-[300px] shrink-0 flex-col border-r border-slate-200 bg-slate-50">
       <div className="border-b border-slate-200 px-5 py-5">
@@ -360,7 +226,10 @@ function BuilderSidebar() {
         </p>
       </div>
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-5">
-        {toolCatalog.map((group) => (
+        {loading ? <p className="text-sm text-slate-500">Loading registered tools…</p> : null}
+        {error ? <p className="text-sm text-red-600">{apiErrorMessage(error, "Tool catalog unavailable.")}</p> : null}
+        {!loading && !error && groups.length === 0 ? <p className="text-sm text-slate-500">No available tools are registered.</p> : null}
+        {groups.map((group) => (
           <section key={group.title}>
             <div className="mb-3">
               <h3 className="text-sm font-extrabold text-slate-900">{group.title}</h3>
@@ -429,14 +298,16 @@ function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, statusCou
 
 function WorkflowBuilderSurface() {
   const reactFlowWrapper = useRef(null);
-  const nodeIdRef = useRef(4);
+  const nodeIdRef = useRef(1);
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [initialCanvasState] = useState(getInitialCanvasState);
   const [nodes, setNodes] = useState(initialCanvasState.nodes);
   const [edges, setEdges] = useState(initialCanvasState.edges);
-  const [workflow] = useState(initialCanvasState.workflow);
+  const [workflow, setWorkflow] = useState(initialCanvasState.workflow);
   const [executionState, setExecutionState] = useState("idle");
   const [isExecuting, setIsExecuting] = useState(false);
+  const { notify } = useNotifications();
+  const catalogQuery = useQuery({ queryKey: ["tool-catalog-groups"], queryFn: catalogService.toolGroups });
 
   const nodeTypes = useMemo(() => ({ erpTool: WorkflowToolNode }), []);
 
@@ -508,9 +379,49 @@ function WorkflowBuilderSurface() {
     [screenToFlowPosition],
   );
 
-  const simulateExecution = useCallback(async () => {
-    if (isExecuting || nodes.length === 0) return;
+  const workflowYAML = useCallback(() => {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const incoming = new Map(nodes.map((node) => [node.id, 0]));
+    edges.forEach((edge) => incoming.has(edge.target) && incoming.set(edge.target, incoming.get(edge.target) + 1));
+    const queue = nodes.filter((node) => incoming.get(node.id) === 0);
+    const ordered = [];
+    while (queue.length) {
+      const node = queue.shift();
+      ordered.push(node);
+      edges.filter((edge) => edge.source === node.id).forEach((edge) => {
+        if (!nodeById.has(edge.target)) return;
+        incoming.set(edge.target, incoming.get(edge.target) - 1);
+        if (incoming.get(edge.target) === 0) queue.push(nodeById.get(edge.target));
+      });
+    }
+    if (ordered.length !== nodes.length) throw new Error("The canvas contains a cycle. Workflows must be acyclic.");
+    return dumpYaml({
+      name: workflow.name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toLowerCase() || "workflow",
+      description: workflow.description,
+      trigger: { type: "user.requested", displayName: "Manual request" },
+      steps: ordered.map((node) => ({ id: node.id, action: node.data.action, parameters: node.data.parameters || {}, description: node.data.description })),
+    }, { noRefs: true, lineWidth: 100 });
+  }, [edges, nodes, workflow.description, workflow.name]);
 
+  const deployWorkflow = useCallback(async () => {
+    if (nodes.length === 0) throw new Error("Add at least one registered tool before deploying.");
+    const yaml = workflowYAML();
+    let saved = workflow;
+    if (workflow.id) {
+      await workflowService.saveYAML(workflow.id, yaml);
+    } else {
+      saved = await workflowService.create({ name: workflow.name, description: workflow.description, yaml });
+    }
+    await workflowService.publish(saved.id, "Published from visual builder");
+    saved = { ...saved, id: saved.id, yaml };
+    setWorkflow(saved);
+    fitView({ padding: 0.2, duration: 400 });
+    notify(`Workflow ${saved.name} deployed.`, "success");
+    return saved;
+  }, [fitView, nodes.length, notify, workflow, workflowYAML]);
+
+  const executeWorkflow = useCallback(async () => {
+    if (isExecuting || nodes.length === 0) return;
     setIsExecuting(true);
     setExecutionState("running");
     setNodes((currentNodes) =>
@@ -520,54 +431,44 @@ function WorkflowBuilderSurface() {
       })),
     );
 
-    for (const node of nodes) {
+    try {
+      const saved = workflow.id ? workflow : await deployWorkflow();
+      const execution = await workflowService.run(saved.id, {});
+      const timeline = await executionService.getTimeline(execution.id);
+      const statusByNode = new Map(timeline.map((step) => [step.nodeId, step.status]));
       setNodes((currentNodes) =>
-        currentNodes.map((currentNode) =>
-          currentNode.id === node.id
-            ? { ...currentNode, data: { ...currentNode.data, status: "running" } }
-            : currentNode,
-        ),
+        currentNodes.map((node) => ({
+          ...node,
+          data: { ...node.data, status: statusByNode.get(node.id) === "DONE" ? "success" : statusByNode.get(node.id) === "FAILED" ? "error" : "idle" },
+        })),
       );
-
-      // Hook your Go backend execution API here, for example:
-      // await executionService.runWorkflowStep(workflowId, node.data.action, node.data.parameters)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const nextStatus = node.data.shouldFail ? "error" : "success";
-      setNodes((currentNodes) =>
-        currentNodes.map((currentNode) =>
-          currentNode.id === node.id
-            ? { ...currentNode, data: { ...currentNode.data, status: nextStatus } }
-            : currentNode,
-        ),
-      );
-
-      if (nextStatus === "error") {
-        setExecutionState("error");
-        setIsExecuting(false);
-        return;
-      }
+      const succeeded = execution.status === "DONE";
+      setExecutionState(succeeded ? "success" : "error");
+      notify(`Execution ${execution.id} finished with status ${execution.status}.`, succeeded ? "success" : "warning");
+    } catch (error) {
+      setExecutionState("error");
+      notify(apiErrorMessage(error, "Workflow execution failed."), "error");
+    } finally {
+      setIsExecuting(false);
     }
+  }, [deployWorkflow, isExecuting, nodes.length, notify, workflow]);
 
-    setExecutionState("success");
-    setIsExecuting(false);
-  }, [isExecuting, nodes]);
-
-  const deployWorkflow = useCallback(() => {
-    // Hook your Go backend deploy API here, for example:
-    // await workflowService.deployWorkflow({ nodes, edges })
-    fitView({ padding: 0.2, duration: 400 });
-  }, [fitView]);
+  const handleDeploy = useCallback(async () => {
+    setIsExecuting(true);
+    try { await deployWorkflow(); }
+    catch (error) { notify(apiErrorMessage(error, "Workflow deployment failed."), "error"); }
+    finally { setIsExecuting(false); }
+  }, [deployWorkflow, notify]);
 
   return (
     <div className="fixed inset-y-0 right-0 left-0 z-50 flex overflow-hidden bg-slate-100 text-slate-950 md:left-16">
-      <BuilderSidebar />
+      <BuilderSidebar groups={catalogQuery.data || []} loading={catalogQuery.isLoading} error={catalogQuery.error} />
       <section className="flex min-w-0 flex-1 flex-col">
         <BuilderHeader
           executionState={executionState}
           isExecuting={isExecuting}
-          onRun={simulateExecution}
-          onDeploy={deployWorkflow}
+          onRun={executeWorkflow}
+          onDeploy={handleDeploy}
           statusCounts={statusCounts}
           workflow={workflow}
         />

@@ -4,6 +4,7 @@ export const WORKFLOW_STATUS = {
   DONE: "DONE",
   FAILED: "FAILED",
   HEALING: "HEALING",
+  DRAFT_UNVALIDATED: "draft-unvalidated",
 };
 
 export const STATUS_META = {
@@ -31,5 +32,10 @@ export const STATUS_META = {
     label: "Healing",
     tone: "purple",
     color: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300",
+  },
+  "draft-unvalidated": {
+    label: "Unvalidated draft",
+    tone: "gray",
+    color: "bg-gray-100 text-gray-700 dark:bg-gray-500/15 dark:text-gray-300",
   },
 };

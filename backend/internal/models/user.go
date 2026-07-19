@@ -15,6 +15,7 @@ type User struct {
 	Permissions      []string   `json:"permissions"`
 	Status           string     `json:"status"`
 	Initials         string     `json:"initials"`
+	Timezone         string     `json:"timezone,omitempty"`
 	LastLoginAt      *time.Time `json:"lastLoginAt"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	TwoFactorEnabled bool       `json:"twoFactorEnabled,omitempty"`

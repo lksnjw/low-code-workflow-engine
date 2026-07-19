@@ -81,7 +81,7 @@ func Load() Config {
 		FrontendURL:                        getEnv("FRONTEND_URL", "http://127.0.0.1:5173"),
 		JWTSecret:                          getEnv("JWT_SECRET", "local-development-secret-change-me"),
 		TokenTTL:                           time.Duration(getEnvInt("JWT_EXPIRES_MINUTES", 60)) * time.Minute,
-		AllowDevAuth:                       getEnvBool("ALLOW_DEV_AUTH", true),
+		AllowDevAuth:                       getEnvBool("ALLOW_DEV_AUTH", false),
 		DevUserRole:                        devUserRole,
 		DatabaseURL:                        getEnv("DATABASE_URL", "postgres://workflow:workflow@localhost:5432/workflow?sslmode=disable"),
 		RedisURL:                           getEnv("REDIS_URL", "redis://localhost:6379/0"),

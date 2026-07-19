@@ -23,13 +23,7 @@ func NewMCPClient(baseURL string, timeout time.Duration) *MCPClient {
 
 func (c *MCPClient) Execute(ctx context.Context, action string, params map[string]interface{}) (map[string]interface{}, error) {
 	if c.BaseURL == "" {
-		return map[string]interface{}{
-			"mock":       true,
-			"action":     action,
-			"parameters": params,
-			"status":     "accepted",
-			"message":    "MCP_BASE_URL is empty, so the backend returned a local deterministic mock result.",
-		}, nil
+		return nil, fmt.Errorf("MCP_BASE_URL is not configured; refusing to simulate tool %q", action)
 	}
 
 	body, err := json.Marshal(map[string]interface{}{

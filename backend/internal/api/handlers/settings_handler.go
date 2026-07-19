@@ -1,7 +1,12 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -89,7 +94,15 @@ func (h *Handler) ListWebhooks(c *fiber.Ctx) error {
 
 func (h *Handler) CreateWebhook(c *fiber.Ctx) error {
 	body := decodeMap(c)
-	webhook := &models.Webhook{ID: "wh_" + randomHex(4), Name: fmt.Sprint(body["name"]), URL: fmt.Sprint(body["url"]), Events: parseStringSlice(body["events"]), Enabled: true, SecretPreview: "whsec_...." + randomHex(2), CreatedAt: time.Now().UTC()}
+	name := strings.TrimSpace(fmt.Sprint(body["name"]))
+	endpoint := strings.TrimSpace(fmt.Sprint(body["url"]))
+	if name == "" || name == "<nil>" {
+		return fiber.NewError(fiber.StatusBadRequest, "Webhook name is required")
+	}
+	if _, err := outboundURL(endpoint); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	webhook := &models.Webhook{ID: "wh_" + randomHex(4), Name: name, URL: endpoint, Events: parseStringSlice(body["events"]), Enabled: true, SecretPreview: "whsec_...." + randomHex(2), CreatedAt: time.Now().UTC()}
 	h.Store.Mu.Lock()
 	h.Store.Webhooks[webhook.ID] = webhook
 	h.Store.Mu.Unlock()
@@ -108,6 +121,9 @@ func (h *Handler) UpdateWebhook(c *fiber.Ctx) error {
 		webhook.Name = name
 	}
 	if url := fmt.Sprint(body["url"]); url != "" && url != "<nil>" {
+		if _, err := outboundURL(url); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
 		webhook.URL = url
 	}
 	if events := parseStringSlice(body["events"]); len(events) > 0 {
@@ -127,7 +143,21 @@ func (h *Handler) DeleteWebhook(c *fiber.Ctx) error {
 }
 
 func (h *Handler) TestWebhook(c *fiber.Ctx) error {
-	return c.JSON(models.OK(map[string]interface{}{"delivered": true, "statusCode": 200, "latencyMs": 142}, "Webhook test delivered", nil))
+	h.Store.Mu.RLock()
+	webhook := h.Store.Webhooks[c.Params("id")]
+	h.Store.Mu.RUnlock()
+	if webhook == nil {
+		return fiber.NewError(fiber.StatusNotFound, "Webhook not found")
+	}
+	payload, err := json.Marshal(map[string]interface{}{"type": "webhook.test", "webhookId": webhook.ID, "sentAt": time.Now().UTC()})
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Could not encode webhook test")
+	}
+	result, err := probeEndpoint(http.MethodPost, webhook.URL, payload)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Webhook delivery failed", map[string]interface{}{"error": err.Error()}))
+	}
+	return c.JSON(models.OK(result, "Webhook test delivered", nil))
 }
 
 func (h *Handler) ListIntegrations(c *fiber.Ctx) error {
@@ -139,7 +169,12 @@ func (h *Handler) ListIntegrations(c *fiber.Ctx) error {
 
 func (h *Handler) CreateIntegration(c *fiber.Ctx) error {
 	body := decodeMap(c)
-	integration := &models.Integration{ID: "int_" + randomHex(4), Name: fmt.Sprint(body["name"]), Type: fmt.Sprint(body["type"]), Status: "Disconnected", Icon: "mdi:connection", Config: map[string]interface{}{}, CreatedAt: time.Now().UTC()}
+	name := strings.TrimSpace(fmt.Sprint(body["name"]))
+	integrationType := strings.TrimSpace(fmt.Sprint(body["type"]))
+	if name == "" || name == "<nil>" || integrationType == "" || integrationType == "<nil>" {
+		return fiber.NewError(fiber.StatusBadRequest, "Integration name and type are required")
+	}
+	integration := &models.Integration{ID: "int_" + randomHex(4), Name: name, Type: integrationType, Status: "Disconnected", Icon: "mdi:connection", Config: map[string]interface{}{}, CreatedAt: time.Now().UTC()}
 	if cfg, ok := body["config"].(map[string]interface{}); ok {
 		integration.Config = cfg
 	}
@@ -185,15 +220,34 @@ func (h *Handler) DeleteIntegration(c *fiber.Ctx) error {
 
 func (h *Handler) TestIntegration(c *fiber.Ctx) error {
 	now := time.Now().UTC()
-	h.Store.Mu.Lock()
-	if integration := h.Store.Integrations[c.Params("id")]; integration != nil {
-		integration.LastTestedAt = &now
+	h.Store.Mu.RLock()
+	integration := h.Store.Integrations[c.Params("id")]
+	h.Store.Mu.RUnlock()
+	if integration == nil {
+		return fiber.NewError(fiber.StatusNotFound, "Integration not found")
 	}
+	endpoint := integrationEndpoint(integration.Config)
+	result, err := probeEndpoint(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Integration test failed", map[string]interface{}{"error": err.Error(), "checkedAt": now}))
+	}
+	h.Store.Mu.Lock()
+	integration.LastTestedAt = &now
 	h.Store.Mu.Unlock()
-	return c.JSON(models.OK(map[string]interface{}{"connected": true, "latencyMs": 118, "checkedAt": now}, "Integration test passed", nil))
+	result["checkedAt"] = now
+	return c.JSON(models.OK(result, "Integration test passed", nil))
 }
 
 func (h *Handler) ConnectIntegration(c *fiber.Ctx) error {
+	h.Store.Mu.RLock()
+	integration := h.Store.Integrations[c.Params("id")]
+	h.Store.Mu.RUnlock()
+	if integration == nil {
+		return fiber.NewError(fiber.StatusNotFound, "Integration not found")
+	}
+	if _, err := probeEndpoint(http.MethodGet, integrationEndpoint(integration.Config), nil); err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Integration could not be connected", map[string]interface{}{"error": err.Error()}))
+	}
 	return h.setIntegrationStatus(c, "Connected")
 }
 
@@ -210,4 +264,48 @@ func (h *Handler) setIntegrationStatus(c *fiber.Ctx, status string) error {
 	}
 	integration.Status = status
 	return c.JSON(models.OK(integration, "Integration status updated", nil))
+}
+
+func integrationEndpoint(config map[string]interface{}) string {
+	for _, key := range []string{"baseUrl", "url", "endpoint"} {
+		if value := strings.TrimSpace(fmt.Sprint(config[key])); value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return ""
+}
+
+func outboundURL(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("a valid http or https URL is required")
+	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("credentials must not be embedded in URLs")
+	}
+	return parsed, nil
+}
+
+func probeEndpoint(method, endpoint string, body []byte) (map[string]interface{}, error) {
+	if _, err := outboundURL(endpoint); err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequest(method, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	started := time.Now()
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	latency := time.Since(started).Milliseconds()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("endpoint returned HTTP %d", response.StatusCode)
+	}
+	return map[string]interface{}{"connected": true, "delivered": true, "statusCode": response.StatusCode, "latencyMs": latency}, nil
 }

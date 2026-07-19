@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { Icon } from "@iconify/react";
+import { useQuery } from "@tanstack/react-query";
 import Breadcrumb from "./Breadcrumb";
 import CommandPalette from "./CommandPalette";
 import { appConfig } from "../../config/app";
@@ -7,6 +8,7 @@ import { useTheme } from "../../context/ThemeContext";
 import { useNotifications } from "../../context/NotificationContext";
 import { useAuthContext } from "../../context/AuthContext";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { notificationService } from "../../services/notification.service";
 
 function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
@@ -91,6 +93,12 @@ function Topbar() {
   const { isDarkMode, toggleTheme } = useTheme();
   const { notify } = useNotifications();
   const { user, logout } = useAuthContext();
+  const notificationQuery = useQuery({
+    queryKey: ["notifications", "unread"],
+    queryFn: () => notificationService.list({ unreadOnly: true, limit: 100 }),
+    refetchInterval: 30_000,
+  });
+  const unreadCount = notificationQuery.data?.length || 0;
 
   return (
     <header className="flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 dark:border-darkBackgroundVery dark:bg-darkBackground sm:px-6">
@@ -131,12 +139,14 @@ function Topbar() {
           type="button"
           className="icon-button relative hidden sm:flex"
           aria-label="Notifications"
-          onClick={() => notify("No critical alerts. Live log stream is healthy.")}
+          onClick={async () => {
+            const result = await notificationQuery.refetch();
+            const count = result.data?.length || 0;
+            notify(count ? `${count} unread notification${count === 1 ? "" : "s"}.` : "No unread notifications.");
+          }}
         >
           <Icon icon="mdi:bell-outline" className="h-5 w-5" />
-          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 text-[10px] font-bold text-white dark:border-gray-900">
-            3
-          </span>
+          {unreadCount ? <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white dark:border-gray-900">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
         </button>
 
         <UserMenu user={user} onLogout={logout} />

@@ -36,6 +36,16 @@ func main() {
 
 	store := repository.NewStore()
 	repository.ApplyDevUserRole(store, cfg.DevUserRole)
+	store.Settings.General = map[string]interface{}{
+		"appName": cfg.AppName, "environment": cfg.Environment, "frontendUrl": cfg.FrontendURL,
+	}
+	store.Settings.LLM = map[string]interface{}{
+		"provider": cfg.WorkflowGenerationProvider, "model": cfg.GeminiModel,
+		"semanticSearchMode": cfg.SemanticSearchMode, "managedByEnvironment": true,
+	}
+	store.Settings.RBAC = map[string]interface{}{
+		"developmentAuthEnabled": cfg.AllowDevAuth, "defaultRoleId": "role_builder",
+	}
 	synth := synthesizer.NewServiceWithProvider(cfg.OllamaBaseURL, cfg.OllamaModel, cfg.OllamaEnabled, cfg.WorkflowGenerationProvider, cfg.GeminiAPIKey, cfg.GeminiModel)
 	validator := workflowvalidator.NewWorkflowValidator()
 	var registryBundle *coreregistry.Bundle
@@ -47,7 +57,7 @@ func main() {
 	if err != nil {
 		zapLogger.Fatal("load semantic registries", zap.Error(err))
 	}
-	registryValidator := workflowvalidator.NewRegistryValidator(registryBundle.Tools, registryBundle.Rules)
+	registryValidator := workflowvalidator.NewRegistryValidator(registryBundle.Tools, registryBundle.Rules, store)
 	searchService := semanticsearch.NewServiceFromDataset(registryBundle, cfg.SemanticSearchMode, cfg.SemanticSearchURL, cfg.SemanticSearchAllowLexicalFallback)
 	chatOrchestrator := orchestrator.NewChatOrchestrator(searchService, synth, registryValidator)
 	mcp := tools.NewMCPClient(cfg.MCPBaseURL, cfg.MCPTimeout)
@@ -65,7 +75,7 @@ func main() {
 		}
 	}
 
-	exec := runner.NewExecutor(registry, zapLogger)
+	exec := runner.NewExecutor(registry, registryValidator, zapLogger)
 	healer := healing.NewHealer(synth)
 	handler := handlers.New(cfg, store, synth, validator, registryBundle, registryValidator, searchService, chatOrchestrator, exec, healer, zapLogger)
 

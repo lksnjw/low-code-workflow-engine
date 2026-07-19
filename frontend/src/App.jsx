@@ -23,9 +23,16 @@ import { AuthProvider, useAuthContext } from "./context/AuthContext";
 import { RouteProvider, useRoute } from "./context/RouteContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import PipelineConfigPage from "./pages/datafeed/PipelineConfigPage";
 import VectorMetricsPage from "./pages/datafeed/VectorMetricsPage";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 15_000, retry: 1, refetchOnWindowFocus: false },
+  },
+});
 
 const routeComponents = {
   "dashboard.overview": DashboardPage,
@@ -103,13 +110,15 @@ function AppRouter() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <NotificationProvider>
-        <AuthProvider>
-          <AppRouter />
-        </AuthProvider>
-      </NotificationProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <NotificationProvider>
+          <AuthProvider>
+            <AppRouter />
+          </AuthProvider>
+        </NotificationProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

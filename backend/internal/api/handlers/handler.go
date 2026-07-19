@@ -40,6 +40,9 @@ type Handler struct {
 }
 
 func New(cfg config.Config, store *repository.Store, synth *synthesizer.Service, validator *workflowvalidator.WorkflowValidator, dataset *coreregistry.Bundle, registryValidator *workflowvalidator.RegistryValidator, search *semanticsearch.Service, chatOrch *orchestrator.ChatOrchestrator, exec *runner.Executor, healer *healing.Healer, log *zap.Logger) *Handler {
+	if registryValidator == nil {
+		panic("handler requires a registry validator")
+	}
 	return &Handler{Cfg: cfg, Store: store, Synth: synth, Validator: validator, Dataset: dataset, RegistryValidator: registryValidator, Search: search, Orchestrator: chatOrch, Runner: exec, Healer: healer, Log: log}
 }
 
@@ -61,9 +64,6 @@ func (h *Handler) parseBody(c *fiber.Ctx, target interface{}) error {
 
 func (h *Handler) currentUserID(c *fiber.Ctx) string {
 	userID, _ := c.Locals(middlewares.UserIDKey).(string)
-	if userID == "" {
-		return "usr_001"
-	}
 	return userID
 }
 
@@ -74,7 +74,14 @@ func (h *Handler) currentUser(c *fiber.Ctx) *models.User {
 	if user, ok := h.Store.Users[userID]; ok {
 		return user
 	}
-	return h.Store.Users["usr_001"]
+	return nil
+}
+
+func (h *Handler) RequireUser(c *fiber.Ctx) error {
+	if h.currentUser(c) == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.Fail("Authenticated user no longer exists", nil))
+	}
+	return c.Next()
 }
 
 func (h *Handler) permissions(c *fiber.Ctx) []string {
@@ -82,7 +89,21 @@ func (h *Handler) permissions(c *fiber.Ctx) []string {
 	if user == nil {
 		return nil
 	}
-	return user.Permissions
+	return append([]string{}, user.Permissions...)
+}
+
+// Permissions exposes the authenticated principal's permissions to route
+// middleware without leaking the store into the routing package.
+func (h *Handler) Permissions(c *fiber.Ctx) []string {
+	return h.permissions(c)
+}
+
+func (h *Handler) validateWithFullGate(c *fiber.Ctx, action, rawYAML string) (*models.ValidationToken, *workflowvalidator.CandidateValidationResult, error) {
+	userRole := "anonymous"
+	if user := h.currentUser(c); user != nil {
+		userRole = user.Role.Name
+	}
+	return h.RegistryValidator.ValidateAndIssueToken(action, rawYAML, userRole)
 }
 
 func principalFromUser(user *models.User) models.Principal {
@@ -90,6 +111,25 @@ func principalFromUser(user *models.User) models.Principal {
 		return models.Principal{ID: "system", Name: "System"}
 	}
 	return models.Principal{ID: user.ID, Name: user.Name}
+}
+
+func publicUser(user *models.User) map[string]interface{} {
+	if user == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"id":               user.ID,
+		"name":             user.Name,
+		"email":            user.Email,
+		"role":             user.Role.Name,
+		"roleId":           user.Role.ID,
+		"permissions":      append([]string{}, user.Permissions...),
+		"status":           user.Status,
+		"initials":         user.Initials,
+		"timezone":         user.Timezone,
+		"twoFactorEnabled": user.TwoFactorEnabled,
+		"emailVerified":    user.EmailVerified,
+	}
 }
 
 func (h *Handler) tokenForUser(userID string) (models.TokenPair, error) {

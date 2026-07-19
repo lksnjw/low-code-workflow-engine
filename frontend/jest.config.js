@@ -1,6 +1,5 @@
 export default {
-  testEnvironment: "jsdom",
-  setupFilesAfterEnv: ["<rootDir>/src/tests/setup.js"],
+  testEnvironment: "node",
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
   },

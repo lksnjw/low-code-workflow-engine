@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
 import Card from "../shared/ui/Card";
-import { activityItems } from "../../constants/mockData";
+import { EmptyState } from "../shared/ResourceState";
 
 const tones = {
   green: "text-green-600 bg-green-50 dark:bg-green-500/10 dark:text-green-300",
@@ -10,7 +10,7 @@ const tones = {
   amber: "text-amber-600 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-300",
 };
 
-function ActivityFeed() {
+function ActivityFeed({ items = [] }) {
   return (
     <Card>
       <div className="mb-5 flex items-center justify-between">
@@ -18,17 +18,19 @@ function ActivityFeed() {
           <h2 className="section-title">Recent Activity</h2>
           <p className="section-subtitle mt-1">Live platform events and decisions.</p>
         </div>
-        <button className="text-sm font-semibold text-primary">View all</button>
+        <span className="text-xs font-semibold text-gray-500">{items.length} events</span>
       </div>
       <div className="space-y-3">
-        {activityItems.map((item) => (
+        {items.length === 0 ? (
+          <EmptyState title="No activity yet" description="Actions and executions will appear here." />
+        ) : items.map((item) => (
           <div
-            key={item.title}
+            key={item.id || `${item.title}-${item.createdAt}`}
             className="flex items-start gap-3 rounded-xl bg-backgroundLight p-3 dark:bg-darkBackgroundVery"
           >
             <span
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                tones[item.tone]
+                tones[item.tone] || tones.blue
               }`}
             >
               <Icon icon={item.icon} className="h-4 w-4" />

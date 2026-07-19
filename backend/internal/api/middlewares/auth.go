@@ -10,17 +10,15 @@ import (
 
 const UserIDKey = "userID"
 
-func Auth(secret string, allowDevToken bool) fiber.Handler {
+func Auth(secret string, _ bool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		header := c.Get("Authorization")
 		tokenText := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 
-		if tokenText == "" {
+		// Browser WebSocket clients cannot set an Authorization header. Limit
+		// query-token support to the WebSocket handshake route.
+		if tokenText == "" && strings.HasPrefix(c.Path(), "/ws/") {
 			tokenText = c.Query("token")
-		}
-		if allowDevToken && tokenText == "local-dev-token" {
-			c.Locals(UserIDKey, "usr_001")
-			return c.Next()
 		}
 		if tokenText == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(models.Fail("Missing access token", nil))

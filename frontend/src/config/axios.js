@@ -42,6 +42,7 @@ apiClient.interceptors.response.use(
     if (
       error?.response?.status === 401 &&
       !originalRequest._retry &&
+      !originalRequest.url?.startsWith("/auth/") &&
       localStorage.getItem("workflow.refreshToken")
     ) {
       if (isRefreshing) {

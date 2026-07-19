@@ -1,18 +1,19 @@
 import Card from "../shared/ui/Card";
-import { logs } from "../../constants/mockData";
 
-function LiveLogStream() {
+function logLine(log) {
+  const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "--:--:--";
+  return `[${timestamp}] ${log.level || "info"} ${log.nodeId || "system"} ${log.message || ""}`;
+}
+
+function LiveLogStream({ logs = [], executionId }) {
   return (
     <Card className="bg-gray-950 text-gray-100 dark:bg-black">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-bold text-white">Live Log Stream</h2>
-        <span className="relative rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-300">
-          <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-400" />
-          streaming
-        </span>
+        <div><h2 className="text-base font-bold text-white">Execution Logs</h2><p className="mt-1 text-xs text-gray-400">{executionId}</p></div>
+        <span className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-bold text-blue-300">recorded</span>
       </div>
       <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap text-xs leading-7 text-gray-300">
-        {logs.join("\n")}
+        {logs.length ? logs.map(logLine).join("\n") : "No logs were recorded for this execution."}
       </pre>
     </Card>
   );

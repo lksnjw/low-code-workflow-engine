@@ -1,13 +1,21 @@
 import { Icon } from "@iconify/react";
+import { useMemo, useState } from "react";
 import Button from "../../components/shared/ui/Button";
 import WorkflowCard from "../../components/workflows/WorkflowCard";
 import WorkflowFilters from "../../components/workflows/WorkflowFilters";
 import WorkflowTable from "../../components/workflows/WorkflowTable";
-import { workflows } from "../../constants/mockData";
+import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useRoute } from "../../context/RouteContext";
+import { useWorkflows } from "../../hooks/useWorkflows";
+import { useDebounce } from "../../hooks/useDebounce";
 
 function WorkflowListPage() {
-  const { navigateTo } = useRoute();
+  const { navigateTo, openWorkflow } = useRoute();
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const debouncedQuery = useDebounce(query);
+  const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined }), [debouncedQuery, status]);
+  const { workflows, loading, error, reload } = useWorkflows(params);
 
   return (
     <div className="space-y-6">
@@ -18,21 +26,22 @@ function WorkflowListPage() {
             Manage YAML-backed workflow definitions, ownership, triggers, and execution health.
           </p>
         </div>
-        <Button onClick={() => navigateTo("workflows", "builder")}>
-          <Icon icon="mdi:plus" className="h-5 w-5" />
-          New Workflow
-        </Button>
+        <Button onClick={() => navigateTo("workflows", "builder")}><Icon icon="mdi:plus" className="h-5 w-5" />New Workflow</Button>
       </div>
-
-      <WorkflowFilters />
-
-      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        {workflows.map((workflow) => (
-          <WorkflowCard key={workflow.id} workflow={workflow} />
-        ))}
-      </section>
-
-      <WorkflowTable workflows={workflows} />
+      <WorkflowFilters query={query} status={status} onQueryChange={setQuery} onStatusChange={setStatus} />
+      {loading ? <LoadingState label="Loading workflows…" /> : null}
+      {error ? <ErrorState error={error} onRetry={reload} /> : null}
+      {!loading && !error && workflows.length === 0 ? (
+        <EmptyState title={query || status ? "No matching workflows" : "No workflows yet"} description={query || status ? "Try changing the search or status filter." : "Create a blank workflow or generate one in the chat workspace."} />
+      ) : null}
+      {workflows.length > 0 ? (
+        <>
+          <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            {workflows.map((workflow) => <WorkflowCard key={workflow.id} workflow={workflow} onOpen={() => openWorkflow(workflow.id)} />)}
+          </section>
+          <WorkflowTable workflows={workflows} onOpen={openWorkflow} />
+        </>
+      ) : null}
     </div>
   );
 }

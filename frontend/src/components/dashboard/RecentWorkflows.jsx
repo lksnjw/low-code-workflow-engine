@@ -1,8 +1,8 @@
 import Card from "../shared/ui/Card";
 import WorkflowBadge from "../workflows/WorkflowBadge";
-import { workflows } from "../../constants/mockData";
+import { EmptyState } from "../shared/ResourceState";
 
-function RecentWorkflows() {
+function RecentWorkflows({ workflows = [] }) {
   return (
     <Card className="lg:col-span-2">
       <div className="mb-5 flex items-center justify-between">
@@ -16,7 +16,9 @@ function RecentWorkflows() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800">
-        {workflows.slice(0, 4).map((workflow) => (
+        {workflows.length === 0 ? (
+          <EmptyState title="No workflows yet" description="Create a workflow or generate one from chat." />
+        ) : workflows.slice(0, 4).map((workflow) => (
           <div
             key={workflow.id}
             className="grid gap-3 border-b border-gray-100 p-4 last:border-0 dark:border-gray-800 md:grid-cols-[1.5fr_0.7fr_0.7fr_auto]"

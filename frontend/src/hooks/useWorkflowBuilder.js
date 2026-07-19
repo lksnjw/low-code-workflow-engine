@@ -1,14 +1,8 @@
 import { useState } from "react";
-import { workflowNodes } from "../constants/mockData";
 
-export function useWorkflowBuilder() {
-  const [nodes, setNodes] = useState(workflowNodes);
-
-  return {
-    nodes,
-    setNodes,
-    addNode: (node) => setNodes((items) => [...items, node]),
-  };
+export function useWorkflowBuilder(initialNodes = []) {
+  const [nodes, setNodes] = useState(initialNodes);
+  return { nodes, setNodes, addNode: (node) => setNodes((items) => [...items, node]) };
 }
 
 export default useWorkflowBuilder;

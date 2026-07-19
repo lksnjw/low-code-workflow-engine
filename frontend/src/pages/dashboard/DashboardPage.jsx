@@ -4,28 +4,28 @@ import ActivityFeed from "../../components/dashboard/ActivityFeed";
 import QuickActions from "../../components/dashboard/QuickActions";
 import SystemHealth from "../../components/dashboard/SystemHealth";
 import RecentWorkflows from "../../components/dashboard/RecentWorkflows";
-import { dashboardMetrics } from "../../constants/mockData";
+import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
+import { useDashboard } from "../../hooks/useDashboard";
 
 function DashboardPage() {
+  const { data, loading, error, reload } = useDashboard();
+  if (loading) return <LoadingState label="Loading platform state…" />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+
   return (
     <div className="space-y-6">
       <WelcomeBanner />
-
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {dashboardMetrics.map((metric) => (
-          <StatsCard key={metric.label} metric={metric} />
-        ))}
+        {(data?.metrics || []).map((metric) => <StatsCard key={metric.key || metric.label} metric={metric} />)}
       </section>
-
       <section className="grid gap-4 xl:grid-cols-[1.45fr_0.8fr]">
-        <RecentWorkflows />
+        <RecentWorkflows workflows={data?.workflows || []} />
         <div className="grid gap-4">
           <QuickActions />
-          <SystemHealth />
+          <SystemHealth services={data?.health?.services || []} />
         </div>
       </section>
-
-      <ActivityFeed />
+      <ActivityFeed items={data?.activity || []} />
     </div>
   );
 }

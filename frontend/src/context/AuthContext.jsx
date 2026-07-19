@@ -89,6 +89,13 @@ export function AuthProvider({ children }) {
     setAuthError("");
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    const me = await authService.me();
+    setUser(me);
+    localStorage.setItem("workflow.user", JSON.stringify(me));
+    return me;
+  }, []);
+
   const clearError = useCallback(() => setAuthError(""), []);
 
   const value = useMemo(
@@ -100,9 +107,10 @@ export function AuthProvider({ children }) {
       login,
       register,
       logout,
+      refreshUser,
       clearError,
     }),
-    [user, loading, authError, login, register, logout, clearError]
+    [user, loading, authError, login, register, logout, refreshUser, clearError]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -437,147 +437,9 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func buildFallbackCandidates(req CandidateGenerationRequest, model string, cause error) []WorkflowCandidate {
-	if req.CandidateCount <= 0 {
-		req.CandidateCount = 5
-	}
-	selected := chooseFallbackTools(req.Tools)
-	if len(selected) == 0 {
-		selected = []registry.Tool{{
-			Name:               "capability.create_capability_request",
-			RequiredParameters: []string{"requested_capability", "business_reason"},
-			RiskLevel:          "low",
-		}}
-	}
-
-	out := make([]WorkflowCandidate, 0, req.CandidateCount)
-	for i := 1; i <= req.CandidateCount; i++ {
-		out = append(out, WorkflowCandidate{
-			CandidateID: fmt.Sprintf("candidate_%d", i),
-			RawYAML:     fallbackCandidateYAML(req, selected, i),
-			ModelName:   model,
-			GenerationMetadata: map[string]interface{}{
-				"fallback": true,
-				"format":   "deterministic",
-				"error":    errorText(cause),
-			},
-		})
-	}
-	return out
-}
-
-func chooseFallbackTools(tools []registry.Tool) []registry.Tool {
-	out := []registry.Tool{}
-	names := map[string]bool{}
-	preferred := []string{
-		"policy.check_policy_limit",
-		"procurement.validate_vendor",
-		"procurement.create_purchase_order",
-		"approval.request_human_approval",
-		"audit.write_audit_log",
-	}
-	for _, name := range preferred {
-		for _, tool := range tools {
-			if !isExecutableTool(tool) {
-				continue
-			}
-			if strings.EqualFold(tool.Name, name) && !names[strings.ToLower(tool.Name)] {
-				out = append(out, tool)
-				names[strings.ToLower(tool.Name)] = true
-			}
-		}
-	}
-	if len(out) > 0 {
-		return out
-	}
-	for _, tool := range tools {
-		if !isExecutableTool(tool) {
-			continue
-		}
-		if !names[strings.ToLower(tool.Name)] {
-			out = append(out, tool)
-			names[strings.ToLower(tool.Name)] = true
-		}
-		if len(out) == 4 {
-			break
-		}
-	}
-	return out
-}
-
 func isExecutableTool(tool registry.Tool) bool {
 	status := strings.ToLower(strings.TrimSpace(tool.Status))
 	return status == "" || status == "active_mcp_schema_present"
-}
-
-func fallbackCandidateYAML(req CandidateGenerationRequest, tools []registry.Tool, index int) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "name: chat_generated_workflow_%d\n", index)
-	fmt.Fprintf(&b, "description: Generated workflow candidate for the chat request.\n")
-	fmt.Fprintf(&b, "trigger:\n  type: user.requested\n  displayName: Chat request\n  config:\n    mode: %s\n", req.Mode)
-	fmt.Fprintf(&b, "steps:\n")
-	for stepIndex, tool := range tools {
-		fmt.Fprintf(&b, "  - id: step_%d_%s\n", stepIndex+1, safeID(tool.Name))
-		fmt.Fprintf(&b, "    action: %s\n", tool.Name)
-		fmt.Fprintf(&b, "    parameters:\n")
-		params := fallbackParams(req.Prompt, tool)
-		if len(params) == 0 {
-			fmt.Fprintf(&b, "      request: %q\n", req.Prompt)
-		} else {
-			for _, param := range tool.RequiredParameters {
-				fmt.Fprintf(&b, "      %s: %s\n", param, yamlScalar(params[param]))
-			}
-		}
-		fmt.Fprintf(&b, "    retryCount: 1\n")
-		fmt.Fprintf(&b, "    onError: self_heal\n")
-		fmt.Fprintf(&b, "    description: %q\n", "Execute "+tool.DisplayName)
-	}
-	return b.String()
-}
-
-func fallbackParams(prompt string, tool registry.Tool) map[string]interface{} {
-	params := map[string]interface{}{}
-	vendor := firstMatch(prompt, `(?i)\bV[-_ ]?\d+\b`)
-	quantity := firstNumber(prompt)
-	item := "requested_item"
-	if strings.Contains(strings.ToLower(prompt), "laptop") {
-		item = "laptops"
-	}
-	for _, param := range tool.RequiredParameters {
-		switch strings.ToLower(param) {
-		case "vendor_id":
-			if vendor == "" {
-				vendor = "{{input.vendor_id}}"
-			}
-			params[param] = strings.ReplaceAll(vendor, " ", "-")
-		case "item_id", "item_code":
-			params[param] = item
-		case "quantity", "received_quantity":
-			if quantity == 0 {
-				quantity = 1
-			}
-			params[param] = quantity
-		case "policy_domain":
-			params[param] = tool.Module
-		case "approval_reason":
-			params[param] = "Policy threshold or risk control required."
-		case "approver_role":
-			params[param] = "manager"
-		case "event_type":
-			params[param] = "workflow.generated"
-		case "actor_role":
-			params[param] = "{{input.user_role}}"
-		case "decision":
-			params[param] = "candidate_selected"
-		case "requested_capability":
-			params[param] = "missing_workflow_tool"
-		case "business_reason":
-			params[param] = prompt
-		default:
-			params[param] = "{{input." + param + "}}"
-		}
-	}
-	return params
 }
 
 func firstMatch(value, pattern string) string {
@@ -620,13 +482,6 @@ func limitCandidates(candidates []WorkflowCandidate, max int) []WorkflowCandidat
 		return candidates
 	}
 	return candidates[:max]
-}
-
-func errorText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 func redactPromptText(value string) string {

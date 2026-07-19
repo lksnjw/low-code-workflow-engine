@@ -57,20 +57,18 @@ func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string
 	prompt := s.Prompt.Build(userPrompt, mode, context)
 	yamlText, provider, err := s.generate(ctx, prompt, model)
 	if err != nil {
-		yamlText = FallbackYAML(userPrompt)
-		provider = "fallback"
+		return Result{}, err
 	}
 
 	return Result{
 		YAML:       yamlText,
-		Confidence: 0.91,
+		Confidence: 0,
 		Usage: map[string]interface{}{
-			"inputTokens":  1210,
-			"outputTokens": 830,
+			"inputTokens":  0,
+			"outputTokens": 0,
 			"costUsd":      0.0,
 			"provider":     provider,
-			"localModel":   s.Ollama.Model,
-			"fallback":     err != nil,
+			"measured":     false,
 		},
 	}, nil
 }
@@ -83,7 +81,14 @@ func (s *Service) generate(ctx context.Context, prompt, overrideModel string) (s
 		text, err := s.Gemini.Generate(ctx, prompt, overrideModel)
 		return text, "gemini", err
 	}
-	return "", s.Provider, fmt.Errorf("local workflow-generation provider %q is disabled for the final Gemini pipeline", s.Provider)
+	if strings.EqualFold(s.Provider, "ollama") {
+		if s.Ollama == nil {
+			return "", "ollama", fmt.Errorf("ollama client is not configured")
+		}
+		text, err := s.Ollama.Generate(ctx, prompt, overrideModel)
+		return text, "ollama", err
+	}
+	return "", s.Provider, fmt.Errorf("unsupported workflow-generation provider %q", s.Provider)
 }
 
 func (c *OllamaClient) Generate(ctx context.Context, prompt, overrideModel string) (string, error) {

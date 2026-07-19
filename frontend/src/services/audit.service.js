@@ -1,8 +1,8 @@
+import { apiClient } from "../config/axios";
+import { unwrap } from "./api";
+
 export const auditService = {
-  async list() {
-    return [
-      { id: "a1", actor: "Lakshan Jay", action: "Updated LLM policy" },
-      { id: "a2", actor: "Maya Silva", action: "Published workflow draft" },
-    ];
+  async list(params = {}) {
+    return unwrap(await apiClient.get("/audit", { params }), []);
   },
 };

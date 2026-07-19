@@ -1,72 +1,43 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { chatService } from "../services/chat.service";
 
 export function useChatSessions() {
-  const [sessions, setSessions] = useState([]);
+  const queryClient = useQueryClient();
   const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const loadSessions = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const items = await chatService.listSessions();
-      setSessions(items);
-      if (!selectedSessionId && items.length > 0) {
-        setSelectedSessionId(items[0].id);
-      }
-    } catch (err) {
-      setError(err?.response?.data?.message ?? "Could not load chat sessions");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedSessionId]);
+  const query = useQuery({ queryKey: ["chat-sessions"], queryFn: chatService.listSessions });
+  const sessions = query.data || [];
+  const activeSessionId = sessions.some((item) => item.id === selectedSessionId) ? selectedSessionId : sessions[0]?.id || "";
 
   const createSession = useCallback(async (title) => {
-    const session = await chatService.createSession(title);
-    setSessions((items) => [session, ...items]);
-    setSelectedSessionId(session.id);
-    return session;
-  }, []);
+    const created = await chatService.createSession(title);
+    queryClient.setQueryData(["chat-sessions"], (items = []) => [created, ...items]);
+    setSelectedSessionId(created.id);
+    return created;
+  }, [queryClient]);
 
-  const deleteSession = useCallback(
-    async (sessionId) => {
-      await chatService.deleteSession(sessionId);
-      setSessions((items) => items.filter((s) => s.id !== sessionId));
-      if (selectedSessionId === sessionId) {
-        setSessions((items) => {
-          const remaining = items.filter((s) => s.id !== sessionId);
-          setSelectedSessionId(remaining[0]?.id ?? "");
-          return remaining;
-        });
-      }
-    },
-    [selectedSessionId]
-  );
+  const deleteSession = useCallback(async (sessionId) => {
+    await chatService.deleteSession(sessionId);
+    queryClient.setQueryData(["chat-sessions"], (items = []) => items.filter((item) => item.id !== sessionId));
+    if (selectedSessionId === sessionId) setSelectedSessionId("");
+  }, [queryClient, selectedSessionId]);
 
   const renameSession = useCallback(async (sessionId, title) => {
     const updated = await chatService.updateSession(sessionId, title);
-    setSessions((items) =>
-      items.map((s) => (s.id === sessionId ? { ...s, title: updated.title ?? title } : s))
-    );
+    queryClient.setQueryData(["chat-sessions"], (items = []) => items.map((item) => item.id === sessionId ? { ...item, ...updated } : item));
     return updated;
-  }, []);
-
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+  }, [queryClient]);
 
   return {
     sessions,
-    selectedSessionId,
+    selectedSessionId: activeSessionId,
     setSelectedSessionId,
     createSession,
     deleteSession,
     renameSession,
-    reload: loadSessions,
-    loading,
-    error,
+    reload: query.refetch,
+    loading: query.isLoading,
+    error: query.error?.response?.data?.message || query.error?.message || "",
   };
 }
 

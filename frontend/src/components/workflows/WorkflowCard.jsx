@@ -2,9 +2,9 @@ import { Icon } from "@iconify/react";
 import Card from "../shared/ui/Card";
 import WorkflowBadge from "./WorkflowBadge";
 
-function WorkflowCard({ workflow }) {
+function WorkflowCard({ workflow, onOpen }) {
   return (
-    <Card className="flex h-full flex-col">
+    <Card as="button" type="button" onClick={onOpen} className="flex h-full w-full flex-col text-left transition hover:-translate-y-0.5 hover:shadow-lg">
       <div className="flex items-start justify-between gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Icon icon="tabler:git-branch" className="h-5 w-5" />

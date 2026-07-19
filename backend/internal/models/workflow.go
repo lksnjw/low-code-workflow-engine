@@ -3,11 +3,12 @@ package models
 import "time"
 
 const (
-	StatusPending = "PENDING"
-	StatusRunning = "RUNNING"
-	StatusDone    = "DONE"
-	StatusFailed  = "FAILED"
-	StatusHealing = "HEALING"
+	StatusPending          = "PENDING"
+	StatusRunning          = "RUNNING"
+	StatusDone             = "DONE"
+	StatusFailed           = "FAILED"
+	StatusHealing          = "HEALING"
+	StatusDraftUnvalidated = "draft-unvalidated"
 )
 
 type WorkflowBlueprint struct {

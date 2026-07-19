@@ -1,11 +1,4 @@
-import { useState } from "react";
 import { Icon } from "@iconify/react";
-
-const GEMINI_MODELS = [
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-];
 
 const MODES = [
   { value: "generate_workflow", label: "Generate Workflow" },
@@ -32,7 +25,7 @@ function SelectPill({ value, onChange, options, icon }) {
   );
 }
 
-function ChatToolbar({ model, onModelChange, mode, onModeChange }) {
+function ChatToolbar({ mode, onModeChange }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
       <div className="min-w-0">
@@ -43,14 +36,7 @@ function ChatToolbar({ model, onModelChange, mode, onModeChange }) {
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {/* Gemini model selector */}
-        <SelectPill
-          value={model}
-          onChange={onModelChange}
-          options={GEMINI_MODELS}
-          icon="simple-icons:googlegemini"
-        />
-        {/* Mode selector */}
+        <span className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-500 dark:border-gray-700">Environment model</span>
         <SelectPill
           value={mode}
           onChange={onModeChange}

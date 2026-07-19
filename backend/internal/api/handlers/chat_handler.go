@@ -44,8 +44,11 @@ func (h *Handler) Synthesize(c *fiber.Ctx) error {
 func (h *Handler) SynthesisValidate(c *fiber.Ctx) error {
 	body := decodeMap(c)
 	yamlText, _ := body["yaml"].(string)
-	validation, _ := h.Validator.ValidateYAML(yamlText, h.permissions(c))
-	return c.JSON(models.OK(validation, validationMessage(validation), nil))
+	_, validation, err := h.validateWithFullGate(c, "SynthesisValidate", yamlText)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(models.OK(validation, registryValidationMessage(validation), nil))
 }
 
 func (h *Handler) SynthesisPreviewFlow(c *fiber.Ctx) error {
@@ -155,24 +158,7 @@ func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
 	h.Store.Mu.Unlock()
 
 	if h.Orchestrator == nil {
-		result, _ := h.Synth.Synthesize(c.Context(), message, mode, model, map[string]interface{}{"workflowId": body["workflowId"]})
-		validation, blueprint := h.Validator.ValidateYAML(result.YAML, h.permissions(c))
-		canvas := previewCanvas("chat-preview", blueprint)
-		assistantMessage := models.ChatMessage{ID: "msg_" + randomHex(4), Role: "assistant", Text: "I generated a validated YAML workflow draft and updated the flow preview.", CreatedAt: now.Add(2 * time.Second)}
-		h.Store.Mu.Lock()
-		session.Messages = append(session.Messages, assistantMessage)
-		session.MessageCount = len(session.Messages)
-		session.UpdatedAt = now
-		h.Store.Mu.Unlock()
-		return c.JSON(models.OK(map[string]interface{}{
-			"userMessage":      userMessage,
-			"assistantMessage": assistantMessage,
-			"artifacts": map[string]interface{}{
-				"yaml":        result.YAML,
-				"flowPreview": canvas,
-				"validation":  validation,
-			},
-		}, "Message processed", nil))
+		return fiber.NewError(fiber.StatusServiceUnavailable, "chat orchestration is not configured")
 	}
 
 	user := h.currentUser(c)

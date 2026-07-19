@@ -15,6 +15,7 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/synthesizer"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 	"go.uber.org/zap"
 )
 
@@ -327,7 +328,7 @@ steps:
     parameters: {}
 `)
 	defer closeFn()
-	validator := workflowvalidator.NewRegistryValidator(tools, rules)
+	validator := workflowvalidator.NewRegistryValidator(tools, rules, repository.NewStore())
 	orch := orchestrator.NewChatOrchestrator(search, generator, validator)
 
 	response, err := orch.HandleChatMessage(context.Background(), orchestrator.ChatRequest{
@@ -375,7 +376,7 @@ steps:
 func newRegistryValidator(t *testing.T) *workflowvalidator.RegistryValidator {
 	t.Helper()
 	bundle := loadRegistryFixture(t)
-	return workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules)
+	return workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules, repository.NewStore())
 }
 
 func loadRegistryFixture(t *testing.T) *coreregistry.Bundle {

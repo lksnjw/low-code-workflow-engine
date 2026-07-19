@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import { workflowNodes } from "../constants/mockData";
 
 export const useCanvasStore = create((set) => ({
-  nodes: workflowNodes,
-  selectedNodeId: workflowNodes[0]?.id,
+	nodes: [],
+	selectedNodeId: null,
+	setNodes: (nodes) => set({ nodes }),
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
 }));

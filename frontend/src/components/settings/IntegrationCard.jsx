@@ -17,7 +17,7 @@ function IntegrationCard({ integration }) {
         {integration.name}
       </h3>
       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{integration.type}</p>
-      <Button variant="secondary" className="mt-5 w-full">Configure</Button>
+      <Button variant="secondary" className="mt-5 w-full" disabled>Use integration API to configure</Button>
     </Card>
   );
 }

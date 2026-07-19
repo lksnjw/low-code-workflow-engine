@@ -9,7 +9,7 @@ const columns = [
   { key: "status", label: "Status" },
 ];
 
-function WorkflowTable({ workflows }) {
+function WorkflowTable({ workflows, onOpen }) {
   return (
     <DataTable
       columns={columns}
@@ -20,10 +20,10 @@ function WorkflowTable({ workflows }) {
         }
         if (column.key === "name") {
           return (
-            <div>
+            <button type="button" className="text-left" onClick={() => onOpen?.(workflow.id)}>
               <p className="font-bold text-gray-950 dark:text-white">{workflow.name}</p>
               <p className="mt-1 text-xs text-gray-500">{workflow.id}</p>
-            </div>
+            </button>
           );
         }
         return workflow[column.key];

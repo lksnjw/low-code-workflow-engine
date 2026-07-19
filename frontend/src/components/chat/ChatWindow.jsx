@@ -12,9 +12,9 @@ function TypingIndicator() {
     <div className="flex items-start">
       <div className="rounded-2xl bg-backgroundLight px-4 py-3 dark:bg-darkBackgroundVery">
         <div className="flex items-center gap-1.5">
-          <Icon icon="simple-icons:googlegemini" className="h-4 w-4 text-primary" />
+          <Icon icon="hugeicons:ai-magic" className="h-4 w-4 text-primary" />
           <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-            Gemini is generating a workflow…
+            The workflow provider is generating a workflow…
           </span>
           <span className="flex gap-0.5">
             {[0, 1, 2].map((i) => (
@@ -33,7 +33,6 @@ function TypingIndicator() {
 
 function ChatWindow({ messages, onSend, loading, error }) {
   const [draft, setDraft] = useState("");
-  const [model, setModel] = useState("gemini-2.5-flash");
   const [mode, setMode] = useState("generate_workflow");
   const bottomRef = useRef(null);
 
@@ -46,7 +45,7 @@ function ChatWindow({ messages, onSend, loading, error }) {
     if (!draft.trim()) return;
     const text = draft.trim();
     setDraft("");
-    await onSend?.(text, { model, mode });
+    await onSend?.(text, { mode });
   };
 
   const handleKeyDown = (e) => {
@@ -64,8 +63,6 @@ function ChatWindow({ messages, onSend, loading, error }) {
      */
     <section className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-darkBackground">
       <ChatToolbar
-        model={model}
-        onModelChange={setModel}
         mode={mode}
         onModeChange={setMode}
       />

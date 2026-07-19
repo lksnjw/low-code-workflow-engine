@@ -1,11 +1,10 @@
 import { createContext, useContext, useMemo, useState } from "react";
-import { workflowNodes } from "../constants/mockData";
 
 const CanvasContext = createContext(null);
 
-export function CanvasProvider({ children }) {
-  const [nodes, setNodes] = useState(workflowNodes);
-  const [selectedNodeId, setSelectedNodeId] = useState(workflowNodes[0]?.id);
+export function CanvasProvider({ children, initialNodes = [] }) {
+	const [nodes, setNodes] = useState(initialNodes);
+	const [selectedNodeId, setSelectedNodeId] = useState(initialNodes[0]?.id);
 
   const value = useMemo(
     () => ({

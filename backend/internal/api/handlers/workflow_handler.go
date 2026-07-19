@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 	"github.com/sanjeewa/agentic-orchestrator/pkg/parser"
@@ -31,24 +33,33 @@ func (h *Handler) CreateWorkflow(c *fiber.Ctx) error {
 	actor := principalFromUser(h.currentUser(c))
 
 	if req.YAML == "" {
-		req.YAML = fmt.Sprintf("name: %s\ntrigger:\n  type: user.created\nsteps:\n  - id: start\n    action: policy_check\n", req.Name)
+		return fiber.NewError(fiber.StatusBadRequest, "Workflow YAML is required")
 	}
 	validation, blueprint := h.Validator.ValidateYAML(req.YAML, h.permissions(c))
 	if !validation.Valid {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow YAML failed validation", validation))
+	}
+	_, fullValidation, err := h.validateWithFullGate(c, "CreateWorkflow", req.YAML)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if !fullValidation.Passed {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
 	}
 
 	now := time.Now().UTC()
 	id := "wf-" + randomHex(4)
 	workflow := &models.Workflow{
 		ID: id, Name: req.Name, Description: req.Description,
-		Owner: models.Principal{ID: req.OwnerID, Name: req.OwnerID}, Status: models.StatusPending,
+		Owner: actor, Status: models.StatusPending,
 		Trigger: req.Trigger, Steps: len(blueprint.Steps), SuccessRate: 0, PublishedVersion: 0, DraftVersion: 1,
 		Tags: req.Tags, YAML: req.YAML, Canvas: previewCanvas(id, blueprint), CreatedAt: now, UpdatedAt: now,
 	}
-	if workflow.Owner.ID == "" {
-		user := h.currentUser(c)
-		workflow.Owner = principalFromUser(user)
+	if workflow.Name == "" {
+		workflow.Name = blueprint.Name
+	}
+	if workflow.Description == "" {
+		workflow.Description = blueprint.Description
 	}
 	if workflow.Trigger == nil {
 		workflow.Trigger = map[string]interface{}{"type": blueprint.Trigger.Type, "displayName": blueprint.Trigger.DisplayName, "config": blueprint.Trigger.Config}
@@ -77,11 +88,26 @@ func (h *Handler) UpdateWorkflow(c *fiber.Ctx) error {
 	}
 	actor := principalFromUser(h.currentUser(c))
 
+	stored, ok := h.workflowByID(c.Params("id"))
+	if !ok {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
+	token, fullValidation, err := h.validateWithFullGate(c, "UpdateWorkflow", stored.YAML)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if !fullValidation.Passed {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
+	}
+
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
 	workflow, ok := h.Store.Workflows[c.Params("id")]
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
+	if workflowvalidator.WorkflowContentHash(workflow.YAML) != token.WorkflowContentHash {
+		return fiber.NewError(fiber.StatusConflict, "Workflow changed during validation; retry the update")
 	}
 	before := map[string]interface{}{"name": workflow.Name, "status": workflow.Status}
 	if req.Name != nil {
@@ -141,11 +167,28 @@ func (h *Handler) DuplicateWorkflow(c *fiber.Ctx) error {
 func (h *Handler) PublishWorkflow(c *fiber.Ctx) error {
 	body := decodeMap(c)
 	actor := principalFromUser(h.currentUser(c))
+	stored, ok := h.workflowByID(c.Params("id"))
+	if !ok {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
+	token, fullValidation, err := h.validateWithFullGate(c, "PublishWorkflow", stored.YAML)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if !fullValidation.Passed {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
+	}
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
 	workflow, ok := h.Store.Workflows[c.Params("id")]
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
+	if workflowvalidator.WorkflowContentHash(workflow.YAML) != token.WorkflowContentHash {
+		return fiber.NewError(fiber.StatusConflict, "Workflow changed during validation; retry publishing")
+	}
+	if workflow.Status == models.StatusDraftUnvalidated {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow canvas has unvalidated execution changes", map[string]interface{}{"status": workflow.Status}))
 	}
 	workflow.PublishedVersion = workflow.DraftVersion
 	version := models.WorkflowVersion{
@@ -178,8 +221,11 @@ func (h *Handler) ValidateWorkflow(c *fiber.Ctx) error {
 	if yamlText == "" {
 		yamlText = workflow.YAML
 	}
-	validation, _ := h.Validator.ValidateYAML(yamlText, h.permissions(c))
-	return c.JSON(models.OK(validation, validationMessage(validation), nil))
+	_, validation, err := h.validateWithFullGate(c, "ValidateWorkflow", yamlText)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(models.OK(validation, registryValidationMessage(validation), nil))
 }
 
 func (h *Handler) GetWorkflowYAML(c *fiber.Ctx) error {
@@ -199,6 +245,13 @@ func (h *Handler) PutWorkflowYAML(c *fiber.Ctx) error {
 	if !validation.Valid {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow YAML failed validation", validation))
 	}
+	_, fullValidation, err := h.validateWithFullGate(c, "PutWorkflowYAML", req.YAML)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if !fullValidation.Passed {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
+	}
 
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
@@ -210,6 +263,9 @@ func (h *Handler) PutWorkflowYAML(c *fiber.Ctx) error {
 	workflow.DraftVersion++
 	workflow.Steps = len(blueprint.Steps)
 	workflow.Canvas = previewCanvas(workflow.ID, blueprint)
+	if workflow.Status == models.StatusDraftUnvalidated {
+		workflow.Status = models.StatusPending
+	}
 	workflow.UpdatedAt = time.Now().UTC()
 	return c.JSON(models.OK(models.WorkflowYAML{WorkflowID: workflow.ID, Version: workflow.DraftVersion, YAML: workflow.YAML, Checksum: parser.Checksum(workflow.YAML), UpdatedAt: workflow.UpdatedAt}, "Workflow YAML updated", nil))
 }
@@ -234,6 +290,9 @@ func (h *Handler) PutWorkflowCanvas(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
 	}
 	canvas.WorkflowID = workflow.ID
+	if canvasExecutionSemanticsChanged(workflow.Canvas, canvas) {
+		workflow.Status = models.StatusDraftUnvalidated
+	}
 	workflow.Canvas = canvas
 	workflow.UpdatedAt = time.Now().UTC()
 	return c.JSON(models.OK(canvas, "Workflow canvas updated", nil))
@@ -247,6 +306,31 @@ func (h *Handler) WorkflowVersions(c *fiber.Ctx) error {
 }
 
 func (h *Handler) RestoreWorkflowVersion(c *fiber.Ctx) error {
+	stored, ok := h.workflowByID(c.Params("id"))
+	if !ok {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
+	}
+	var selected *models.WorkflowVersion
+	h.Store.Mu.RLock()
+	for index := range h.Store.Versions[stored.ID] {
+		version := h.Store.Versions[stored.ID][index]
+		if version.ID == c.Params("versionId") {
+			selected = &version
+			break
+		}
+	}
+	h.Store.Mu.RUnlock()
+	if selected == nil {
+		return fiber.NewError(fiber.StatusNotFound, "Workflow version not found")
+	}
+	token, fullValidation, err := h.validateWithFullGate(c, "RestoreWorkflowVersion", selected.YAML)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if !fullValidation.Passed {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow version failed full registry validation", fullValidation))
+	}
+
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
 	workflow, ok := h.Store.Workflows[c.Params("id")]
@@ -255,8 +339,16 @@ func (h *Handler) RestoreWorkflowVersion(c *fiber.Ctx) error {
 	}
 	for _, version := range h.Store.Versions[workflow.ID] {
 		if version.ID == c.Params("versionId") {
+			if workflowvalidator.WorkflowContentHash(version.YAML) != token.WorkflowContentHash {
+				return fiber.NewError(fiber.StatusConflict, "Workflow version changed during validation; retry restoring")
+			}
 			workflow.YAML = version.YAML
 			workflow.DraftVersion++
+			workflow.Status = models.StatusPending
+			if fullValidation.ParsedWorkflow != nil {
+				workflow.Steps = len(fullValidation.ParsedWorkflow.Steps)
+				workflow.Canvas = previewCanvas(workflow.ID, *fullValidation.ParsedWorkflow)
+			}
 			workflow.UpdatedAt = time.Now().UTC()
 			return c.JSON(models.OK(workflow, "Workflow restored", nil))
 		}
@@ -300,10 +392,17 @@ func (h *Handler) UseTemplate(c *fiber.Ctx) error {
 	now := time.Now().UTC()
 	id := "wf-" + randomHex(4)
 	validation, blueprint := h.Validator.ValidateYAML(template.YAML, h.permissions(c))
-	canvas := models.WorkflowCanvas{WorkflowID: id, Nodes: []models.WorkflowNode{}, Edges: []models.WorkflowEdge{}, Viewport: map[string]interface{}{"x": 0, "y": 0, "zoom": 1}}
-	if validation.Valid {
-		canvas = previewCanvas(id, blueprint)
+	if !validation.Valid {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Template workflow YAML failed validation", validation))
 	}
+	_, fullValidation, err := h.validateWithFullGate(c, "UseTemplate", template.YAML)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if !fullValidation.Passed {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Template failed full registry validation", fullValidation))
+	}
+	canvas := previewCanvas(id, blueprint)
 	workflow := &models.Workflow{ID: id, Name: req.Name, Description: req.Description, Owner: principalFromUser(h.currentUser(c)), Status: models.StatusPending, Trigger: map[string]interface{}{"type": "template.used", "displayName": template.Name}, Steps: template.Steps, SuccessRate: 0, DraftVersion: 1, Tags: req.Tags, YAML: req.YAML, Canvas: canvas, CreatedAt: now, UpdatedAt: now}
 	workflow.Canvas.WorkflowID = id
 	h.Store.Mu.Lock()
@@ -324,6 +423,44 @@ func validationMessage(result models.ValidationResult) string {
 		return "Workflow is valid"
 	}
 	return "Workflow is invalid"
+}
+
+func registryValidationMessage(result *workflowvalidator.CandidateValidationResult) string {
+	if result.Passed {
+		return "Workflow is valid"
+	}
+	return "Workflow is invalid"
+}
+
+func canvasExecutionSemanticsChanged(before, after models.WorkflowCanvas) bool {
+	type semanticNode struct {
+		ID     string
+		Type   string
+		Config map[string]interface{}
+	}
+	type semanticEdge struct {
+		Source string
+		Target string
+		Type   string
+		Label  *string
+	}
+	beforeNodes := make([]semanticNode, 0, len(before.Nodes))
+	afterNodes := make([]semanticNode, 0, len(after.Nodes))
+	for _, node := range before.Nodes {
+		beforeNodes = append(beforeNodes, semanticNode{ID: node.ID, Type: node.Type, Config: node.Config})
+	}
+	for _, node := range after.Nodes {
+		afterNodes = append(afterNodes, semanticNode{ID: node.ID, Type: node.Type, Config: node.Config})
+	}
+	beforeEdges := make([]semanticEdge, 0, len(before.Edges))
+	afterEdges := make([]semanticEdge, 0, len(after.Edges))
+	for _, edge := range before.Edges {
+		beforeEdges = append(beforeEdges, semanticEdge{Source: edge.Source, Target: edge.Target, Type: edge.Type, Label: edge.Label})
+	}
+	for _, edge := range after.Edges {
+		afterEdges = append(afterEdges, semanticEdge{Source: edge.Source, Target: edge.Target, Type: edge.Type, Label: edge.Label})
+	}
+	return !reflect.DeepEqual(beforeNodes, afterNodes) || !reflect.DeepEqual(beforeEdges, afterEdges)
 }
 
 func previewCanvas(workflowID string, blueprint models.WorkflowBlueprint) models.WorkflowCanvas {

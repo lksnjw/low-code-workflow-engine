@@ -27,18 +27,12 @@ export const chatService = {
   },
 
   async sendMessage(sessionId, content, options = {}) {
-    const response = await apiClient.post(`/chat/sessions/${sessionId}/messages`, {
-      content,
-      mode: options.mode ?? "generate_workflow",
-      model: options.model ?? undefined,
-      top_k_tools: options.top_k_tools ?? 10,
-      top_k_rules: options.top_k_rules ?? 15,
-      top_k_templates: options.top_k_templates ?? 5,
-      top_k_examples: options.top_k_examples ?? 5,
-      generate_candidates: options.generate_candidates ?? 5,
-      dry_run: options.dry_run ?? true,
-      workflowId: options.workflowId,
+    const payload = { content };
+    ["mode", "model", "workflowId"].forEach((key) => {
+      if (options[key]) payload[key] = options[key];
     });
+    if (typeof options.dry_run === "boolean") payload.dry_run = options.dry_run;
+    const response = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload);
     return response.data.data;
   },
 };

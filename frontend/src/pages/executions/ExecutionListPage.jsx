@@ -1,24 +1,28 @@
 import Card from "../../components/shared/ui/Card";
+import { useMemo, useState } from "react";
 import ExecutionFilters from "../../components/executions/ExecutionFilters";
 import ExecutionTable from "../../components/executions/ExecutionTable";
 import HealingReport from "../../components/executions/HealingReport";
-import { executions } from "../../constants/mockData";
+import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
+import { useExecution } from "../../hooks/useExecution";
+import { useDebounce } from "../../hooks/useDebounce";
 
 function ExecutionListPage() {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [range, setRange] = useState("");
+  const debouncedQuery = useDebounce(query);
+  const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined, range: range || undefined }), [debouncedQuery, status, range]);
+  const { executions, healingReport, loading, error, reload } = useExecution(undefined, params);
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-heading text-gray-950 dark:text-white">Execution History</h1>
-        <p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">
-          Track run status, token usage, latency, and recovery evidence across every workflow.
-        </p>
-      </div>
-      <ExecutionFilters />
-      <ExecutionTable executions={executions} />
-      <Card>
-        <h2 className="section-title mb-4">Latest Recovery</h2>
-        <HealingReport />
-      </Card>
+      <div><h1 className="page-heading text-gray-950 dark:text-white">Execution History</h1><p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">Track real run status, token usage, latency, and recovery evidence.</p></div>
+      <ExecutionFilters query={query} status={status} range={range} onQueryChange={setQuery} onStatusChange={setStatus} onRangeChange={setRange} />
+      {loading ? <LoadingState label="Loading executions…" /> : null}
+      {error ? <ErrorState error={error} onRetry={reload} /> : null}
+      {!loading && !error && executions.length === 0 ? <EmptyState title={query || status || range ? "No matching executions" : "No executions yet"} description={query || status || range ? "Try changing the search, status, or time range." : "Run a validated workflow to create execution evidence."} /> : null}
+      {executions.length > 0 ? <ExecutionTable executions={executions} /> : null}
+      {healingReport && healingReport.status !== "NO_HEALING_REQUIRED" ? <Card><h2 className="section-title mb-4">Latest Recovery</h2><HealingReport report={healingReport} embedded /></Card> : null}
     </div>
   );
 }

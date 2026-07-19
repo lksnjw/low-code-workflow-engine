@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,6 +15,11 @@ func (h *Handler) ToolsCatalog(c *fiber.Ctx) error {
 	}
 	module := strings.ToLower(strings.TrimSpace(c.Query("module")))
 	role := strings.ToLower(strings.TrimSpace(c.Query("role")))
+	if role == "" {
+		if user := h.currentUser(c); user != nil {
+			role = strings.ToLower(user.Role.Name)
+		}
+	}
 	status := strings.ToLower(strings.TrimSpace(c.Query("status")))
 
 	items := []map[string]interface{}{}
@@ -44,6 +50,39 @@ func (h *Handler) ToolsCatalog(c *fiber.Ctx) error {
 		})
 	}
 	return c.JSON(models.OK(items, "Tool catalog loaded", map[string]interface{}{"count": len(items)}))
+}
+
+func (h *Handler) SemanticServiceHealth(c *fiber.Ctx) error {
+	if h.Search == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail("semantic search service is not configured", nil))
+	}
+	payload, err := h.Search.ExternalStatus(c.Context(), http.MethodGet, "/health")
+	if err != nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail(err.Error(), nil))
+	}
+	return c.JSON(models.OK(payload, "Semantic search service health loaded", nil))
+}
+
+func (h *Handler) SemanticIndexMetadata(c *fiber.Ctx) error {
+	if h.Search == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail("semantic search service is not configured", nil))
+	}
+	payload, err := h.Search.ExternalStatus(c.Context(), http.MethodGet, "/index/status")
+	if err != nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail(err.Error(), nil))
+	}
+	return c.JSON(models.OK(payload, "Semantic index metadata loaded", nil))
+}
+
+func (h *Handler) RebuildSemanticIndex(c *fiber.Ctx) error {
+	if h.Search == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail("semantic search service is not configured", nil))
+	}
+	payload, err := h.Search.ExternalStatus(c.Context(), http.MethodPost, "/index/rebuild")
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(models.Fail(err.Error(), nil))
+	}
+	return c.JSON(models.OK(payload, "Semantic index rebuilt", nil))
 }
 
 func (h *Handler) RulesCatalog(c *fiber.Ctx) error {
@@ -118,11 +157,10 @@ func (h *Handler) CanvasValidateWorkflow(c *fiber.Ctx) error {
 			"suggested_fix": "Send frontend-generated YAML in the yaml field, then the backend will validate it with the full semantic validator.",
 		}))
 	}
-	userRole := "anonymous"
-	if user := h.currentUser(c); user != nil {
-		userRole = user.Role.Name
+	_, result, err := h.validateWithFullGate(c, "CanvasValidateWorkflow", yamlText)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	result := h.RegistryValidator.ValidateCandidate("canvas_candidate", yamlText, userRole)
 	stepErrors := []map[string]interface{}{}
 	if result.ParsedWorkflow != nil {
 		for _, step := range result.ParsedWorkflow.Steps {

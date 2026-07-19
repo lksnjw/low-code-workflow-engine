@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +27,38 @@ type Service struct {
 	ruleDocs             map[string]searchDocument
 	templateDocs         map[string]searchDocument
 	exampleDocs          map[string]searchDocument
+}
+
+// ExternalStatus calls an operational endpoint on the configured semantic
+// search service. It keeps service discovery on the backend and avoids
+// exposing an internal service URL to browsers.
+func (s *Service) ExternalStatus(ctx context.Context, method, path string) (interface{}, error) {
+	if strings.TrimSpace(s.ExternalURL) == "" {
+		return nil, fmt.Errorf("semantic search service is not configured")
+	}
+	base, err := url.Parse(s.ExternalURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid semantic search URL: %w", err)
+	}
+	base.Path = path
+	base.RawQuery = ""
+	request, err := http.NewRequestWithContext(ctx, method, base.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.HTTP.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("semantic search service unavailable: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("semantic search service returned HTTP %d", response.StatusCode)
+	}
+	var payload interface{}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode semantic search status: %w", err)
+	}
+	return payload, nil
 }
 
 type searchDocument struct {

@@ -1,13 +1,5 @@
-import Select from "../shared/ui/Select";
-
-function LlmModelSelector() {
-  return (
-    <Select defaultValue="gpt-5.4">
-      <option value="gpt-5.4">GPT-5.4</option>
-      <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
-      <option value="local">Local Ollama Runtime</option>
-    </Select>
-  );
+function LlmModelSelector({ provider, model }) {
+  return <div className="rounded-xl border border-gray-200 bg-backgroundLight p-4 dark:border-gray-800 dark:bg-darkBackgroundVery"><p className="text-xs font-bold uppercase text-gray-500">Configured provider</p><p className="mt-2 font-bold text-gray-950 dark:text-white">{provider || "Not configured"}</p><p className="mt-1 text-sm text-gray-500">{model || "No model selected"}</p></div>;
 }
 
 export default LlmModelSelector;
