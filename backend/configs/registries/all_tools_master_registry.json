@@ -398,5 +398,40 @@
     "semantic_search_keywords": ["invoice", "clear", "clearing", "payment", "finance"],
     "semantic_search_description": "Clear invoice only after goods receipt and invoice receipt are recorded.",
     "current_gaps": []
+  },
+  {
+    "tool_id": "TOOL-DEMO-001",
+    "name": "demo.echo",
+    "display_name": "Demo Echo",
+    "module": "demo",
+    "status": "active_mcp_schema_present",
+    "description": "Returns a deterministic echo result for the local governed demo flow.",
+    "business_capability": "Safe local demonstration",
+    "endpoint": "/tools/execute",
+    "http_method": "POST",
+    "mcp_tool_name": "demo.echo",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "message": {"type": "string"},
+        "amount": {"type": "number"}
+      },
+      "required": ["message", "amount"]
+    },
+    "required_parameters": ["message", "amount"],
+    "optional_parameters": [],
+    "allowed_roles": ["Platform Admin", "Workflow Builder", "Client"],
+    "risk_level": "low",
+    "is_read_only": true,
+    "side_effects": [],
+    "preconditions": [],
+    "postconditions": ["A deterministic demo result is returned."],
+    "failure_modes": ["MCP_MODE is not mock or the remote MCP service is unavailable."],
+    "validator_checks": ["tool_exists", "parameters_present", "rbac"],
+    "prompt_usage_guidance": "Use only for the documented local demo workflow.",
+    "semantic_search_keywords": ["demo", "echo", "safe", "client", "local"],
+    "semantic_search_description": "Client-runnable read-only tool for verifying governed execution without external side effects.",
+    "execution_notes": "MCP_MODE=mock handles only this action and remains off by default.",
+    "current_gaps": []
   }
 ]

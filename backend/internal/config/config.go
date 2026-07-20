@@ -32,6 +32,7 @@ type Config struct {
 
 	MCPBaseURL string
 	MCPTimeout time.Duration
+	MCPMode    string
 
 	DatasetRoot                        string
 	ToolRegistryPath                   string
@@ -43,6 +44,7 @@ type Config struct {
 	SemanticSearchTopKTemplates        int
 	SemanticSearchTopKExamples         int
 	SemanticSearchAllowLexicalFallback bool
+	SemanticFallback                   string
 	WorkflowGenerationProvider         string
 	GeminiAPIKey                       string
 	GeminiModel                        string
@@ -73,6 +75,15 @@ func Load() Config {
 		backendRoot,
 	)
 	devUserRole := getEnv("DEV_USER_ROLE", "")
+	mcpMode := strings.ToLower(strings.TrimSpace(getEnv("MCP_MODE", "remote")))
+	semanticFallback := strings.ToLower(strings.TrimSpace(getEnv("SEMANTIC_FALLBACK", "")))
+	if semanticFallback == "" {
+		if getEnvBool("SEMANTIC_SEARCH_ALLOW_LEXICAL_FALLBACK", false) {
+			semanticFallback = "lexical"
+		} else {
+			semanticFallback = "off"
+		}
+	}
 
 	return Config{
 		AppName:                            getEnv("APP_NAME", "Agentic Workflow Engine"),
@@ -92,6 +103,7 @@ func Load() Config {
 		OllamaEnabled:                      getEnvBool("OLLAMA_ENABLED", false),
 		MCPBaseURL:                         strings.TrimRight(getEnv("MCP_BASE_URL", ""), "/"),
 		MCPTimeout:                         time.Duration(getEnvInt("MCP_TIMEOUT_SECONDS", 15)) * time.Second,
+		MCPMode:                            mcpMode,
 		DatasetRoot:                        datasetRoot,
 		ToolRegistryPath:                   toolRegistryPath,
 		RuleRegistryPath:                   ruleRegistryPath,
@@ -101,7 +113,8 @@ func Load() Config {
 		SemanticSearchTopKRules:            getEnvInt("SEMANTIC_SEARCH_TOP_K_RULES", 15),
 		SemanticSearchTopKTemplates:        getEnvInt("SEMANTIC_SEARCH_TOP_K_TEMPLATES", 5),
 		SemanticSearchTopKExamples:         getEnvInt("SEMANTIC_SEARCH_TOP_K_EXAMPLES", 5),
-		SemanticSearchAllowLexicalFallback: getEnvBool("SEMANTIC_SEARCH_ALLOW_LEXICAL_FALLBACK", false),
+		SemanticSearchAllowLexicalFallback: semanticFallback == "lexical",
+		SemanticFallback:                   semanticFallback,
 		WorkflowGenerationProvider:         getEnv("WORKFLOW_GENERATION_PROVIDER", "gemini"),
 		GeminiAPIKey:                       getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:                        getEnv("GEMINI_MODEL", "gemini-1.5-flash"),
@@ -116,15 +129,24 @@ func Load() Config {
 func (c Config) Validate() error {
 	switch c.ExperimentBaseline {
 	case "":
-		return nil
 	case "B":
 		if c.Environment != "experiment" {
 			return fmt.Errorf("EXPERIMENT_BASELINE=B requires APP_ENV=experiment")
 		}
-		return nil
 	default:
 		return fmt.Errorf("unsupported EXPERIMENT_BASELINE %q (allowed values: unset or B)", c.ExperimentBaseline)
 	}
+	switch strings.ToLower(strings.TrimSpace(c.MCPMode)) {
+	case "", "remote", "mock":
+	default:
+		return fmt.Errorf("unsupported MCP_MODE %q (allowed values: remote or mock)", c.MCPMode)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.SemanticFallback)) {
+	case "", "off", "lexical":
+	default:
+		return fmt.Errorf("unsupported SEMANTIC_FALLBACK %q (allowed values: off or lexical)", c.SemanticFallback)
+	}
+	return nil
 }
 
 func (c Config) BaselineBEnabled() bool {

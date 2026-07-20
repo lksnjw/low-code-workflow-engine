@@ -118,6 +118,7 @@ func (s *Service) SearchContext(ctx context.Context, query, userRole string, opt
 		if !s.AllowLexicalFallback {
 			return Result{}, err
 		}
+		mode = "go_lexical"
 	}
 
 	return s.searchLexical(query, userRole, options, mode), nil

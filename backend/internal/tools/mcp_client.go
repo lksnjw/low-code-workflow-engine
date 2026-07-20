@@ -6,22 +6,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+)
+
+type MCPMode string
+
+const (
+	MCPModeRemote MCPMode = "remote"
+	MCPModeMock   MCPMode = "mock"
+
+	mockDemoEchoAction = "demo.echo"
 )
 
 type MCPClient struct {
 	BaseURL string
 	HTTP    *http.Client
+	mode    MCPMode
 }
 
 func NewMCPClient(baseURL string, timeout time.Duration) *MCPClient {
 	return &MCPClient{
 		BaseURL: baseURL,
 		HTTP:    &http.Client{Timeout: timeout},
+		mode:    MCPModeRemote,
+	}
+}
+
+// SetMode selects how downstream MCP tool calls are transported. Remote is
+// the default; mock must be enabled explicitly and only supports demo.echo.
+func (c *MCPClient) SetMode(mode string) error {
+	next := MCPMode(strings.ToLower(strings.TrimSpace(mode)))
+	switch next {
+	case MCPModeRemote, MCPModeMock:
+		c.mode = next
+		return nil
+	default:
+		return fmt.Errorf("unsupported MCP mode %q", mode)
 	}
 }
 
 func (c *MCPClient) Execute(ctx context.Context, action string, params map[string]interface{}) (map[string]interface{}, error) {
+	if c.mode == MCPModeMock {
+		return executeMockMCP(action, params)
+	}
+
 	if c.BaseURL == "" {
 		return nil, fmt.Errorf("MCP_BASE_URL is not configured; refusing to simulate tool %q", action)
 	}
@@ -55,6 +84,23 @@ func (c *MCPClient) Execute(ctx context.Context, action string, params map[strin
 	}
 
 	return payload, nil
+}
+
+func executeMockMCP(action string, params map[string]interface{}) (map[string]interface{}, error) {
+	if action != mockDemoEchoAction {
+		return nil, fmt.Errorf("MCP mock mode only supports %q; refusing tool %q", mockDemoEchoAction, action)
+	}
+
+	echo := make(map[string]interface{}, len(params))
+	for key, value := range params {
+		echo[key] = value
+	}
+
+	return map[string]interface{}{
+		"action": action,
+		"mock":   true,
+		"echo":   echo,
+	}, nil
 }
 
 type GenericMCPTool struct {

@@ -9,7 +9,7 @@ export const catalogService = {
     return unwrap(await apiClient.get("/tools/catalog", { params }), []) || [];
   },
   async toolGroups() {
-    const tools = await this.tools({ status: "available" });
+    const tools = await this.tools({ status: "active_mcp_schema_present" });
     const groups = new Map();
     tools.forEach((tool, index) => {
       const moduleName = tool.module || tool.erp_system || "General";

@@ -50,6 +50,7 @@ test("writable builder loads and renders the registered tool catalog", async () 
           display_name: "Demo Echo",
           description: "Deterministic catalog tool",
           module: "General",
+          status: "active_mcp_schema_present",
           allowed_roles: ["Platform Admin"],
           required_parameters: ["message"],
         },
@@ -70,7 +71,7 @@ test("writable builder loads and renders the registered tool catalog", async () 
 
   expect(await screen.findByRole("button", { name: /Demo Echo/i })).not.toBeNull();
   await waitFor(() => {
-    expect(get).toHaveBeenCalledWith("/tools/catalog", { params: { status: "available" } });
+    expect(get).toHaveBeenCalledWith("/tools/catalog", { params: { status: "active_mcp_schema_present" } });
   });
   expect(screen.queryByText(/Cannot read properties of undefined/i)).toBeNull();
   expect(screen.queryByText(/Tool catalog unavailable/i)).toBeNull();

@@ -1,5 +1,9 @@
 import { useState } from "react";
+import Button from "../shared/ui/Button";
+import Modal from "../shared/ui/Modal";
+import Textarea from "../shared/ui/Textarea";
 import { useNotifications } from "../../context/NotificationContext";
+import { executionService } from "../../services/execution.service";
 import { workflowService } from "../../services/workflow.service";
 import { apiErrorMessage } from "../../services/api";
 import usePermissions from "../../hooks/usePermissions";
@@ -9,11 +13,33 @@ function WorkflowActions({ workflow, onChanged }) {
   const { notify } = useNotifications();
   const { has, hasAny } = usePermissions();
   const [running, setRunning] = useState(false);
+  const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [runtimeInput, setRuntimeInput] = useState("{}");
+  const [inputError, setInputError] = useState("");
 
-  const run = async () => {
+  const openRunDialog = () => {
+    setInputError("");
+    setRunDialogOpen(true);
+  };
+
+  const run = async (event) => {
+    event?.preventDefault();
+    let input;
+    try {
+      input = JSON.parse(runtimeInput);
+      if (input === null || Array.isArray(input) || typeof input !== "object") {
+        throw new Error("Runtime input must be a JSON object.");
+      }
+      setInputError("");
+    } catch (error) {
+      setInputError(error.message || "Enter a valid JSON object.");
+      return;
+    }
+
     setRunning(true);
     try {
-      const execution = await workflowService.run(workflow.id, {});
+      const execution = await executionService.run(workflow.id, input);
+      setRunDialogOpen(false);
       notify(`Execution ${execution.id} finished with status ${execution.status}.`, execution.status === "DONE" ? "success" : "warning");
       await onChanged?.();
     } catch (error) {
@@ -37,7 +63,56 @@ function WorkflowActions({ workflow, onChanged }) {
     }
   };
 
-  return <WorkflowActionControls canRun={hasAny(["workflow:run", "workflow:run_own"])} canExport={has("workflow:write")} running={running} onRun={run} onExport={exportYAML} />;
+  return (
+    <>
+      <WorkflowActionControls
+        canRun={hasAny(["workflow:run", "workflow:run_own"])}
+        canExport={has("workflow:write")}
+        running={running}
+        onRun={openRunDialog}
+        onExport={exportYAML}
+      />
+      <Modal open={runDialogOpen} title="Run workflow">
+        <form className="space-y-4" onSubmit={run}>
+          <div>
+            <label
+              className="text-sm font-semibold text-gray-800 dark:text-gray-100"
+              htmlFor={`workflow-runtime-input-${workflow.id}`}
+            >
+              Runtime input (JSON)
+            </label>
+            <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              Values here replace workflow expressions such as {"{{input.message}}"}. Use an empty object when no input is required.
+            </p>
+          </div>
+          <Textarea
+            id={`workflow-runtime-input-${workflow.id}`}
+            aria-invalid={Boolean(inputError)}
+            className="min-h-40 font-mono text-xs leading-6"
+            spellCheck="false"
+            value={runtimeInput}
+            onChange={(event) => {
+              setRuntimeInput(event.target.value);
+              setInputError("");
+            }}
+          />
+          {inputError ? <p className="text-sm font-semibold text-red-600" role="alert">{inputError}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setRunDialogOpen(false)}
+              disabled={running}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={running}>
+              {running ? "Running…" : "Run workflow"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </>
+  );
 }
 
 export default WorkflowActions;

@@ -44,7 +44,8 @@ func main() {
 	}
 	store.Settings.LLM = map[string]interface{}{
 		"provider": cfg.WorkflowGenerationProvider, "model": cfg.GeminiModel,
-		"semanticSearchMode": cfg.SemanticSearchMode, "managedByEnvironment": true,
+		"semanticSearchMode": cfg.SemanticSearchMode, "semanticFallback": cfg.SemanticFallback,
+		"mcpMode": cfg.MCPMode, "managedByEnvironment": true,
 	}
 	store.Settings.RBAC = map[string]interface{}{
 		"developmentAuthEnabled": cfg.AllowDevAuth, "defaultRoleId": "role_builder",
@@ -64,6 +65,9 @@ func main() {
 	searchService := semanticsearch.NewServiceFromDataset(registryBundle, cfg.SemanticSearchMode, cfg.SemanticSearchURL, cfg.SemanticSearchAllowLexicalFallback)
 	chatOrchestrator := orchestrator.NewChatOrchestrator(searchService, synth, registryValidator)
 	mcp := tools.NewMCPClient(cfg.MCPBaseURL, cfg.MCPTimeout)
+	if err := mcp.SetMode(cfg.MCPMode); err != nil {
+		zapLogger.Fatal("configure MCP transport", zap.Error(err))
+	}
 	registry := tools.NewRegistry(nil)
 	registry.Register(impl.FetchAttendanceTool{MCP: mcp})
 	registry.Register(impl.CreateLeaveTool{MCP: mcp})
