@@ -1,6 +1,6 @@
 APP=agentic-orchestrator
 
-.PHONY: run build test tidy fmt
+.PHONY: run build test experiment tidy fmt
 
 run:
 	go run -buildvcs=false ./cmd/server
@@ -10,6 +10,9 @@ build:
 
 test:
 	go test ./...
+
+experiment:
+	APP_ENV=experiment go run -buildvcs=false ./cmd/run-experiment
 
 test-report:
 	go install github.com/vakenbolt/go-test-report@latest

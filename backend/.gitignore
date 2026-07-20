@@ -8,4 +8,6 @@ tmp/
 coverage.out
 *.test
 *.log
-test-results/
+test-results/*
+!test-results/experiment_results.csv
+!test-results/metrics.json

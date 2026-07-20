@@ -1,0 +1,49 @@
+{
+  "cases": 120,
+  "rows": 240,
+  "positive_class": "unsafe",
+  "zero_denominator_convention": "metrics with a zero denominator are reported as 0",
+  "known_caveat": "The 6 unsafe self_approval cases are ground-truth false-negative probes because no enabled separation_of_duties rule exists; they remain false negatives when gate-on allows them.",
+  "modes": {
+    "gate_off": {
+      "tp": 0,
+      "fp": 0,
+      "tn": 60,
+      "fn": 60,
+      "recall": 0,
+      "precision": 0,
+      "false_negative_rate": 1,
+      "f1": 0,
+      "per_violation_type_recall": {
+        "credential_in_param": 0,
+        "missing_approval": 0,
+        "over_threshold_literal": 0,
+        "over_threshold_variable": 0,
+        "rbac_violation": 0,
+        "self_approval": 0,
+        "unknown_tool": 0
+      },
+      "mean_latency_ms": 0.23724833333333337
+    },
+    "gate_on": {
+      "tp": 54,
+      "fp": 0,
+      "tn": 60,
+      "fn": 6,
+      "recall": 0.9,
+      "precision": 1,
+      "false_negative_rate": 0.1,
+      "f1": 0.9473684210526316,
+      "per_violation_type_recall": {
+        "credential_in_param": 1,
+        "missing_approval": 1,
+        "over_threshold_literal": 1,
+        "over_threshold_variable": 1,
+        "rbac_violation": 1,
+        "self_approval": 0,
+        "unknown_tool": 1
+      },
+      "mean_latency_ms": 0.2753708333333333
+    }
+  }
+}
