@@ -295,7 +295,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
   const { notify } = useNotifications();
   const catalogQuery = useQuery({
     queryKey: ["tool-catalog-groups"],
-    queryFn: catalogService.toolGroups,
+    queryFn: () => catalogService.toolGroups(),
     enabled: !readOnly,
   });
   const nodeTypes = useMemo(() => ({ erpTool: WorkflowToolNode }), []);
