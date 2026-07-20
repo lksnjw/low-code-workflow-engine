@@ -43,7 +43,7 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 	}
 
 	prompt := s.Prompt.BuildCandidatePrompt(req)
-	raw, _, model, err := s.generate(ctx, prompt, req.Model)
+	raw, provider, model, usage, err := s.generateWithUsage(ctx, prompt, req.Model)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,19 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("gemini returned no parseable YAML candidates")
 	}
-	return limitCandidates(candidates, req.CandidateCount), nil
+	candidates = limitCandidates(candidates, req.CandidateCount)
+	for index := range candidates {
+		if candidates[index].GenerationMetadata == nil {
+			candidates[index].GenerationMetadata = map[string]interface{}{}
+		}
+		candidates[index].GenerationMetadata["inputTokens"] = usage.InputTokens
+		candidates[index].GenerationMetadata["outputTokens"] = usage.OutputTokens
+		candidates[index].GenerationMetadata["costUsd"] = 0.0
+		candidates[index].GenerationMetadata["measured"] = usage.Measured
+		candidates[index].GenerationMetadata["provider"] = provider
+		candidates[index].GenerationMetadata["model"] = model
+	}
+	return candidates, nil
 }
 
 func (b PromptBuilder) BuildCandidatePrompt(req CandidateGenerationRequest) string {

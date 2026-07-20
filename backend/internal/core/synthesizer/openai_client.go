@@ -27,8 +27,13 @@ func NewOpenAICompatibleClient(baseURL, apiKey, model string) *OpenAICompatibleC
 }
 
 func (c *OpenAICompatibleClient) Generate(ctx context.Context, prompt, overrideModel string) (string, error) {
+	text, _, err := c.generateWithUsage(ctx, prompt, overrideModel)
+	return text, err
+}
+
+func (c *OpenAICompatibleClient) generateWithUsage(ctx context.Context, prompt, overrideModel string) (string, providerUsage, error) {
 	if c == nil || c.BaseURL == "" || c.APIKey == "" || c.Model == "" {
-		return "", fmt.Errorf("openai-compatible provider is not fully configured")
+		return "", providerUsage{}, fmt.Errorf("openai-compatible provider is not fully configured")
 	}
 	body, err := json.Marshal(map[string]interface{}{
 		"model":       selectedModel(c.Model, overrideModel),
@@ -36,17 +41,17 @@ func (c *OpenAICompatibleClient) Generate(ctx context.Context, prompt, overrideM
 		"temperature": 0.1,
 	})
 	if err != nil {
-		return "", fmt.Errorf("encode openai-compatible request")
+		return "", providerUsage{}, fmt.Errorf("encode openai-compatible request")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("create openai-compatible request")
+		return "", providerUsage{}, fmt.Errorf("create openai-compatible request")
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+c.APIKey)
 	response, err := c.HTTP.Do(request)
 	if err != nil {
-		return "", fmt.Errorf("openai-compatible request failed")
+		return "", providerUsage{}, fmt.Errorf("openai-compatible request failed")
 	}
 	defer response.Body.Close()
 	var payload struct {
@@ -55,17 +60,29 @@ func (c *OpenAICompatibleClient) Generate(ctx context.Context, prompt, overrideM
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage *struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode openai-compatible response")
+		return "", providerUsage{}, fmt.Errorf("decode openai-compatible response")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("openai-compatible provider returned HTTP %d", response.StatusCode)
+		return "", providerUsage{}, fmt.Errorf("openai-compatible provider returned HTTP %d", response.StatusCode)
+	}
+	usage := providerUsage{}
+	if payload.Usage != nil {
+		usage = providerUsage{
+			InputTokens:  payload.Usage.PromptTokens,
+			OutputTokens: payload.Usage.CompletionTokens,
+			Measured:     true,
+		}
 	}
 	for _, choice := range payload.Choices {
 		if text := strings.TrimSpace(choice.Message.Content); text != "" {
-			return strings.TrimSpace(stripMarkdownFence(text)), nil
+			return strings.TrimSpace(stripMarkdownFence(text)), usage, nil
 		}
 	}
-	return "", fmt.Errorf("openai-compatible provider returned no text choices")
+	return "", providerUsage{}, fmt.Errorf("openai-compatible provider returned no text choices")
 }

@@ -66,7 +66,7 @@ func NewServiceWithProvider(baseURL, ollamaModel string, ollamaEnabled bool, pro
 
 func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string, context map[string]interface{}) (Result, error) {
 	prompt := s.Prompt.Build(userPrompt, mode, context)
-	yamlText, provider, selectedModel, err := s.generate(ctx, prompt, model)
+	yamlText, provider, selectedModel, usage, err := s.generateWithUsage(ctx, prompt, model)
 	if err != nil {
 		return Result{}, err
 	}
@@ -75,35 +75,40 @@ func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string
 		YAML:       yamlText,
 		Confidence: 0,
 		Usage: map[string]interface{}{
-			"inputTokens":  0,
-			"outputTokens": 0,
+			"inputTokens":  usage.InputTokens,
+			"outputTokens": usage.OutputTokens,
 			"costUsd":      0.0,
 			"provider":     provider,
 			"model":        selectedModel,
-			"measured":     false,
+			"measured":     usage.Measured,
 		},
 	}, nil
 }
 
 func (s *Service) generate(ctx context.Context, prompt, overrideModel string) (string, string, string, error) {
+	text, provider, model, _, err := s.generateWithUsage(ctx, prompt, overrideModel)
+	return text, provider, model, err
+}
+
+func (s *Service) generateWithUsage(ctx context.Context, prompt, overrideModel string) (string, string, string, providerUsage, error) {
 	if config, ok := s.activeProvider(); ok {
-		return s.generateWithConfig(ctx, config, prompt, overrideModel)
+		return s.generateWithConfigUsage(ctx, config, prompt, overrideModel)
 	}
 	if strings.EqualFold(s.Provider, "gemini") {
 		if s.Gemini == nil {
-			return "", "gemini", "", fmt.Errorf("gemini client is not configured")
+			return "", "gemini", "", providerUsage{}, fmt.Errorf("gemini client is not configured")
 		}
-		text, err := s.Gemini.Generate(ctx, prompt, overrideModel)
-		return text, "gemini", selectedModel(s.Gemini.Model, overrideModel), err
+		text, usage, err := s.Gemini.generateWithUsage(ctx, prompt, overrideModel)
+		return text, "gemini", selectedModel(s.Gemini.Model, overrideModel), usage, err
 	}
 	if strings.EqualFold(s.Provider, "ollama") {
 		if s.Ollama == nil {
-			return "", "ollama", "", fmt.Errorf("ollama client is not configured")
+			return "", "ollama", "", providerUsage{}, fmt.Errorf("ollama client is not configured")
 		}
-		text, err := s.Ollama.Generate(ctx, prompt, overrideModel)
-		return text, "ollama", selectedModel(s.Ollama.Model, overrideModel), err
+		text, usage, err := s.Ollama.generateWithUsage(ctx, prompt, overrideModel)
+		return text, "ollama", selectedModel(s.Ollama.Model, overrideModel), usage, err
 	}
-	return "", s.Provider, "", fmt.Errorf("unsupported workflow-generation provider %q", s.Provider)
+	return "", s.Provider, "", providerUsage{}, fmt.Errorf("unsupported workflow-generation provider %q", s.Provider)
 }
 
 func (s *Service) activeProvider() (models.ProviderConfig, bool) {
@@ -118,6 +123,11 @@ func (s *Service) activeProvider() (models.ProviderConfig, bool) {
 }
 
 func (s *Service) generateWithConfig(ctx context.Context, config models.ProviderConfig, prompt, overrideModel string) (string, string, string, error) {
+	text, provider, model, _, err := s.generateWithConfigUsage(ctx, config, prompt, overrideModel)
+	return text, provider, model, err
+}
+
+func (s *Service) generateWithConfigUsage(ctx context.Context, config models.ProviderConfig, prompt, overrideModel string) (string, string, string, providerUsage, error) {
 	model := selectedModel(config.Model, overrideModel)
 	switch strings.ToLower(strings.TrimSpace(config.Type)) {
 	case "gemini":
@@ -125,18 +135,18 @@ func (s *Service) generateWithConfig(ctx context.Context, config models.Provider
 		if strings.TrimSpace(config.BaseURL) != "" {
 			client.BaseURL = strings.TrimRight(config.BaseURL, "/")
 		}
-		text, err := client.Generate(ctx, prompt, overrideModel)
-		return text, "gemini", model, err
+		text, usage, err := client.generateWithUsage(ctx, prompt, overrideModel)
+		return text, "gemini", model, usage, err
 	case "ollama":
 		client := &OllamaClient{BaseURL: strings.TrimRight(config.BaseURL, "/"), Model: config.Model, Enabled: true, HTTP: &http.Client{Timeout: 45 * time.Second}}
-		text, err := client.Generate(ctx, prompt, overrideModel)
-		return text, "ollama", model, err
+		text, usage, err := client.generateWithUsage(ctx, prompt, overrideModel)
+		return text, "ollama", model, usage, err
 	case "openai_compatible":
 		client := NewOpenAICompatibleClient(config.BaseURL, config.APIKey, config.Model)
-		text, err := client.Generate(ctx, prompt, overrideModel)
-		return text, "openai_compatible", model, err
+		text, usage, err := client.generateWithUsage(ctx, prompt, overrideModel)
+		return text, "openai_compatible", model, usage, err
 	default:
-		return "", config.Type, model, fmt.Errorf("unsupported workflow-generation provider %q", config.Type)
+		return "", config.Type, model, providerUsage{}, fmt.Errorf("unsupported workflow-generation provider %q", config.Type)
 	}
 }
 
@@ -153,8 +163,13 @@ func selectedModel(fallback, override string) string {
 }
 
 func (c *OllamaClient) Generate(ctx context.Context, prompt, overrideModel string) (string, error) {
+	text, _, err := c.generateWithUsage(ctx, prompt, overrideModel)
+	return text, err
+}
+
+func (c *OllamaClient) generateWithUsage(ctx context.Context, prompt, overrideModel string) (string, providerUsage, error) {
 	if !c.Enabled {
-		return "", fmt.Errorf("ollama synthesis disabled")
+		return "", providerUsage{}, fmt.Errorf("ollama synthesis disabled")
 	}
 
 	model := c.Model
@@ -171,31 +186,41 @@ func (c *OllamaClient) Generate(ctx context.Context, prompt, overrideModel strin
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("encode ollama request: %w", err)
+		return "", providerUsage{}, fmt.Errorf("encode ollama request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/generate", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("create ollama request: %w", err)
+		return "", providerUsage{}, fmt.Errorf("create ollama request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("call ollama: %w", err)
+		return "", providerUsage{}, fmt.Errorf("call ollama: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var payload struct {
-		Response string `json:"response"`
-		Error    string `json:"error"`
+		Response        string `json:"response"`
+		Error           string `json:"error"`
+		PromptEvalCount *int   `json:"prompt_eval_count"`
+		EvalCount       *int   `json:"eval_count"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode ollama response: %w", err)
+		return "", providerUsage{}, fmt.Errorf("decode ollama response: %w", err)
 	}
 	if resp.StatusCode >= 400 || payload.Error != "" {
-		return "", fmt.Errorf("ollama returned %d: %s", resp.StatusCode, payload.Error)
+		return "", providerUsage{}, fmt.Errorf("ollama returned %d: %s", resp.StatusCode, payload.Error)
 	}
 
-	return payload.Response, nil
+	usage := providerUsage{}
+	if payload.PromptEvalCount != nil {
+		usage.InputTokens = *payload.PromptEvalCount
+	}
+	if payload.EvalCount != nil {
+		usage.OutputTokens = *payload.EvalCount
+	}
+	usage.Measured = payload.PromptEvalCount != nil && payload.EvalCount != nil
+	return payload.Response, usage, nil
 }
