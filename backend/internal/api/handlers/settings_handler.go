@@ -16,7 +16,7 @@ import (
 
 func (h *Handler) GetSettings(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
-	settings := h.Store.Settings
+	settings := withoutSecretSettings(h.Store.Settings)
 	h.Store.Mu.RUnlock()
 	return c.JSON(models.OK(settings, "OK", nil))
 }
@@ -24,7 +24,6 @@ func (h *Handler) GetSettings(c *fiber.Ctx) error {
 func (h *Handler) PatchSettings(c *fiber.Ctx) error {
 	body := decodeMap(c)
 	h.Store.Mu.Lock()
-	defer h.Store.Mu.Unlock()
 	if general, ok := body["general"].(map[string]interface{}); ok {
 		h.Store.Settings.General = mergeMap(h.Store.Settings.General, general)
 	}
@@ -34,12 +33,14 @@ func (h *Handler) PatchSettings(c *fiber.Ctx) error {
 	if rbac, ok := body["rbac"].(map[string]interface{}); ok {
 		h.Store.Settings.RBAC = mergeMap(h.Store.Settings.RBAC, rbac)
 	}
-	return c.JSON(models.OK(h.Store.Settings, "Settings updated", nil))
+	data := withoutSecretSettings(h.Store.Settings)
+	h.Store.Mu.Unlock()
+	return c.JSON(models.OK(data, "Settings updated", nil))
 }
 
 func (h *Handler) GetGeneralSettings(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
-	data := h.Store.Settings.General
+	data := withoutSecretFields(h.Store.Settings.General)
 	h.Store.Mu.RUnlock()
 	return c.JSON(models.OK(data, "OK", nil))
 }
@@ -48,14 +49,14 @@ func (h *Handler) PatchGeneralSettings(c *fiber.Ctx) error {
 	body := decodeMap(c)
 	h.Store.Mu.Lock()
 	h.Store.Settings.General = mergeMap(h.Store.Settings.General, body)
-	data := h.Store.Settings.General
+	data := withoutSecretFields(h.Store.Settings.General)
 	h.Store.Mu.Unlock()
 	return c.JSON(models.OK(data, "General settings updated", nil))
 }
 
 func (h *Handler) GetLLMSettings(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
-	data := h.Store.Settings.LLM
+	data := withoutSecretFields(h.Store.Settings.LLM)
 	h.Store.Mu.RUnlock()
 	return c.JSON(models.OK(data, "OK", nil))
 }
@@ -64,14 +65,53 @@ func (h *Handler) PatchLLMSettings(c *fiber.Ctx) error {
 	body := decodeMap(c)
 	h.Store.Mu.Lock()
 	h.Store.Settings.LLM = mergeMap(h.Store.Settings.LLM, body)
-	data := h.Store.Settings.LLM
+	data := withoutSecretFields(h.Store.Settings.LLM)
 	h.Store.Mu.Unlock()
 	return c.JSON(models.OK(data, "LLM settings updated", nil))
 }
 
+func withoutSecretFields(values map[string]interface{}) map[string]interface{} {
+	safe := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		if isSecretField(key) {
+			continue
+		}
+		safe[key] = withoutNestedSecretFields(value)
+	}
+	return safe
+}
+
+func withoutNestedSecretFields(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return withoutSecretFields(typed)
+	case []interface{}:
+		safe := make([]interface{}, len(typed))
+		for index, item := range typed {
+			safe[index] = withoutNestedSecretFields(item)
+		}
+		return safe
+	default:
+		return value
+	}
+}
+
+func isSecretField(key string) bool {
+	normalized := strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(strings.ToLower(key))
+	return strings.Contains(normalized, "apikey") || strings.Contains(normalized, "secret")
+}
+
+func withoutSecretSettings(settings models.SettingsBundle) models.SettingsBundle {
+	return models.SettingsBundle{
+		General: withoutSecretFields(settings.General),
+		LLM:     withoutSecretFields(settings.LLM),
+		RBAC:    withoutSecretFields(settings.RBAC),
+	}
+}
+
 func (h *Handler) GetRBACSettings(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
-	data := h.Store.Settings.RBAC
+	data := withoutSecretFields(h.Store.Settings.RBAC)
 	h.Store.Mu.RUnlock()
 	return c.JSON(models.OK(data, "OK", nil))
 }
@@ -80,7 +120,7 @@ func (h *Handler) PatchRBACSettings(c *fiber.Ctx) error {
 	body := decodeMap(c)
 	h.Store.Mu.Lock()
 	h.Store.Settings.RBAC = mergeMap(h.Store.Settings.RBAC, body)
-	data := h.Store.Settings.RBAC
+	data := withoutSecretFields(h.Store.Settings.RBAC)
 	h.Store.Mu.Unlock()
 	return c.JSON(models.OK(data, "RBAC settings updated", nil))
 }

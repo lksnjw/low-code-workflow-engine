@@ -524,7 +524,7 @@ Backend:
 cd backend
 $env:JWT_SECRET="replace-this-development-secret"
 $env:WORKFLOW_GENERATION_PROVIDER="gemini"
-$env:GEMINI_API_KEY="your-key"
+$env:GEMINI_API_KEY="[REDACTED]"
 $env:MCP_BASE_URL="http://your-mcp-service"
 go run ./cmd/server
 ```

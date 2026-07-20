@@ -90,7 +90,7 @@ Workflow generation provider:
 ```env
 WORKFLOW_GENERATION_PROVIDER=gemini
 GEMINI_MODEL=gemini-1.5-flash
-GEMINI_API_KEY=your-local-key
+GEMINI_API_KEY=[REDACTED]
 CANDIDATE_COUNT=5
 ```
 

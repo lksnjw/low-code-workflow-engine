@@ -58,14 +58,23 @@ func (c *GeminiClient) Generate(ctx context.Context, prompt, overrideModel strin
 		return "", fmt.Errorf("encode gemini request: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("%s/models/%s:generateContent?key=%s", strings.TrimRight(c.BaseURL, "/"), url.PathEscape(model), url.QueryEscape(c.APIKey))
+	endpoint := fmt.Sprintf("%s/models/%s:generateContent", strings.TrimRight(c.BaseURL, "/"), url.PathEscape(model))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("create gemini request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", c.APIKey)
 
-	resp, err := c.HTTP.Do(req)
+	httpClient := c.HTTP
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
+	}
+	noRedirectClient := *httpClient
+	noRedirectClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := noRedirectClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("gemini request failed")
 	}
