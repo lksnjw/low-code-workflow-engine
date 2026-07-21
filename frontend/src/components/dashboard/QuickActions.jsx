@@ -4,12 +4,12 @@ import Button from "../shared/ui/Button";
 import { useRoute } from "../../context/RouteContext";
 
 function QuickActions() {
-  const { navigateTo } = useRoute();
+  const { navigateTo, startWorkflow } = useRoute();
   const actions = [
     {
       label: "New Workflow",
       icon: "mdi:plus",
-      onClick: () => navigateTo("workflows", "builder"),
+      onClick: startWorkflow,
     },
     {
       label: "Synthesize YAML",

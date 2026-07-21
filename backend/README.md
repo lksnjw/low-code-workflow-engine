@@ -52,7 +52,7 @@ INDEX_MAX_RULES_PER_FILE=0
 INDEX_MAX_TEMPLATES_PER_FILE=0
 INDEX_MAX_EXAMPLES_PER_FILE=25
 WORKFLOW_GENERATION_PROVIDER=gemini
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-2.5-flash
 CANDIDATE_COUNT=5
 CHAT_TRACE_BOXES=true
 ```
@@ -96,21 +96,19 @@ When `CHAT_TRACE_BOXES=true`, every chat generation prints boxed terminal output
 
 The first semantic-search startup creates a persistent FAISS/embedding cache under `semantic_search_service/.cache`. Later startups load from cache when the dataset/config fingerprint is unchanged. Check `http://127.0.0.1:8090/index/status`.
 
-## Development Auth
+## Authentication
 
-During local development, set:
+All protected API routes require a signed JWT. In development, register the
+first account through `POST /api/auth/register` (or the frontend sign-up page),
+then use the returned access token as `Authorization: Bearer <access-token>`.
+Later development registrations are controlled by
+`ALLOW_PUBLIC_REGISTRATION`, which defaults to `true` outside production.
 
-```env
-ALLOW_DEV_AUTH=true
-```
-
-Then pass:
-
-```text
-Authorization: Bearer local-dev-token
-```
-
-Or call `POST /api/auth/login` and use the returned JWT.
+Production startup requires a unique `JWT_SECRET` and
+`BOOTSTRAP_ADMIN_TOKEN` of at least 32 bytes and requires
+`ALLOW_PUBLIC_REGISTRATION=false`. The first administrator must register with
+the bootstrap token in the `X-Bootstrap-Token` header. See
+`../docs/BOOTSTRAP_FLOW.md` for the exact command and restart-safe workflow.
 
 ## Implemented API Groups
 
@@ -156,19 +154,22 @@ internal/core/healing
 internal/tools
   -> Tool interface, registry, MCP bridge, ERP tool implementations
 
-internal/repository
-  -> in-memory repository seeded with frontend-compatible data
+internal/repository + internal/storage
+  -> memory runtime store or encrypted PostgreSQL-backed durable state
 
 pkg/parser
   -> YAML parse/stringify/checksum and `{{variable}}` injection
 ```
 
-## Production Swap Points
+## Storage
 
-The backend currently uses in-memory repositories so the full frontend can connect immediately. Replace these boundaries for production:
+`STORAGE_DRIVER=memory` is the zero-dependency development default; production configuration requires `postgres`. PostgreSQL mode enables numbered migrations, a lifetime single-writer advisory lock, encrypted restart persistence, active health probing, and durable users, auth sessions, workflow assignments, executions, chats, settings, providers, audit evidence, and uploads. It requires a unique 32-byte `STORAGE_ENCRYPTION_KEY`; database URLs and secrets are never logged. A failed synchronous snapshot is rolled back in memory and its mutating HTTP request returns `503`.
 
-- `internal/repository`: PostgreSQL-backed workflow, audit, execution, user, and settings storage.
-- `internal/config/db.go`: real Postgres pool.
+See `../docs/BOOTSTRAP_FLOW.md` for setup, restart verification, cutover rules, recovery guidance, tests, and the current single-writer scaling boundary.
+
+## Remaining Production Swap Points
+
+- `internal/repository`: replace the encrypted snapshot bridge with normalized repositories for multi-writer or high-volume deployments.
 - `internal/config/redis.go`: real Redis policy cache.
 - `internal/tools/mcp_client.go`: set `MCP_BASE_URL` to Dharmasiri's middleware.
 - `semantic_search_service`: replace in-memory FAISS with a persistent vector index if needed.

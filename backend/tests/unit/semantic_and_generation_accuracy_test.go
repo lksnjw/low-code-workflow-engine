@@ -185,7 +185,7 @@ func TestGeminiLiveAPIGenerationAccuracyReport(t *testing.T) {
 	}
 
 	caseCount := liveGeminiCaseCount()
-	model := firstNonEmpty(os.Getenv("GEMINI_MODEL"), "gemini-1.5-flash")
+	model := firstNonEmpty(os.Getenv("GEMINI_MODEL"), "gemini-2.5-flash")
 	bundle := loadRegistryFixture(t)
 	search := semanticsearch.NewService(bundle.Tools, bundle.Rules, "go_lexical")
 	generator := synthesizer.NewServiceWithProvider("", "", false, "gemini", apiKey, model)

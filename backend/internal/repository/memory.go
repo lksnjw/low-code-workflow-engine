@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,9 +20,10 @@ type RefreshSession struct {
 // Store is the process-local runtime store. It deliberately starts without
 // demo business records; records are created only through application APIs.
 type Store struct {
-	Mu sync.RWMutex
+	Mu StoreMutex
 
 	counter atomic.Uint64
+	persist *persistenceHook
 
 	Users                   map[string]*models.User
 	PasswordHashes          map[string]string

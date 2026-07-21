@@ -1,5 +1,5 @@
 import { expect, test } from "@jest/globals";
-import { NAVIGATION_GROUPS, filterNavigationGroups } from "./navigation.js";
+import { NAVIGATION_GROUPS, filterNavigationGroups, resolvePermittedRoute } from "./navigation.js";
 
 const allow = (permissions) => (required) =>
   required.some((permission) => permissions.includes(permission));
@@ -32,4 +32,22 @@ test("client navigation contains only chat, owned workflows and executions, and 
   expect(visible.map((group) => group.label).sort()).toEqual(
     ["Chat", "My Workflows", "My Executions", "Profile"].sort()
   );
+});
+
+test("client dashboard request falls back to the first permitted portal route", () => {
+  const permissions = [
+    "chat:use",
+    "workflow:read_own",
+    "workflow:run_own",
+    "execution:read_own",
+  ];
+
+  expect(
+    resolvePermittedRoute(
+      NAVIGATION_GROUPS,
+      allow(permissions),
+      "role_client",
+      { main: "dashboard", sub: "overview" }
+    )
+  ).toEqual({ main: "workflows", sub: "list" });
 });

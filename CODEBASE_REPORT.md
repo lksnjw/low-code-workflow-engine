@@ -1,5 +1,7 @@
 # Codebase Audit Report
 
+> **Historical snapshot (2026-07-16).** This audit records the repository before the security, portal, experiment, demo, metrics, persistence, and deployment work was completed. Its status percentages and gap findings are not the current state. See `CURRENT_STATE.md` for the verified final implementation and test evidence.
+
 Audit target: repository root containing `backend/`, `frontend/`, `datasets/`, and `docs/`. Audit date: 2026-07-16.
 
 ## 1. Executive summary
@@ -156,7 +158,7 @@ Status definitions are applied exactly as requested: **IMPLEMENTED**, **PARTIAL*
 
 ## 5. API surface
 
-`Yes*` means the route is under JWT middleware, but the default config enables a fixed development token and also accepts tokens in the query string (`backend/internal/config/config.go:82-85`, `backend/internal/api/middlewares/auth.go:13-24`). No route applies permission middleware (`backend/internal/api/routes/routes.go:27-153`). Status here describes the handler, not production readiness.
+`Yes*` means the route is under JWT and active-user middleware. Current routes also apply permission middleware by capability; query-token support is restricted to the `/ws/*` WebSocket handshake. Status here describes the handler, not production readiness.
 
 ### Go/Fiber inbound API
 
@@ -454,7 +456,7 @@ All variables below are read in `backend/internal/config/config.go:62-108`; pars
 | `FRONTEND_URL` | `http://127.0.0.1:5173` |
 | `JWT_SECRET` | Hardcoded development secret **[REDACTED]**; unsafe if not overridden |
 | `JWT_EXPIRES_MINUTES` | `60` |
-| `ALLOW_DEV_AUTH` | `true`; enables fixed development-token bypass |
+| `ALLOW_PUBLIC_REGISTRATION`, `BOOTSTRAP_ADMIN_TOKEN` | Registration policy and protected first-administrator bootstrap; production requires closed public registration and a strong bootstrap token |
 | `DEV_USER_ROLE` | Empty |
 | `DATABASE_URL`, `REDIS_URL` | Hardcoded local connection defaults with credentials/locations **[REDACTED]**; currently not used by real clients |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_ENABLED` | `http://localhost:11434`, `phi3:mini`, `false` |

@@ -98,7 +98,38 @@ func withoutNestedSecretFields(value interface{}) interface{} {
 
 func isSecretField(key string) bool {
 	normalized := strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(strings.ToLower(key))
-	return strings.Contains(normalized, "apikey") || strings.Contains(normalized, "secret")
+	if strings.Contains(normalized, "apikey") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "passwd") ||
+		strings.Contains(normalized, "credential") ||
+		strings.Contains(normalized, "privatekey") ||
+		strings.Contains(normalized, "connectionstring") {
+		return true
+	}
+
+	// Match credential-bearing token fields narrowly. In particular, do not
+	// classify ordinary usage metrics such as inputTokens or tokenCount as
+	// secrets merely because their names contain "token".
+	for _, suffix := range []string{
+		"accesstoken", "accesstokens", "refreshtoken", "refreshtokens", "authtoken", "authtokens",
+		"bearertoken", "bearertokens", "idtoken", "idtokens", "sessiontoken", "sessiontokens",
+	} {
+		if strings.HasSuffix(normalized, suffix) {
+			return true
+		}
+	}
+
+	switch normalized {
+	case "token", "bearer", "authorization":
+		return true
+	}
+
+	return strings.HasSuffix(normalized, "authorizationheader") ||
+		strings.HasSuffix(normalized, "authheader") ||
+		strings.HasSuffix(normalized, "dsn") ||
+		strings.HasSuffix(normalized, "databaseurl") ||
+		strings.HasSuffix(normalized, "redisurl")
 }
 
 func withoutSecretSettings(settings models.SettingsBundle) models.SettingsBundle {
@@ -202,7 +233,12 @@ func (h *Handler) TestWebhook(c *fiber.Ctx) error {
 
 func (h *Handler) ListIntegrations(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
-	integrations := repository.ListMapValues(h.Store.Integrations)
+	integrations := make([]models.Integration, 0, len(h.Store.Integrations))
+	for _, integration := range h.Store.Integrations {
+		if integration != nil {
+			integrations = append(integrations, publicIntegration(*integration))
+		}
+	}
 	h.Store.Mu.RUnlock()
 	return c.JSON(models.OK(integrations, "OK", nil))
 }
@@ -221,7 +257,7 @@ func (h *Handler) CreateIntegration(c *fiber.Ctx) error {
 	h.Store.Mu.Lock()
 	h.Store.Integrations[integration.ID] = integration
 	h.Store.Mu.Unlock()
-	return c.Status(fiber.StatusCreated).JSON(models.OK(integration, "Integration created", nil))
+	return c.Status(fiber.StatusCreated).JSON(models.OK(publicIntegration(*integration), "Integration created", nil))
 }
 
 func (h *Handler) GetIntegration(c *fiber.Ctx) error {
@@ -231,7 +267,7 @@ func (h *Handler) GetIntegration(c *fiber.Ctx) error {
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Integration not found")
 	}
-	return c.JSON(models.OK(integration, "OK", nil))
+	return c.JSON(models.OK(publicIntegration(*integration), "OK", nil))
 }
 
 func (h *Handler) UpdateIntegration(c *fiber.Ctx) error {
@@ -248,7 +284,7 @@ func (h *Handler) UpdateIntegration(c *fiber.Ctx) error {
 	if cfg, ok := body["config"].(map[string]interface{}); ok {
 		integration.Config = mergeMap(integration.Config, cfg)
 	}
-	return c.JSON(models.OK(integration, "Integration updated", nil))
+	return c.JSON(models.OK(publicIntegration(*integration), "Integration updated", nil))
 }
 
 func (h *Handler) DeleteIntegration(c *fiber.Ctx) error {
@@ -303,7 +339,12 @@ func (h *Handler) setIntegrationStatus(c *fiber.Ctx, status string) error {
 		return fiber.NewError(fiber.StatusNotFound, "Integration not found")
 	}
 	integration.Status = status
-	return c.JSON(models.OK(integration, "Integration status updated", nil))
+	return c.JSON(models.OK(publicIntegration(*integration), "Integration status updated", nil))
+}
+
+func publicIntegration(integration models.Integration) models.Integration {
+	integration.Config = withoutSecretFields(integration.Config)
+	return integration
 }
 
 func integrationEndpoint(config map[string]interface{}) string {
@@ -338,7 +379,13 @@ func probeEndpoint(method, endpoint string, body []byte) (map[string]interface{}
 		request.Header.Set("Content-Type", "application/json")
 	}
 	started := time.Now()
-	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}

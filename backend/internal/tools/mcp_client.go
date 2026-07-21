@@ -75,12 +75,16 @@ func (c *MCPClient) Execute(ctx context.Context, action string, params map[strin
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 400 {
+		// Downstream error bodies are untrusted and may contain credentials,
+		// request parameters, or internal diagnostics. Never propagate them
+		// into runner errors or logs.
+		return nil, fmt.Errorf("mcp middleware returned HTTP %d", resp.StatusCode)
+	}
+
 	var payload map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode mcp response: %w", err)
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("mcp middleware returned %d: %v", resp.StatusCode, payload)
 	}
 
 	return payload, nil

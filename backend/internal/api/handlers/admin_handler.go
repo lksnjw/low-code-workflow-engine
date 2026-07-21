@@ -96,6 +96,9 @@ func (h *Handler) UpdateUser(c *fiber.Ctx) error {
 	}
 	if status := fmt.Sprint(body["status"]); status != "" && status != "<nil>" {
 		user.Status = status
+		if !strings.EqualFold(status, "active") {
+			revokeRefreshSessionsLocked(h.Store, user.ID)
+		}
 	}
 	if roleID := fmt.Sprint(body["roleId"]); roleID != "" && roleID != "<nil>" {
 		if role := h.Store.Roles[roleID]; role != nil {
@@ -114,11 +117,7 @@ func (h *Handler) DeleteUser(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	delete(h.Store.Users, userID)
 	delete(h.Store.PasswordHashes, userID)
-	for digest, session := range h.Store.RefreshSessions {
-		if session.UserID == userID {
-			delete(h.Store.RefreshSessions, digest)
-		}
-	}
+	revokeRefreshSessionsLocked(h.Store, userID)
 	h.Store.Mu.Unlock()
 	return c.JSON(models.OK(map[string]bool{"deleted": true}, "User deleted", nil))
 }
@@ -143,7 +142,21 @@ func (h *Handler) setUserStatus(c *fiber.Ctx, status string) error {
 		return fiber.NewError(fiber.StatusNotFound, "User not found")
 	}
 	user.Status = status
+	if !strings.EqualFold(status, "active") {
+		revokeRefreshSessionsLocked(h.Store, user.ID)
+	}
 	return c.JSON(models.OK(user, "User status updated", nil))
+}
+
+// revokeRefreshSessionsLocked removes every refresh session for a user. The
+// caller must hold Store.Mu for writing so a suspension and revocation become
+// visible atomically.
+func revokeRefreshSessionsLocked(store *repository.Store, userID string) {
+	for digest, session := range store.RefreshSessions {
+		if session.UserID == userID {
+			delete(store.RefreshSessions, digest)
+		}
+	}
 }
 
 func (h *Handler) ListRoles(c *fiber.Ctx) error {

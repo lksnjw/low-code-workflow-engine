@@ -59,7 +59,8 @@ Base paths: `/api/settings`, `/api/integrations`
     },
     "rbac": {
       "productionRunRequiresApproval": true,
-      "defaultRoleId": "role_builder"
+      "publicRegistrationEnabled": false,
+      "defaultRoleId": "role_client"
     }
   },
   "message": "OK",

@@ -3,7 +3,7 @@ import Button from "../shared/ui/Button";
 import { useRoute } from "../../context/RouteContext";
 
 function WelcomeBanner() {
-  const { navigateTo } = useRoute();
+  const { navigateTo, startWorkflow } = useRoute();
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-200 bg-backgroundLight p-5 dark:border-darkBackgroundVery dark:bg-darkBackground">
@@ -18,7 +18,7 @@ function WelcomeBanner() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button onClick={() => navigateTo("workflows", "builder")}>
+          <Button onClick={startWorkflow}>
             <Icon icon="mdi:plus" className="h-5 w-5" />
             Build Flow
           </Button>

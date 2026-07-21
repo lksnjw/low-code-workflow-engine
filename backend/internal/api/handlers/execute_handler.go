@@ -69,7 +69,8 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	}
 
 	h.Store.Mu.Lock()
-	h.Store.Executions[executionID] = execution
+	runningExecution := *execution
+	h.Store.Executions[executionID] = &runningExecution
 	h.Store.Mu.Unlock()
 
 	runResult, err := h.Runner.Run(c.Context(), executionID, *workflow, req.Input, token)
@@ -111,7 +112,8 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	}
 
 	h.Store.Mu.Lock()
-	h.Store.Executions[executionID] = execution
+	completedExecution := *execution
+	h.Store.Executions[executionID] = &completedExecution
 	h.Store.ExecutionLogs[executionID] = append(h.Store.ExecutionLogs[executionID], runResult.Logs...)
 	h.Store.Timelines[executionID] = append(h.Store.Timelines[executionID], runResult.Timeline...)
 	h.updateWorkflowExecutionMetricsLocked(workflow.ID, completed)

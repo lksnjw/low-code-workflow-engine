@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/api/handlers"
@@ -9,22 +11,23 @@ import (
 
 func Register(app *fiber.App, h *handlers.Handler) {
 	app.Get("/healthz", h.Health)
-	app.Get("/ws/*", middlewares.Auth(h.Cfg.JWTSecret, false), h.RequireUser, websocket.New(h.WebSocketEvents))
+	app.Get("/ws/*", middlewares.Auth(h.Cfg.JWTSecret), h.RequireUser, websocket.New(h.WebSocketEvents))
 
 	api := app.Group(h.Cfg.APIBasePath)
 	api.Get("/health", h.Health)
 
 	auth := api.Group("/auth")
-	auth.Post("/login", h.Login)
-	auth.Post("/register", h.Register)
-	auth.Post("/refresh", h.Refresh)
-	auth.Post("/forgot-password", h.ForgotPassword)
-	auth.Post("/reset-password", h.ResetPassword)
-	auth.Post("/verify-email", h.VerifyEmail)
+	authMutationLimiter := middlewares.RateLimit(10, time.Minute)
+	auth.Post("/login", authMutationLimiter, h.Login)
+	auth.Post("/register", authMutationLimiter, h.Register)
+	auth.Post("/refresh", authMutationLimiter, h.Refresh)
+	auth.Post("/forgot-password", authMutationLimiter, h.ForgotPassword)
+	auth.Post("/reset-password", authMutationLimiter, h.ResetPassword)
+	auth.Post("/verify-email", authMutationLimiter, h.VerifyEmail)
 	auth.Get("/oauth/:provider/authorize", h.OAuthAuthorize)
 	auth.Get("/oauth/:provider/callback", h.OAuthCallback)
 
-	protected := api.Group("", middlewares.Auth(h.Cfg.JWTSecret, h.Cfg.AllowDevAuth), h.RequireUser)
+	protected := api.Group("", middlewares.Auth(h.Cfg.JWTSecret), h.RequireUser)
 	workflowRead := middlewares.RequirePermission("workflow:read", h.Permissions)
 	workflowWrite := middlewares.RequirePermission("workflow:write", h.Permissions)
 	workflowRun := middlewares.RequirePermission("workflow:run", h.Permissions)

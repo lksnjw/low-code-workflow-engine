@@ -1,5 +1,7 @@
 # Hard-Coded Data Cleanup and Runtime Integration Report
 
+> **Historical work-stream report (2026-07-19).** This describes the cleanup state at that milestone. PostgreSQL persistence, production bootstrap hardening, provider usage metadata, and final deployment integration were completed afterward; see `CURRENT_STATE.md` for current evidence.
+
 **Project:** Enterprise Low-Code Workflow Engine  
 **Report date:** 2026-07-19  
 **Implementation status:** Completed and verified  
@@ -38,7 +40,7 @@ The platform is now an honest development/research implementation: it reports on
 The original backend behavior included:
 
 - users and operational records created automatically during startup;
-- authentication that could accept a fixed development token;
+- authentication that previously included a development bypass;
 - login behavior that did not securely verify a stored password hash;
 - fake token usage, cost, latency, recovery, dashboard, and analytics values;
 - an MCP client that could report simulated execution when no MCP endpoint was configured;
@@ -134,8 +136,8 @@ flowchart LR
 - Refresh tokens are opaque values whose SHA-256 digests are stored server-side.
 - Refresh rotates the token and removes the previous session.
 - Logout sends the refresh token to the backend and revokes it before clearing browser storage.
-- The fixed development token path was removed from normal authentication.
-- `ALLOW_DEV_AUTH` now defaults to `false`.
+- The development authentication bypass was removed.
+- No fixed development-token configuration or authentication bypass remains.
 - WebSocket query-token authentication is limited to WebSocket handshakes.
 - Protected requests require the referenced user to still exist.
 
@@ -270,7 +272,7 @@ The profile and notification routes still require authentication even where an a
 
 | File | Status | Details |
 |---|---|---|
-| `backend/tests/integration/api_test.go` | Modified | Registers a real test account and uses its JWT instead of a fixed development token. |
+| `backend/tests/integration/api_test.go` | Modified | Registers a real test account and uses its signed JWT. |
 | `backend/tests/unit/synthesizer_test.go` | Modified | Expects an unavailable provider to return an error rather than fallback YAML. |
 | `backend/internal/api/handlers/gate_invariant_test.go` | Adjusted | Provides an authenticated admin principal in handler tests and expects the now-synchronous execution response status. |
 
@@ -490,8 +492,8 @@ frontend/src/tests/unit/hooks/useAuth.test.js
 | `APP_HOST`, `APP_PORT`, `API_BASE_PATH` | Backend listener and API prefix. |
 | `FRONTEND_URL` | Allowed frontend origin. |
 | `JWT_EXPIRES_MINUTES` | Access-token lifetime. |
-| `ALLOW_DEV_AUTH` | Defaults to `false`; keep false outside isolated experiments. |
-| `DATABASE_URL` | Currently checked/configured but not used as the main application repository. See remaining work. |
+| `ALLOW_PUBLIC_REGISTRATION`, `BOOTSTRAP_ADMIN_TOKEN` | Controls public signup and protects first-administrator creation; production validation requires signup to be closed and the bootstrap token to be at least 32 bytes. |
+| `DATABASE_URL` | Used when `STORAGE_DRIVER=postgres`; credentials are not logged. See `docs/BOOTSTRAP_FLOW.md`. |
 | `REDIS_URL` | Currently checked/configured but not used for the main session/runtime store. |
 | `WORKFLOW_GENERATION_PROVIDER` | `gemini` or `ollama`. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Required when generation provider is Gemini. |
@@ -586,25 +588,17 @@ The integration authentication test now obtains a real token by registering an a
 
 ### Priority 0: required before production use
 
-#### 10.1 Add durable persistence
+#### 10.1 Durable persistence — completed after this snapshot
 
-The application still uses `repository.Store`, which is process-local memory. Restarting the backend removes:
-
-- users and password hashes;
-- refresh sessions;
-- workflows and versions;
-- executions, logs, timelines, and healing reports;
-- chat sessions;
-- integrations, webhooks, API keys, notifications, and uploads.
-
-`DATABASE_URL` and `REDIS_URL` are loaded, but their clients are not used as the authoritative repository. The next major task should be:
-
-1. define repository interfaces;
-2. create PostgreSQL migrations;
-3. implement transactional PostgreSQL repositories;
-4. move refresh sessions/cache/pub-sub to Redis where appropriate;
-5. migrate uploads to object storage or a controlled filesystem;
-6. add startup migration and backup/restore procedures.
+This historical limitation has been superseded. The runtime now supports
+`STORAGE_DRIVER=memory|postgres`; PostgreSQL stores an AES-256-GCM encrypted
+state envelope containing users, refresh sessions, workflows, executions,
+chat, settings, provider credentials, integrations, API keys, notifications,
+and uploads. Embedded migrations, restart restoration, failed-write rollback,
+health probing, and a single-writer advisory lock are implemented. See
+`CURRENT_STATE.md` and `docs/BOOTSTRAP_FLOW.md` for current evidence and the
+remaining single-instance/whole-snapshot scaling boundary. Redis remains an
+in-memory policy-cache placeholder rather than the authoritative repository.
 
 #### 10.2 Add record ownership and tenant isolation
 

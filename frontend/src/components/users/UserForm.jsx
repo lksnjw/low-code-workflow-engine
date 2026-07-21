@@ -25,7 +25,7 @@ function UserForm({ roles = [], onCreated }) {
       setSaving(false);
     }
   };
-  return <form className="space-y-3" onSubmit={submit}><Input value={form.name} onChange={change("name")} placeholder="Full name" required /><Input type="email" value={form.email} onChange={change("email")} placeholder="Email address" required /><Input type="password" value={form.password} onChange={change("password")} placeholder="Temporary password (8+ characters)" minLength={8} required /><Select value={form.roleId} onChange={change("roleId")}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</Select><Button disabled={saving}>{saving ? "Creating…" : "Create User"}</Button></form>;
+  return <form className="space-y-3" onSubmit={submit}><Input value={form.name} onChange={change("name")} placeholder="Full name" required /><Input type="email" value={form.email} onChange={change("email")} placeholder="Email address" required /><Input type="password" value={form.password} onChange={change("password")} placeholder="Temporary password (8+ characters)" minLength={8} required /><Select value={form.roleId} onChange={change("roleId")}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</Select><Button type="submit" disabled={saving}>{saving ? "Creating…" : "Create User"}</Button></form>;
 }
 
 export default UserForm;

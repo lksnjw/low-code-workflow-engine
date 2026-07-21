@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"log"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -17,6 +19,7 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/synthesizer"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
+	"github.com/sanjeewa/agentic-orchestrator/internal/storage"
 	"github.com/sanjeewa/agentic-orchestrator/internal/tools"
 	"github.com/sanjeewa/agentic-orchestrator/internal/tools/impl"
 	agentlogger "github.com/sanjeewa/agentic-orchestrator/pkg/logger"
@@ -34,22 +37,59 @@ func main() {
 		zapLogger.Fatal("invalid server configuration", zap.Error(err))
 	}
 
-	_ = config.NewDatabase(cfg, zapLogger)
 	_ = config.NewRedisCache(cfg, zapLogger)
 
-	store := repository.NewStore()
+	storageContext, cancelStorage := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelStorage()
+	var stateCodec storage.Codec
+	if cfg.StorageDriver == "postgres" {
+		stateCodec, err = storage.NewAESGCMCodec(cfg.StorageEncryptionKey)
+		if err != nil {
+			zapLogger.Fatal("invalid PostgreSQL storage encryption configuration", zap.Error(err))
+		}
+	}
+	stateBackend, err := storage.Open(storageContext, cfg.StorageDriver, cfg.DatabaseURL)
+	if err != nil {
+		zapLogger.Fatal("initialize storage", zap.Error(err))
+	}
+	var store *repository.Store
+	if stateBackend == nil {
+		store = repository.NewStore()
+	} else {
+		store, err = repository.NewPersistentStore(storageContext, stateBackend, stateCodec, func(persistErr error) {
+			zapLogger.Error("persist runtime state", zap.Error(persistErr))
+		})
+		if err != nil {
+			stateBackend.Close()
+			zapLogger.Fatal("restore encrypted runtime state", zap.Error(err))
+		}
+		defer store.Close()
+	}
+	zapLogger.Info("storage initialized", zap.String("driver", cfg.StorageDriver), zap.Bool("durable", stateBackend != nil))
+
 	repository.ApplyDevUserRole(store, cfg.DevUserRole)
-	store.Settings.General = map[string]interface{}{
-		"appName": cfg.AppName, "environment": cfg.Environment, "frontendUrl": cfg.FrontendURL,
+	store.Mu.Lock()
+	if store.Settings.General == nil {
+		store.Settings.General = map[string]interface{}{}
 	}
-	store.Settings.LLM = map[string]interface{}{
-		"provider": cfg.WorkflowGenerationProvider, "model": cfg.GeminiModel,
-		"semanticSearchMode": cfg.SemanticSearchMode, "semanticFallback": cfg.SemanticFallback,
-		"mcpMode": cfg.MCPMode, "managedByEnvironment": true,
+	if store.Settings.LLM == nil {
+		store.Settings.LLM = map[string]interface{}{}
 	}
-	store.Settings.RBAC = map[string]interface{}{
-		"developmentAuthEnabled": cfg.AllowDevAuth, "defaultRoleId": "role_builder",
+	if store.Settings.RBAC == nil {
+		store.Settings.RBAC = map[string]interface{}{}
 	}
+	store.Settings.General["appName"] = cfg.AppName
+	store.Settings.General["environment"] = cfg.Environment
+	store.Settings.General["frontendUrl"] = cfg.FrontendURL
+	store.Settings.LLM["provider"] = cfg.WorkflowGenerationProvider
+	store.Settings.LLM["model"] = cfg.GeminiModel
+	store.Settings.LLM["semanticSearchMode"] = cfg.SemanticSearchMode
+	store.Settings.LLM["semanticFallback"] = cfg.SemanticFallback
+	store.Settings.LLM["mcpMode"] = cfg.MCPMode
+	store.Settings.LLM["managedByEnvironment"] = true
+	store.Settings.RBAC["publicRegistrationEnabled"] = cfg.AllowPublicRegistration
+	store.Settings.RBAC["defaultRoleId"] = "role_client"
+	store.Mu.Unlock()
 	synth := synthesizer.NewServiceWithProvider(cfg.OllamaBaseURL, cfg.OllamaModel, cfg.OllamaEnabled, cfg.WorkflowGenerationProvider, cfg.GeminiAPIKey, cfg.GeminiModel)
 	validator := workflowvalidator.NewWorkflowValidator()
 	var registryBundle *coreregistry.Bundle
@@ -107,12 +147,13 @@ func main() {
 		},
 	})
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     cfg.FrontendURL + ",http://localhost:5173,http://127.0.0.1:5173",
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		AllowOrigins:     cfg.CORSOrigins(),
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Bootstrap-Token",
 		AllowMethods:     "GET,POST,PATCH,PUT,DELETE,OPTIONS",
 		AllowCredentials: true,
 	}))
 	app.Use(middlewares.RequestLogger(zapLogger))
+	app.Use(middlewares.PersistenceFailureGuard(store))
 
 	routes.Register(app, handler)
 

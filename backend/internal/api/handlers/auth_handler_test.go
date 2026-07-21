@@ -15,7 +15,7 @@ import (
 func TestRegisterDefaultsSecondUserToClientRole(t *testing.T) {
 	store := repository.NewStore()
 	handler := &Handler{
-		Cfg:   config.Config{JWTSecret: "test-secret", TokenTTL: time.Hour},
+		Cfg:   config.Config{JWTSecret: "test-secret", TokenTTL: time.Hour, AllowPublicRegistration: true},
 		Store: store,
 	}
 	app := fiber.New()

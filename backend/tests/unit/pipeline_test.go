@@ -144,7 +144,7 @@ steps:
   - id: step_1
     action: procurement.create_purchase_order
 `
-	candidates := synthesizer.ParseCandidateResponse(raw, "gemini-1.5-flash", false)
+	candidates := synthesizer.ParseCandidateResponse(raw, "gemini-2.5-flash", false)
 	if len(candidates) != 2 {
 		t.Fatalf("expected 2 candidates, got %d", len(candidates))
 	}

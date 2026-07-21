@@ -12,19 +12,24 @@ import (
 )
 
 type Config struct {
-	AppName      string
-	Environment  string
-	Host         string
-	Port         string
-	APIBasePath  string
-	FrontendURL  string
-	JWTSecret    string
-	TokenTTL     time.Duration
-	AllowDevAuth bool
-	DevUserRole  string
+	AppName     string
+	Environment string
+	Host        string
+	Port        string
+	APIBasePath string
+	FrontendURL string
+	JWTSecret   string
+	TokenTTL    time.Duration
+	DevUserRole string
+
+	AllowPublicRegistration bool
+	BootstrapAdminToken     string
 
 	DatabaseURL string
 	RedisURL    string
+	// StorageDriver selects process-local memory or encrypted PostgreSQL state.
+	StorageDriver        string
+	StorageEncryptionKey string
 
 	OllamaBaseURL string
 	OllamaModel   string
@@ -64,6 +69,7 @@ func Load() Config {
 		"backend/.env",
 	)
 	environment := getEnv("APP_ENV", "development")
+	isProduction := strings.EqualFold(strings.TrimSpace(environment), "production")
 	backendRoot := detectBackendRoot()
 	datasetRoot := resolveAppPath(getEnv("DATASET_ROOT", "./dataset"), backendRoot)
 	toolRegistryPath := resolveAppPath(
@@ -88,16 +94,19 @@ func Load() Config {
 	return Config{
 		AppName:                            getEnv("APP_NAME", "Agentic Workflow Engine"),
 		Environment:                        environment,
-		Host:                               getEnv("APP_HOST", "0.0.0.0"),
+		Host:                               getEnv("APP_HOST", "127.0.0.1"),
 		Port:                               getEnv("APP_PORT", "8080"),
 		APIBasePath:                        getEnv("API_BASE_PATH", "/api"),
 		FrontendURL:                        getEnv("FRONTEND_URL", "http://127.0.0.1:5173"),
 		JWTSecret:                          getEnv("JWT_SECRET", "local-development-secret-change-me"),
 		TokenTTL:                           time.Duration(getEnvInt("JWT_EXPIRES_MINUTES", 60)) * time.Minute,
-		AllowDevAuth:                       getEnvBool("ALLOW_DEV_AUTH", false),
 		DevUserRole:                        devUserRole,
+		AllowPublicRegistration:            getEnvBool("ALLOW_PUBLIC_REGISTRATION", !isProduction),
+		BootstrapAdminToken:                getEnv("BOOTSTRAP_ADMIN_TOKEN", ""),
 		DatabaseURL:                        getEnv("DATABASE_URL", "postgres://workflow:workflow@localhost:5432/workflow?sslmode=disable"),
 		RedisURL:                           getEnv("REDIS_URL", "redis://localhost:6379/0"),
+		StorageDriver:                      strings.ToLower(strings.TrimSpace(getEnv("STORAGE_DRIVER", "memory"))),
+		StorageEncryptionKey:               getEnv("STORAGE_ENCRYPTION_KEY", ""),
 		OllamaBaseURL:                      strings.TrimRight(getEnv("OLLAMA_BASE_URL", "http://localhost:11434"), "/"),
 		OllamaModel:                        getEnv("OLLAMA_MODEL", "phi3:mini"),
 		OllamaEnabled:                      getEnvBool("OLLAMA_ENABLED", false),
@@ -117,7 +126,7 @@ func Load() Config {
 		SemanticFallback:                   semanticFallback,
 		WorkflowGenerationProvider:         getEnv("WORKFLOW_GENERATION_PROVIDER", "gemini"),
 		GeminiAPIKey:                       getEnv("GEMINI_API_KEY", ""),
-		GeminiModel:                        getEnv("GEMINI_MODEL", "gemini-1.5-flash"),
+		GeminiModel:                        getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
 		CandidateCount:                     getEnvInt("CANDIDATE_COUNT", 5),
 		ChatTraceBoxes:                     getEnvBool("CHAT_TRACE_BOXES", strings.EqualFold(environment, "development")),
 		ChatUserRoleOverride:               getEnv("CHAT_USER_ROLE_OVERRIDE", devUserRole),
@@ -127,6 +136,18 @@ func Load() Config {
 
 // Validate rejects unsafe or unknown experiment modes before the server starts.
 func (c Config) Validate() error {
+	switch strings.ToLower(strings.TrimSpace(c.StorageDriver)) {
+	case "", "memory":
+	case "postgres":
+		if strings.TrimSpace(c.DatabaseURL) == "" {
+			return fmt.Errorf("DATABASE_URL is required when STORAGE_DRIVER=postgres")
+		}
+		if strings.TrimSpace(c.StorageEncryptionKey) == "" {
+			return fmt.Errorf("STORAGE_ENCRYPTION_KEY is required when STORAGE_DRIVER=postgres")
+		}
+	default:
+		return fmt.Errorf("unsupported STORAGE_DRIVER %q (allowed values: memory or postgres)", c.StorageDriver)
+	}
 	switch c.ExperimentBaseline {
 	case "":
 	case "B":
@@ -146,7 +167,50 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("unsupported SEMANTIC_FALLBACK %q (allowed values: off or lexical)", c.SemanticFallback)
 	}
+	if strings.EqualFold(strings.TrimSpace(c.Environment), "production") {
+		jwtSecret := strings.TrimSpace(c.JWTSecret)
+		if len([]byte(jwtSecret)) < 32 || jwtSecret == "local-development-secret-change-me" || jwtSecret == "change-me-before-production" {
+			return fmt.Errorf("JWT_SECRET must be a unique secret of at least 32 bytes when APP_ENV=production")
+		}
+		if len([]byte(strings.TrimSpace(c.BootstrapAdminToken))) < 32 {
+			return fmt.Errorf("BOOTSTRAP_ADMIN_TOKEN must be a unique secret of at least 32 bytes when APP_ENV=production")
+		}
+		if c.AllowPublicRegistration {
+			return fmt.Errorf("ALLOW_PUBLIC_REGISTRATION must be false when APP_ENV=production")
+		}
+		if strings.EqualFold(strings.TrimSpace(c.MCPMode), "mock") {
+			return fmt.Errorf("MCP_MODE=mock is not allowed when APP_ENV=production")
+		}
+		if !strings.EqualFold(strings.TrimSpace(c.StorageDriver), "postgres") {
+			return fmt.Errorf("STORAGE_DRIVER must be postgres when APP_ENV=production")
+		}
+	}
 	return nil
+}
+
+// CORSOrigins returns the explicit browser origins accepted by the API. Local
+// development aliases are never added to a production deployment.
+func (c Config) CORSOrigins() string {
+	origins := []string{}
+	seen := map[string]struct{}{}
+	add := func(origin string) {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			return
+		}
+		if _, exists := seen[origin]; exists {
+			return
+		}
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
+	}
+
+	add(c.FrontendURL)
+	if !strings.EqualFold(strings.TrimSpace(c.Environment), "production") {
+		add("http://localhost:5173")
+		add("http://127.0.0.1:5173")
+	}
+	return strings.Join(origins, ",")
 }
 
 func (c Config) BaselineBEnabled() bool {

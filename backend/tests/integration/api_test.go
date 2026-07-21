@@ -142,7 +142,7 @@ steps:
 		AppName:                            "test",
 		APIBasePath:                        "/api",
 		JWTSecret:                          "secret",
-		AllowDevAuth:                       true,
+		AllowPublicRegistration:            true,
 		TokenTTL:                           time.Hour,
 		SemanticSearchMode:                 "external_embedding",
 		SemanticSearchURL:                  searchServer.URL,

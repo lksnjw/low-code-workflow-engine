@@ -15,6 +15,7 @@ func NewRedisCache(cfg Config, log *zap.Logger) RedisCache {
 		Message: "in-memory policy cache active; Redis URL configured for production swap",
 	}
 
-	log.Info("redis adapter prepared", zap.String("mode", "memory"), zap.String("url", cfg.RedisURL))
+	// Redis URLs can also contain credentials, so log only the selected mode.
+	log.Info("redis adapter prepared", zap.String("mode", "memory"))
 	return cache
 }
