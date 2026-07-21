@@ -79,7 +79,7 @@ uvicorn app:app --host 127.0.0.1 --port 8090
 
 ```powershell
 cd "C:\Users\LKsnj\Desktop\RESEARCH_LAKSHAN\IMPLIMENTATION\low-code-workflow-engine\backend"
-$env:ALLOW_DEV_AUTH="true"
+$env:ALLOW_PUBLIC_REGISTRATION="true"
 $env:DEV_USER_ROLE="procurement_officer"
 $env:CHAT_USER_ROLE_OVERRIDE=""
 $env:DATASET_ROOT="./dataset"

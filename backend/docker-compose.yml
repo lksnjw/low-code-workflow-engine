@@ -6,24 +6,55 @@ services:
       POSTGRES_PASSWORD: workflow
       POSTGRES_DB: workflow
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workflow -d workflow"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   backend:
     build: .
     env_file:
       - .env.example
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_ENV: ${APP_ENV:-development}
+      FRONTEND_URL: ${FRONTEND_URL:-http://127.0.0.1:5173}
+      JWT_SECRET: ${JWT_SECRET:-change-me-before-production}
+      ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-true}
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-}
+      MCP_MODE: ${MCP_MODE:-remote}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-memory}
+      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
+      DATABASE_URL: postgres://workflow:workflow@postgres:5432/workflow?sslmode=disable
+      TOOL_REGISTRY_PATH: /app/configs/registries/all_tools_master_registry.json
+      RULE_REGISTRY_PATH: /app/configs/registries/all_rules_master_registry.json
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - registry_data:/app/configs/registries
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    build: ../frontend
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      backend:
+        condition: service_started
 
 volumes:
   postgres_data:
+  registry_data:

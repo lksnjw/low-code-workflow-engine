@@ -20,7 +20,7 @@ function WebhookForm({ onCreated }) {
       notify(apiErrorMessage(error, "Could not create webhook."), "error");
     } finally { setSaving(false); }
   };
-  return <form className="grid gap-2 sm:grid-cols-[0.7fr_1.3fr_auto]" onSubmit={submit}><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Webhook name" required /><Input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://service.example/webhooks" required /><Button disabled={saving}>{saving ? "Saving…" : "Add"}</Button></form>;
+  return <form className="grid gap-2 sm:grid-cols-[0.7fr_1.3fr_auto]" onSubmit={submit}><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Webhook name" required /><Input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://service.example/webhooks" required /><Button type="submit" disabled={saving}>{saving ? "Saving…" : "Add"}</Button></form>;
 }
 
 export default WebhookForm;

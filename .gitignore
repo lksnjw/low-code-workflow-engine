@@ -17,6 +17,10 @@ bin/
 tmp/
 
 *.log
+__pycache__/
+*.py[cod]
+backend/backend-dev.err.zip
+frontend/src.zip
 coverage.out
 *.test
 qa-*.png

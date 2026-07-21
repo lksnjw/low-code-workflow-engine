@@ -167,3 +167,17 @@ export function filterNavigationGroups(groups, hasAny, roleId) {
     })
     .filter((group) => group.subMenu.length > 0);
 }
+
+export function resolvePermittedRoute(groups, hasAny, roleId, requested = DEFAULT_ROUTE) {
+  const visibleGroups = filterNavigationGroups(groups, hasAny, roleId);
+  const requestedGroup = visibleGroups.find((group) => group.id === requested?.main);
+  const requestedSub = requestedGroup?.subMenu.find((item) => item.id === requested?.sub);
+  if (requestedGroup && requestedSub) {
+    return { main: requestedGroup.id, sub: requestedSub.id };
+  }
+
+  const fallbackGroup = visibleGroups[0];
+  const fallbackSub = fallbackGroup?.subMenu[0];
+  if (!fallbackGroup || !fallbackSub) return null;
+  return { main: fallbackGroup.id, sub: fallbackSub.id };
+}

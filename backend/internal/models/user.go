@@ -70,7 +70,7 @@ type NotificationPreferences struct {
 type APIKey struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
-	Key       string     `json:"key,omitempty"`
+	Key       string     `json:"-"`
 	MaskedKey string     `json:"maskedKey"`
 	Scopes    []string   `json:"scopes"`
 	CreatedAt time.Time  `json:"createdAt"`

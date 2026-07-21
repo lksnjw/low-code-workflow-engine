@@ -3,12 +3,60 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
+
+func TestSecretClassificationCoversCredentialsWithoutHidingUsageMetrics(t *testing.T) {
+	secretFields := []string{
+		"apiKey", "client_secret", "password", "dbPassword", "access_token", "refreshToken",
+		"oauthToken", "backupRefreshTokens", "bearer-token", "Authorization", "request_auth_header", "private_key", "credentials",
+		"dbDSN", "database_url", "primaryRedisURL", "connection_string",
+	}
+	for _, key := range secretFields {
+		if !isSecretField(key) {
+			t.Errorf("isSecretField(%q) = false, want true", key)
+		}
+	}
+
+	metricFields := []string{"inputTokens", "output_tokens", "tokenCount", "totalTokenCount", "maxTokens", "tokenUsage"}
+	for _, key := range metricFields {
+		if isSecretField(key) {
+			t.Errorf("isSecretField(%q) = true, want false for usage/configuration metric", key)
+		}
+	}
+}
+
+func TestProbeEndpointRefusesRedirects(t *testing.T) {
+	targetRequests := make(chan struct{}, 1)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetRequests <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirector.Close()
+
+	result, err := probeEndpoint(http.MethodPost, redirector.URL, []byte(`{"credential":"must-not-hop"}`))
+	if err == nil {
+		t.Fatalf("probeEndpoint() result = %#v, error = nil; want redirect refusal", result)
+	}
+	if !strings.Contains(err.Error(), "HTTP 307") {
+		t.Fatalf("probeEndpoint() error = %q, want redirect status only", err)
+	}
+	select {
+	case <-targetRequests:
+		t.Fatal("probeEndpoint followed redirect to the target")
+	default:
+	}
+}
 
 func TestPatchLLMSettingsDoesNotEchoSecretFields(t *testing.T) {
 	store := repository.NewStore()
@@ -77,6 +125,74 @@ func TestPatchLLMSettingsDoesNotEchoSecretFields(t *testing.T) {
 	assertNoSecretMaterial(t, "PatchSettings", patchAllBody)
 	if !strings.Contains(patchAllBody, "updated-model") {
 		t.Fatalf("PatchSettings response omitted non-secret update: %s", patchAllBody)
+	}
+}
+
+func TestIntegrationResponsesDoNotEchoSecretConfig(t *testing.T) {
+	store := repository.NewStore()
+	handler := &Handler{Store: store}
+	app := fiber.New()
+	app.Post("/integrations", handler.CreateIntegration)
+	app.Get("/integrations", handler.ListIntegrations)
+	app.Get("/integrations/:id", handler.GetIntegration)
+	app.Patch("/integrations/:id", handler.UpdateIntegration)
+
+	created := registryTestRequest(t, app, http.MethodPost, "/integrations", "", map[string]interface{}{
+		"name": "ERP", "type": "http",
+		"config": map[string]interface{}{
+			"baseUrl": "https://erp.example.test", "apiKey": "integration-secret",
+			"auth": map[string]interface{}{"client_secret": "nested-secret", "region": "eu"},
+		},
+	})
+	createdBody := responseBody(t, created)
+	created.Body.Close()
+	if created.StatusCode != fiber.StatusCreated {
+		t.Fatalf("CreateIntegration returned %d: %s", created.StatusCode, createdBody)
+	}
+	assertIntegrationSecretRedacted(t, createdBody)
+
+	store.Mu.RLock()
+	var id string
+	for candidateID, integration := range store.Integrations {
+		id = candidateID
+		if integration.Config["apiKey"] != "integration-secret" {
+			t.Fatal("secret configuration was not retained server-side")
+		}
+	}
+	store.Mu.RUnlock()
+
+	for _, target := range []string{"/integrations", "/integrations/" + id} {
+		response := registryTestRequest(t, app, http.MethodGet, target, "", nil)
+		body := responseBody(t, response)
+		response.Body.Close()
+		if response.StatusCode != fiber.StatusOK {
+			t.Fatalf("GET %s returned %d: %s", target, response.StatusCode, body)
+		}
+		assertIntegrationSecretRedacted(t, body)
+	}
+
+	updated := registryTestRequest(t, app, http.MethodPatch, "/integrations/"+id, "", map[string]interface{}{
+		"config": map[string]interface{}{"access_secret": "replacement-secret", "region": "apac"},
+	})
+	updatedBody := responseBody(t, updated)
+	updated.Body.Close()
+	if updated.StatusCode != fiber.StatusOK {
+		t.Fatalf("UpdateIntegration returned %d: %s", updated.StatusCode, updatedBody)
+	}
+	assertIntegrationSecretRedacted(t, updatedBody)
+}
+
+func assertIntegrationSecretRedacted(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{"integration-secret", "nested-secret", "replacement-secret", `"apiKey"`, `"client_secret"`, `"access_secret"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("integration response exposed %q: %s", forbidden, body)
+		}
+	}
+	for _, expected := range []string{"baseUrl", "region"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("integration response omitted non-secret config %q: %s", expected, body)
+		}
 	}
 }
 

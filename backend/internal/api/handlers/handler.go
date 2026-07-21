@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -52,12 +53,32 @@ func New(cfg config.Config, store *repository.Store, synth *synthesizer.Service,
 }
 
 func (h *Handler) Health(c *fiber.Ctx) error {
-	return c.JSON(models.OK(map[string]interface{}{
+	probeContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	durable, storageHealthy := h.Store.ProbePersistence(probeContext)
+	status := "healthy"
+	storageStatus := "healthy"
+	statusCode := fiber.StatusOK
+	if !storageHealthy {
+		status = "degraded"
+		storageStatus = "unhealthy"
+		statusCode = fiber.StatusServiceUnavailable
+	}
+	data := map[string]interface{}{
 		"service":     h.Cfg.AppName,
 		"environment": h.Cfg.Environment,
-		"status":      "healthy",
-		"time":        time.Now().UTC(),
-	}, "OK", nil))
+		"status":      status,
+		"storage": map[string]interface{}{
+			"driver":  h.Cfg.StorageDriver,
+			"durable": durable,
+			"status":  storageStatus,
+		},
+		"time": time.Now().UTC(),
+	}
+	if !storageHealthy {
+		return c.Status(statusCode).JSON(models.APIResponse{Success: false, Data: data, Message: "Storage persistence is degraded", Meta: nil})
+	}
+	return c.Status(statusCode).JSON(models.OK(data, "OK", nil))
 }
 
 func (h *Handler) parseBody(c *fiber.Ctx, target interface{}) error {
@@ -83,8 +104,16 @@ func (h *Handler) currentUser(c *fiber.Ctx) *models.User {
 }
 
 func (h *Handler) RequireUser(c *fiber.Ctx) error {
-	if h.currentUser(c) == nil {
+	userID := h.currentUserID(c)
+	h.Store.Mu.RLock()
+	user, exists := h.Store.Users[userID]
+	active := exists && user != nil && strings.EqualFold(user.Status, "active")
+	h.Store.Mu.RUnlock()
+	if !exists || user == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(models.Fail("Authenticated user no longer exists", nil))
+	}
+	if !active {
+		return c.Status(fiber.StatusForbidden).JSON(models.Fail("User account is not active", nil))
 	}
 	return c.Next()
 }

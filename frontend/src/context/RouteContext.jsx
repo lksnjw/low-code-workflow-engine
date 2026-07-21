@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { DEFAULT_ROUTE, getNavigationGroup } from "../constants/navigation";
+import { DEFAULT_ROUTE, NAVIGATION_GROUPS, getNavigationGroup, resolvePermittedRoute } from "../constants/navigation";
+import { useAuthContext } from "./AuthContext";
 
 const RouteContext = createContext(null);
 
@@ -21,7 +22,15 @@ function getInitialRoute() {
 }
 
 export function RouteProvider({ children }) {
-  const [initialRoute] = useState(getInitialRoute);
+  const { user } = useAuthContext();
+  const permissionSet = useMemo(() => new Set(user?.permissions ?? []), [user?.permissions]);
+  const hasAny = useCallback(
+    (required) => required.some((permission) => permissionSet.has(permission)),
+    [permissionSet]
+  );
+  const [initialRoute] = useState(
+    () => resolvePermittedRoute(NAVIGATION_GROUPS, hasAny, user?.roleId, getInitialRoute()) ?? DEFAULT_ROUTE
+  );
   const [activeMain, setActiveMain] = useState(initialRoute.main);
   const [activeSub, setActiveSub] = useState(initialRoute.sub);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(() => localStorage.getItem("workflow.selectedWorkflowId"));

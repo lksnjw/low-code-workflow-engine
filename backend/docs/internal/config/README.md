@@ -1,6 +1,6 @@
 # Configuration Management (`internal/config/`)
 
-The `internal/config/` package is responsible for managing the application's environment-specific settings, database connections, and cache adapters.
+The `internal/config/` package manages environment-specific settings and the cache-adapter selection. Durable database connections and migrations live in `internal/storage/`.
 
 ## Files
 
@@ -15,26 +15,20 @@ This is the core of the configuration package. It defines the `Config` struct, w
 *   **Settings include**:
     *   Server host/port and API base path.
     *   JWT secrets and token TTL.
+    *   First-administrator bootstrap and public-registration policy.
     *   LLM configuration (Ollama and Gemini).
     *   Semantic search parameters (URLs, thresholds, and fallback modes).
     *   Paths for tool and rule registries.
-
-### `db.go`
-
-Handles the initialization of the database adapter.
-
-*   **Current State**: In the current development phase, it initializes an in-memory repository store.
-*   **Design**: It is architected to be a drop-in replacement for a PostgreSQL connection, allowing for easy migration to a persistent database.
 
 ### `redis.go`
 
 Handles the initialization of the Redis cache adapter.
 
-*   **Current State**: Similar to `db.go`, it currently uses an in-memory policy cache.
+*   **Current State**: It currently selects an in-memory policy cache and never logs the credential-bearing Redis URL.
 *   **Design**: Provides the infrastructure to integrate Redis for distributed caching and session management.
 
 ## Key Functions & Responsibilities
 
 *   **Path Resolution**: The package ensures that paths for datasets and configuration files are correctly resolved regardless of whether the app is run from the root or the `backend/` directory.
 *   **Typed Access**: Provides typed access (ints, bools, durations) to environment variables, reducing parsing logic in other parts of the system.
-*   **Development Support**: Includes flags like `ALLOW_DEV_AUTH` to simplify local development and testing.
+*   **Fail-closed Production Validation**: Requires strong JWT/bootstrap secrets, disables public registration and mock MCP mode, and keeps the default HTTP bind address on loopback.

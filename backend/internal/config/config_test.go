@@ -62,3 +62,150 @@ func TestUnknownDemoModesRefuseStartup(t *testing.T) {
 		})
 	}
 }
+
+func TestStorageDefaultsToMemory(t *testing.T) {
+	t.Setenv("STORAGE_DRIVER", "")
+	t.Setenv("STORAGE_ENCRYPTION_KEY", "")
+	t.Setenv("EXPERIMENT_BASELINE", "")
+
+	cfg := Load()
+	if cfg.StorageDriver != "memory" {
+		t.Fatalf("StorageDriver=%q, want memory", cfg.StorageDriver)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("memory configuration should be valid: %v", err)
+	}
+}
+
+func TestDevelopmentDefaultsAreLocalAndAllowRegistration(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("APP_HOST", "")
+	t.Setenv("ALLOW_PUBLIC_REGISTRATION", "")
+	t.Setenv("BOOTSTRAP_ADMIN_TOKEN", "")
+	t.Setenv("EXPERIMENT_BASELINE", "")
+
+	cfg := Load()
+	if cfg.Host != "127.0.0.1" {
+		t.Fatalf("Host=%q, want loopback default", cfg.Host)
+	}
+	if !cfg.AllowPublicRegistration {
+		t.Fatal("development should allow public registration by default")
+	}
+}
+
+func TestProductionDefaultsDisablePublicRegistration(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("ALLOW_PUBLIC_REGISTRATION", "")
+	t.Setenv("EXPERIMENT_BASELINE", "")
+
+	cfg := Load()
+	if cfg.AllowPublicRegistration {
+		t.Fatal("production must disable public registration by default")
+	}
+}
+
+func TestCORSOriginsDoNotAddDevelopmentOriginsInProduction(t *testing.T) {
+	production := Config{Environment: "production", FrontendURL: "https://portal.example.test"}
+	if got := production.CORSOrigins(); got != "https://portal.example.test" {
+		t.Fatalf("production CORS origins=%q", got)
+	}
+
+	development := Config{Environment: "development", FrontendURL: "http://127.0.0.1:5173"}
+	got := development.CORSOrigins()
+	if got != "http://127.0.0.1:5173,http://localhost:5173" {
+		t.Fatalf("development CORS origins=%q", got)
+	}
+}
+
+func TestPostgresStorageRequiresEncryptionKey(t *testing.T) {
+	cfg := Config{StorageDriver: "postgres", DatabaseURL: "postgres://localhost/workflow"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "STORAGE_ENCRYPTION_KEY") {
+		t.Fatalf("expected encryption key requirement, got %v", err)
+	}
+}
+
+func TestUnknownStorageDriverRefusesStartup(t *testing.T) {
+	cfg := Config{StorageDriver: "file"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported STORAGE_DRIVER") {
+		t.Fatalf("expected unsupported storage driver error, got %v", err)
+	}
+}
+
+func TestProductionSafetyGuards(t *testing.T) {
+	const (
+		strongJWT       = "jwt-secret-0123456789abcdef-0123456789abcdef"
+		strongBootstrap = "bootstrap-0123456789abcdef-0123456789abcdef"
+	)
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "default JWT secret",
+			cfg:  Config{Environment: "production", JWTSecret: "local-development-secret-change-me", BootstrapAdminToken: strongBootstrap},
+			want: "JWT_SECRET",
+		},
+		{
+			name: "short JWT secret",
+			cfg:  Config{Environment: "production", JWTSecret: "too-short", BootstrapAdminToken: strongBootstrap},
+			want: "JWT_SECRET",
+		},
+		{
+			name: "missing bootstrap token",
+			cfg:  Config{Environment: "production", JWTSecret: strongJWT},
+			want: "BOOTSTRAP_ADMIN_TOKEN",
+		},
+		{
+			name: "short bootstrap token",
+			cfg:  Config{Environment: "production", JWTSecret: strongJWT, BootstrapAdminToken: "too-short"},
+			want: "BOOTSTRAP_ADMIN_TOKEN",
+		},
+		{
+			name: "public registration",
+			cfg:  Config{Environment: "production", JWTSecret: strongJWT, BootstrapAdminToken: strongBootstrap, AllowPublicRegistration: true},
+			want: "ALLOW_PUBLIC_REGISTRATION",
+		},
+		{
+			name: "mock MCP",
+			cfg:  Config{Environment: "production", JWTSecret: strongJWT, BootstrapAdminToken: strongBootstrap, MCPMode: "mock"},
+			want: "MCP_MODE=mock",
+		},
+	}
+	for _, item := range tests {
+		t.Run(item.name, func(t *testing.T) {
+			err := item.cfg.Validate()
+			if err == nil || !strings.Contains(err.Error(), item.want) {
+				t.Fatalf("expected production guard containing %q, got %v", item.want, err)
+			}
+		})
+	}
+}
+
+func TestValidProductionSecurityConfiguration(t *testing.T) {
+	cfg := Config{
+		Environment:          "production",
+		JWTSecret:            "jwt-secret-0123456789abcdef-0123456789abcdef",
+		BootstrapAdminToken:  "bootstrap-0123456789abcdef-0123456789abcdef",
+		MCPMode:              "remote",
+		StorageDriver:        "postgres",
+		DatabaseURL:          "postgres://database.example.test/workflow",
+		StorageEncryptionKey: "0123456789abcdef0123456789abcdef",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid production configuration rejected: %v", err)
+	}
+}
+
+func TestProductionRequiresDurablePostgresStorage(t *testing.T) {
+	cfg := Config{
+		Environment:         "production",
+		JWTSecret:           "jwt-secret-0123456789abcdef-0123456789abcdef",
+		BootstrapAdminToken: "bootstrap-0123456789abcdef-0123456789abcdef",
+		MCPMode:             "remote",
+		StorageDriver:       "memory",
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "STORAGE_DRIVER") {
+		t.Fatalf("expected production memory storage refusal, got %v", err)
+	}
+}

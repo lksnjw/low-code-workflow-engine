@@ -1,5 +1,7 @@
 # Frontend Portal and RBAC Gap Assessment
 
+> **Historical pre-implementation assessment.** Portal slices S1-S5 were implemented after this plan. Use `CURRENT_STATE.md` and `docs/PORTAL_RESULT.md` for the current behavior; the gap statements below are retained as planning evidence.
+
 Assessment date: 2026-07-20  
 Scope: pre-implementation audit only; no portal features were built.  
 Status vocabulary: **EXISTS** means the required behavior is present on the inspected path; **PARTIAL** means useful code exists but the stated portal requirement is not end-to-end; **MISSING** means it was not found in the named search locations.
@@ -84,7 +86,7 @@ Frontend gating must use `user.permissions` for capabilities and `user.roleId` o
 | Roles/permission editor | **PARTIAL** | Matrix renders Yes/No only (`frontend/src/components/users/PermissionMatrix.jsx:3`). `RolesPage` merely re-exports `UserListPage` (`frontend/src/pages/users/RolesPage.jsx:1`). No role mutation controls exist. |
 | Settings shell | **PARTIAL** | Active routes all map to the same `SettingsPage` (`frontend/src/App.jsx:55`, `frontend/src/App.jsx:57`). `SettingsNav` labels General, Integrations, LLM Policy, RBAC, Webhooks, Billing but buttons have no navigation handler (`frontend/src/components/settings/SettingsNav.jsx:1`, `frontend/src/components/settings/SettingsNav.jsx:7`). |
 | LLM fields exposed | **EXISTS read-only** | `provider` and `model` only (`frontend/src/pages/settings/SettingsPage.jsx:16`, `frontend/src/components/settings/LlmModelSelector.jsx:1`). The page explicitly says environment-managed (`frontend/src/pages/settings/SettingsPage.jsx:16`). No provider API-key field is rendered. |
-| RBAC fields exposed | **EXISTS read-only** | Dynamically renders every backend RBAC key/value (`frontend/src/pages/settings/SettingsPage.jsx:16`). Today those startup keys are `developmentAuthEnabled` and `defaultRoleId` (`backend/cmd/server/main.go:49`). |
+| RBAC fields exposed | **EXISTS read-only** | Dynamically renders every backend RBAC key/value (`frontend/src/pages/settings/SettingsPage.jsx:16`). The environment-managed startup keys are `publicRegistrationEnabled` and `defaultRoleId`; the default role is Client. |
 | General fields exposed | **MISSING** | Settings fetches `general` but the active page renders no general form/value (`frontend/src/pages/settings/SettingsPage.jsx:14`, `frontend/src/pages/settings/SettingsPage.jsx:16`). |
 | Webhook fields exposed | **PARTIAL** | Create inputs: `name`, `url`; events are fixed to `execution.completed` and `execution.failed` (`frontend/src/components/settings/WebhookForm.jsx:9`, `frontend/src/components/settings/WebhookForm.jsx:17`, `frontend/src/components/settings/WebhookForm.jsx:23`). Existing rows show `name` and `url` (`frontend/src/pages/settings/SettingsPage.jsx:16`). No edit/delete/test controls. |
 | Platform API-key fields exposed | **PARTIAL** | List displays `name` and `maskedKey` (`frontend/src/components/settings/ApiKeyCard.jsx:3`). No create/revoke/scope controls despite backend support. These are platform API keys, not LLM-provider credentials. |

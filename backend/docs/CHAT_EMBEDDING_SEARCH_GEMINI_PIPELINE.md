@@ -89,7 +89,7 @@ Workflow generation provider:
 
 ```env
 WORKFLOW_GENERATION_PROVIDER=gemini
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-2.5-flash
 GEMINI_API_KEY=[REDACTED]
 CANDIDATE_COUNT=5
 ```
@@ -334,16 +334,18 @@ cd "C:\Users\LKsnj\Desktop\RESEARCH_LAKSHAN\IMPLIMENTATION\low-code-workflow-eng
 go run -buildvcs=false ./cmd/server
 ```
 
-Dev auth:
+Obtain an access token by registering the first development account or by
+calling `POST /api/auth/login`, then send:
 
 ```text
-Authorization: Bearer local-dev-token
+Authorization: Bearer <access-token>
 ```
 
-Browser GET calls can use:
+Browser WebSocket handshakes cannot add an Authorization header, so only the
+`/ws/*` handshake route also accepts:
 
 ```text
-?token=local-dev-token
+?token=<access-token>
 ```
 
 ## 13. Current Limitations

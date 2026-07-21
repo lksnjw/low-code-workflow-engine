@@ -7,8 +7,21 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
-	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
+
+type apiKeyView struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	MaskedKey string     `json:"maskedKey"`
+	Scopes    []string   `json:"scopes"`
+	CreatedAt time.Time  `json:"createdAt"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+}
+
+type createdAPIKeyView struct {
+	apiKeyView
+	Key string `json:"key"`
+}
 
 func (h *Handler) GetProfile(c *fiber.Ctx) error {
 	user := h.currentUser(c)
@@ -66,7 +79,12 @@ func (h *Handler) UpdateNotificationPreferences(c *fiber.Ctx) error {
 
 func (h *Handler) ListAPIKeys(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
-	keys := repository.ListMapValues(h.Store.APIKeys)
+	keys := make([]apiKeyView, 0, len(h.Store.APIKeys))
+	for _, apiKey := range h.Store.APIKeys {
+		if apiKey != nil {
+			keys = append(keys, publicAPIKey(*apiKey))
+		}
+	}
 	h.Store.Mu.RUnlock()
 	return c.JSON(models.OK(keys, "OK", nil))
 }
@@ -78,7 +96,7 @@ func (h *Handler) CreateAPIKey(c *fiber.Ctx) error {
 	h.Store.Mu.Lock()
 	h.Store.APIKeys[apiKey.ID] = apiKey
 	h.Store.Mu.Unlock()
-	return c.Status(fiber.StatusCreated).JSON(models.OK(apiKey, "API key created. Store the key now; it will not be shown again.", nil))
+	return c.Status(fiber.StatusCreated).JSON(models.OK(createdAPIKeyView{apiKeyView: publicAPIKey(*apiKey), Key: key}, "API key created. Store the key now; it will not be shown again.", nil))
 }
 
 func (h *Handler) DeleteAPIKey(c *fiber.Ctx) error {
@@ -95,5 +113,12 @@ func defaultNotificationPreferences() models.NotificationPreferences {
 		BudgetWarnings:    false,
 		WeeklyReports:     false,
 		Channels:          map[string]bool{"inApp": true, "email": false, "webhook": false},
+	}
+}
+
+func publicAPIKey(apiKey models.APIKey) apiKeyView {
+	return apiKeyView{
+		ID: apiKey.ID, Name: apiKey.Name, MaskedKey: apiKey.MaskedKey,
+		Scopes: append([]string(nil), apiKey.Scopes...), CreatedAt: apiKey.CreatedAt, ExpiresAt: apiKey.ExpiresAt,
 	}
 }

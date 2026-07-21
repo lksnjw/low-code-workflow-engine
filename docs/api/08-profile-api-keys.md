@@ -79,7 +79,7 @@ Base paths: `/api/profile`, `/api/profile/api-keys`
   "data": {
     "id": "key_001",
     "name": "Local development",
-    "key": "wf_live_full_secret_returned_once",
+    "key": "wf_live_[REDACTED]",
     "maskedKey": "wf_live_................2F91",
     "scopes": ["workflow:read", "workflow:run"],
     "createdAt": "2026-05-02T09:40:00Z",

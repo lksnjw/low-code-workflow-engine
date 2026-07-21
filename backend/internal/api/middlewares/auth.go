@@ -10,7 +10,7 @@ import (
 
 const UserIDKey = "userID"
 
-func Auth(secret string, _ bool) fiber.Handler {
+func Auth(secret string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		header := c.Get("Authorization")
 		tokenText := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))

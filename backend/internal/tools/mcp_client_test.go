@@ -120,3 +120,30 @@ func TestMCPClientRemoteModePostsToMiddleware(t *testing.T) {
 		t.Fatalf("Execute() result = %#v, want remote response", result)
 	}
 }
+
+func TestMCPClientRemoteErrorDoesNotExposeDownstreamPayload(t *testing.T) {
+	const downstreamSecret = "downstream-private-token-123"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"provider rejected ` + downstreamSecret + `","authorization":"Bearer sensitive"}`))
+	}))
+	defer server.Close()
+
+	client := NewMCPClient(server.URL, time.Second)
+	result, err := client.Execute(context.Background(), mockDemoEchoAction, map[string]interface{}{"message": "hello"})
+	if err == nil {
+		t.Fatalf("Execute() result = %#v, error = nil; want downstream HTTP error", result)
+	}
+	if result != nil {
+		t.Fatalf("Execute() result = %#v, want nil", result)
+	}
+	if !strings.Contains(err.Error(), "HTTP 502") {
+		t.Fatalf("Execute() error = %q, want downstream status", err)
+	}
+	for _, forbidden := range []string{downstreamSecret, "provider rejected", "Bearer sensitive", "authorization"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("Execute() error exposed downstream payload %q: %v", forbidden, err)
+		}
+	}
+}

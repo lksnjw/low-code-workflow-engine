@@ -9,6 +9,13 @@ import (
 	"testing"
 )
 
+func TestGeminiClientDefaultsToGemini25Flash(t *testing.T) {
+	client := NewGeminiClient("test-key", "")
+	if client.Model != "gemini-2.5-flash" {
+		t.Fatalf("default Gemini model = %q, want gemini-2.5-flash", client.Model)
+	}
+}
+
 func TestGeminiGenerateUsesHeaderAuthentication(t *testing.T) {
 	const apiKey = "test-gemini-api-key"
 	type capturedRequest struct {
