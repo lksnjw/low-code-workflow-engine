@@ -42,6 +42,9 @@ type Config struct {
 	DatasetRoot                        string
 	ToolRegistryPath                   string
 	RuleRegistryPath                   string
+	SeedSampleData                     bool
+	SampleToolSeedPath                 string
+	SampleRuleSeedPath                 string
 	SemanticSearchMode                 string
 	SemanticSearchURL                  string
 	SemanticSearchTopKTools            int
@@ -80,6 +83,14 @@ func Load() Config {
 		getEnv("RULE_REGISTRY_PATH", "./configs/registries/all_rules_master_registry.json"),
 		backendRoot,
 	)
+	sampleToolSeedPath := resolveAppPath(
+		getEnv("SAMPLE_TOOL_SEED_PATH", "./configs/seed/sample_tools.json"),
+		backendRoot,
+	)
+	sampleRuleSeedPath := resolveAppPath(
+		getEnv("SAMPLE_RULE_SEED_PATH", "./configs/seed/sample_rules.json"),
+		backendRoot,
+	)
 	devUserRole := getEnv("DEV_USER_ROLE", "")
 	mcpMode := strings.ToLower(strings.TrimSpace(getEnv("MCP_MODE", "remote")))
 	semanticFallback := strings.ToLower(strings.TrimSpace(getEnv("SEMANTIC_FALLBACK", "")))
@@ -116,6 +127,9 @@ func Load() Config {
 		DatasetRoot:                        datasetRoot,
 		ToolRegistryPath:                   toolRegistryPath,
 		RuleRegistryPath:                   ruleRegistryPath,
+		SeedSampleData:                     getEnvBool("SEED_SAMPLE_DATA", false),
+		SampleToolSeedPath:                 sampleToolSeedPath,
+		SampleRuleSeedPath:                 sampleRuleSeedPath,
 		SemanticSearchMode:                 getEnv("SEMANTIC_SEARCH_MODE", "external_embedding"),
 		SemanticSearchURL:                  strings.TrimRight(getEnv("SEMANTIC_SEARCH_URL", "http://localhost:8090/search"), "/"),
 		SemanticSearchTopKTools:            getEnvInt("SEMANTIC_SEARCH_TOP_K_TOOLS", 10),
@@ -136,6 +150,11 @@ func Load() Config {
 
 // Validate rejects unsafe or unknown experiment modes before the server starts.
 func (c Config) Validate() error {
+	if c.SeedSampleData {
+		if strings.TrimSpace(c.SampleToolSeedPath) == "" || strings.TrimSpace(c.SampleRuleSeedPath) == "" {
+			return fmt.Errorf("SAMPLE_TOOL_SEED_PATH and SAMPLE_RULE_SEED_PATH are required when SEED_SAMPLE_DATA=true")
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(c.StorageDriver)) {
 	case "", "memory":
 	case "postgres":

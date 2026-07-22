@@ -21,6 +21,16 @@ type MutationResult[T any] struct {
 	SemanticRebuildSuggested bool   `json:"semanticRebuildSuggested"`
 }
 
+// SeedResult describes an optional first-start registry bootstrap. Seeding is
+// all-or-nothing and occurs only when both live registries are empty.
+type SeedResult struct {
+	Seeded     bool   `json:"seeded"`
+	ToolsAdded int    `json:"toolsAdded"`
+	RulesAdded int    `json:"rulesAdded"`
+	OldHash    string `json:"oldHash"`
+	NewHash    string `json:"newHash"`
+}
+
 type Manager struct {
 	mu           sync.Mutex
 	bundle       *Bundle
@@ -92,12 +102,71 @@ func (m *Manager) UpdateRule(id string, raw []byte) (MutationResult[Rule], error
 	return m.mutateRule(rule, id, true)
 }
 
-func (m *Manager) mutateTool(tool Tool, pathID string, update bool) (MutationResult[Tool], error) {
-	if m == nil || m.bundle == nil || m.bundle.Tools == nil || m.bundle.Rules == nil {
-		return MutationResult[Tool]{}, errors.New("registry manager is not configured")
+// SeedEmptyRegistries loads strictly validated sample definitions through the
+// registry manager's durable-write and atomic-publication path. A partially
+// populated installation is left untouched so example data can never be mixed
+// into a real registry by accident.
+func (m *Manager) SeedEmptyRegistries(toolSeedPath, ruleSeedPath string) (SeedResult, error) {
+	if err := m.validatePaths(); err != nil {
+		return SeedResult{}, err
 	}
-	if strings.TrimSpace(m.toolPath) == "" {
-		return MutationResult[Tool]{}, errors.New("tool registry file path is not configured")
+	if strings.TrimSpace(toolSeedPath) == "" || strings.TrimSpace(ruleSeedPath) == "" {
+		return SeedResult{}, errors.New("sample tool and rule seed file paths are required")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	oldHash := combinedHash(m.bundle.Tools.Version(), m.bundle.Rules.Version())
+	currentTools := m.bundle.Tools.GetAllTools()
+	currentRules := m.bundle.Rules.GetAllRules()
+	if len(currentTools) != 0 || len(currentRules) != 0 {
+		return SeedResult{OldHash: oldHash, NewHash: oldHash}, nil
+	}
+
+	tools, err := loadToolSeed(toolSeedPath)
+	if err != nil {
+		return SeedResult{}, err
+	}
+	rules, err := loadRuleSeed(ruleSeedPath)
+	if err != nil {
+		return SeedResult{}, err
+	}
+	if len(tools) == 0 || len(rules) == 0 {
+		return SeedResult{}, errors.New("sample seed files must each contain at least one definition")
+	}
+	if err := validateToolSet(tools); err != nil {
+		return SeedResult{}, err
+	}
+	if err := validateRuleSet(rules); err != nil {
+		return SeedResult{}, err
+	}
+
+	toolVersion, err := m.persistToolsLocked(tools)
+	if err != nil {
+		return SeedResult{}, err
+	}
+	ruleVersion, err := m.persistRulesLocked(rules)
+	if err != nil {
+		if _, rollbackErr := m.persistToolsLocked(currentTools); rollbackErr != nil {
+			return SeedResult{}, fmt.Errorf("persist sample rules: %v; roll back tool registry: %w", err, rollbackErr)
+		}
+		return SeedResult{}, fmt.Errorf("persist sample rules: %w", err)
+	}
+
+	m.publishToolsLocked(tools, toolVersion, tools)
+	m.publishRulesLocked(rules, ruleVersion)
+	return SeedResult{
+		Seeded:     true,
+		ToolsAdded: len(tools),
+		RulesAdded: len(rules),
+		OldHash:    oldHash,
+		NewHash:    combinedHash(toolVersion, ruleVersion),
+	}, nil
+}
+
+func (m *Manager) mutateTool(tool Tool, pathID string, update bool) (MutationResult[Tool], error) {
+	if err := m.validatePaths(); err != nil {
+		return MutationResult[Tool]{}, err
 	}
 
 	m.mu.Lock()
@@ -128,25 +197,17 @@ func (m *Manager) mutateTool(tool Tool, pathID string, update bool) (MutationRes
 	}
 
 	oldHash := combinedHash(m.bundle.Tools.Version(), m.bundle.Rules.Version())
-	raw, err := persistRegistryJSON(m.toolPath, tools)
+	version, err := m.persistToolsLocked(tools)
 	if err != nil {
 		return MutationResult[Tool]{}, err
 	}
-	version := checksum(raw)
-	m.bundle.Tools.ReplaceAll(tools, version)
-	m.bundle.Versions.Tools = version
-	if m.onToolUpsert != nil {
-		m.onToolUpsert(tool)
-	}
+	m.publishToolsLocked(tools, version, []Tool{tool})
 	return MutationResult[Tool]{Item: tool, OldHash: oldHash, NewHash: combinedHash(version, m.bundle.Rules.Version()), SemanticRebuildSuggested: true}, nil
 }
 
 func (m *Manager) mutateRule(rule Rule, pathID string, update bool) (MutationResult[Rule], error) {
-	if m == nil || m.bundle == nil || m.bundle.Tools == nil || m.bundle.Rules == nil {
-		return MutationResult[Rule]{}, errors.New("registry manager is not configured")
-	}
-	if strings.TrimSpace(m.rulePath) == "" {
-		return MutationResult[Rule]{}, errors.New("rule registry file path is not configured")
+	if err := m.validatePaths(); err != nil {
+		return MutationResult[Rule]{}, err
 	}
 
 	m.mu.Lock()
@@ -175,14 +236,131 @@ func (m *Manager) mutateRule(rule Rule, pathID string, update bool) (MutationRes
 	}
 
 	oldHash := combinedHash(m.bundle.Tools.Version(), m.bundle.Rules.Version())
-	raw, err := persistRegistryJSON(m.rulePath, rules)
+	version, err := m.persistRulesLocked(rules)
 	if err != nil {
 		return MutationResult[Rule]{}, err
 	}
-	version := checksum(raw)
+	m.publishRulesLocked(rules, version)
+	return MutationResult[Rule]{Item: rule, OldHash: oldHash, NewHash: combinedHash(m.bundle.Tools.Version(), version), SemanticRebuildSuggested: true}, nil
+}
+
+func (m *Manager) validatePaths() error {
+	if m == nil || m.bundle == nil || m.bundle.Tools == nil || m.bundle.Rules == nil {
+		return errors.New("registry manager is not configured")
+	}
+	if strings.TrimSpace(m.toolPath) == "" {
+		return errors.New("tool registry file path is not configured")
+	}
+	if strings.TrimSpace(m.rulePath) == "" {
+		return errors.New("rule registry file path is not configured")
+	}
+	return nil
+}
+
+func (m *Manager) persistToolsLocked(tools []Tool) (string, error) {
+	raw, err := persistRegistryJSON(m.toolPath, tools)
+	if err != nil {
+		return "", err
+	}
+	return checksum(raw), nil
+}
+
+func (m *Manager) persistRulesLocked(rules []Rule) (string, error) {
+	raw, err := persistRegistryJSON(m.rulePath, rules)
+	if err != nil {
+		return "", err
+	}
+	return checksum(raw), nil
+}
+
+func (m *Manager) publishToolsLocked(tools []Tool, version string, upserted []Tool) {
+	m.bundle.Tools.ReplaceAll(tools, version)
+	m.bundle.Versions.Tools = version
+	if m.onToolUpsert == nil {
+		return
+	}
+	for _, tool := range upserted {
+		m.onToolUpsert(tool)
+	}
+}
+
+func (m *Manager) publishRulesLocked(rules []Rule, version string) {
 	m.bundle.Rules.ReplaceAll(rules, version)
 	m.bundle.Versions.Rules = version
-	return MutationResult[Rule]{Item: rule, OldHash: oldHash, NewHash: combinedHash(m.bundle.Tools.Version(), version), SemanticRebuildSuggested: true}, nil
+}
+
+func loadToolSeed(path string) ([]Tool, error) {
+	rawItems, err := loadSeedItems(path)
+	if err != nil {
+		return nil, fmt.Errorf("load sample tools: %w", err)
+	}
+	tools := make([]Tool, 0, len(rawItems))
+	for index, raw := range rawItems {
+		tool, err := decodeToolStrict(raw)
+		if err != nil {
+			return nil, fmt.Errorf("load sample tools: item %d: %w", index+1, err)
+		}
+		tools = append(tools, tool)
+	}
+	return tools, nil
+}
+
+func loadRuleSeed(path string) ([]Rule, error) {
+	rawItems, err := loadSeedItems(path)
+	if err != nil {
+		return nil, fmt.Errorf("load sample rules: %w", err)
+	}
+	rules := make([]Rule, 0, len(rawItems))
+	for index, raw := range rawItems {
+		rule, err := decodeRuleStrict(raw)
+		if err != nil {
+			return nil, fmt.Errorf("load sample rules: item %d: %w", index+1, err)
+		}
+		rules = append(rules, rule)
+	}
+	return rules, nil
+}
+
+func loadSeedItems(path string) ([]json.RawMessage, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var items []json.RawMessage
+	if err := decodeStrict(raw, &items); err != nil {
+		return nil, fmt.Errorf("invalid JSON array: %w", err)
+	}
+	return items, nil
+}
+
+func validateToolSet(tools []Tool) error {
+	ids := make(map[string]struct{}, len(tools))
+	names := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		id := strings.ToLower(strings.TrimSpace(tool.ToolID))
+		name := strings.ToLower(strings.TrimSpace(tool.Name))
+		if _, duplicate := ids[id]; duplicate {
+			return fmt.Errorf("sample tool id %q is duplicated", tool.ToolID)
+		}
+		if _, duplicate := names[name]; duplicate {
+			return fmt.Errorf("sample tool name %q is duplicated", tool.Name)
+		}
+		ids[id] = struct{}{}
+		names[name] = struct{}{}
+	}
+	return nil
+}
+
+func validateRuleSet(rules []Rule) error {
+	ids := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		id := strings.ToLower(strings.TrimSpace(rule.RuleID))
+		if _, duplicate := ids[id]; duplicate {
+			return fmt.Errorf("sample rule id %q is duplicated", rule.RuleID)
+		}
+		ids[id] = struct{}{}
+	}
+	return nil
 }
 
 func decodeToolStrict(raw []byte) (Tool, error) {

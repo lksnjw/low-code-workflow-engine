@@ -131,6 +131,19 @@ func main() {
 			registry.Register(tools.GenericMCPTool{Action: toolDef.Name, Client: mcp})
 		}
 	})
+	if cfg.SeedSampleData {
+		result, seedErr := handler.RegistryManager.SeedEmptyRegistries(cfg.SampleToolSeedPath, cfg.SampleRuleSeedPath)
+		if seedErr != nil {
+			zapLogger.Fatal("seed sample registries", zap.Error(seedErr))
+		}
+		zapLogger.Info("sample registry bootstrap evaluated",
+			zap.Bool("seeded", result.Seeded),
+			zap.Int("tools_added", result.ToolsAdded),
+			zap.Int("rules_added", result.RulesAdded),
+			zap.String("old_hash", result.OldHash),
+			zap.String("new_hash", result.NewHash),
+		)
+	}
 
 	app := fiber.New(fiber.Config{
 		AppName:      cfg.AppName,

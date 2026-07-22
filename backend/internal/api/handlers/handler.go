@@ -95,9 +95,7 @@ func (h *Handler) currentUserID(c *fiber.Ctx) string {
 
 func (h *Handler) currentUser(c *fiber.Ctx) *models.User {
 	userID := h.currentUserID(c)
-	h.Store.Mu.RLock()
-	defer h.Store.Mu.RUnlock()
-	if user, ok := h.Store.Users[userID]; ok {
+	if user, ok := h.Store.EffectiveUser(userID); ok {
 		return user
 	}
 	return nil
@@ -147,9 +145,13 @@ func principalFromUser(user *models.User) models.Principal {
 	return models.Principal{ID: user.ID, Name: user.Name}
 }
 
-func publicUser(user *models.User) map[string]interface{} {
+func (h *Handler) publicUser(user *models.User) map[string]interface{} {
 	if user == nil {
 		return nil
+	}
+	effective, ok := h.Store.EffectiveUser(user.ID)
+	if ok {
+		user = effective
 	}
 	return map[string]interface{}{
 		"id":               user.ID,

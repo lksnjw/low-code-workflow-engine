@@ -370,8 +370,10 @@ func (s *Store) advanceCounterTo(minimum uint64) {
 
 // normalizePersistedStateV1 is the v1 envelope upgrader. Persisted business
 // records remain authoritative, while policy definitions required by the
-// running binary are merged in so an older snapshot cannot hide a newly added
-// permission or required built-in role.
+// running binary are added so an older snapshot cannot hide a newly introduced
+// permission or built-in role. Existing roles other than the non-editable
+// Platform Admin role are intentionally not merged: an explicit revocation
+// must survive a restart.
 func normalizePersistedStateV1(store *Store) {
 	defaults := NewStore()
 	existingPermissions := make(map[string]struct{}, len(store.Permissions))
@@ -394,6 +396,9 @@ func normalizePersistedStateV1(store *Store) {
 			roleCopy := *required
 			roleCopy.Permissions = append([]string(nil), required.Permissions...)
 			store.Roles[roleID] = &roleCopy
+			continue
+		}
+		if roleID != RolePlatformAdminID {
 			continue
 		}
 		seen := make(map[string]struct{}, len(existing.Permissions))

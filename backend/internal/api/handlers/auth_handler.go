@@ -65,7 +65,7 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 
 	session := models.AuthSession{
 		AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken, ExpiresIn: tokens.ExpiresIn,
-		User: publicUser(user),
+		User: h.publicUser(user),
 	}
 	return c.JSON(models.OK(session, "Login successful", nil))
 }
@@ -106,10 +106,10 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		}
 	}
 
-	roleID := "role_client"
+	roleID := repository.RoleClientID
 	if firstRegistration {
 		// The first registered account bootstraps administration for an empty install.
-		roleID = "role_admin"
+		roleID = repository.RolePlatformAdminID
 	}
 	role := h.Store.Roles[roleID]
 	if role == nil {
@@ -132,10 +132,11 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	h.Store.Users[id] = user
 	h.Store.PasswordHashes[id] = string(passwordHash)
 	h.Store.Audit(principalFromUser(user), "user.registered", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"email": req.Email, "roleId": role.ID}, c.IP(), c.Get("User-Agent"))
+	h.Store.Audit(principalFromUser(user), "user.role_assigned", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"roleId": role.ID, "source": "registration"}, c.IP(), c.Get("User-Agent"))
 	h.Store.RefreshSessions[refreshTokenDigest(tokens.RefreshToken)] = repository.RefreshSession{UserID: id, ExpiresAt: now.Add(7 * 24 * time.Hour)}
 	h.Store.Mu.Unlock()
 
-	session := models.AuthSession{AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken, ExpiresIn: tokens.ExpiresIn, User: publicUser(user)}
+	session := models.AuthSession{AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken, ExpiresIn: tokens.ExpiresIn, User: h.publicUser(user)}
 	return c.Status(fiber.StatusCreated).JSON(models.OK(session, "Registration successful", nil))
 }
 
@@ -205,7 +206,7 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 	h.Store.Mu.Lock()
 	h.Store.RefreshSessions[refreshTokenDigest(tokens.RefreshToken)] = repository.RefreshSession{UserID: user.ID, ExpiresAt: now.Add(7 * 24 * time.Hour)}
 	h.Store.Mu.Unlock()
-	return c.JSON(models.OK(models.AuthSession{AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken, ExpiresIn: tokens.ExpiresIn, User: publicUser(user)}, "Token refreshed", nil))
+	return c.JSON(models.OK(models.AuthSession{AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken, ExpiresIn: tokens.ExpiresIn, User: h.publicUser(user)}, "Token refreshed", nil))
 }
 
 func (h *Handler) Me(c *fiber.Ctx) error {
@@ -213,7 +214,7 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 	if user == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(models.Fail("Authenticated user no longer exists", nil))
 	}
-	return c.JSON(models.OK(publicUser(user), "OK", nil))
+	return c.JSON(models.OK(h.publicUser(user), "OK", nil))
 }
 
 func (h *Handler) ForgotPassword(c *fiber.Ctx) error {

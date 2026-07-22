@@ -20,6 +20,7 @@ func TestSuspensionRevokesRefreshSessionsAndRejectsValidAccessToken(t *testing.T
 	)
 	store := repository.NewStore()
 	store.Users[userID] = &models.User{ID: userID, Name: "Target", Status: "Active"}
+	store.Users["platform-admin"] = &models.User{ID: "platform-admin", Name: "Platform Admin", Status: "Active", Role: models.RoleRef{ID: repository.RolePlatformAdminID, Name: "Platform Admin"}}
 	store.RefreshSessions["target-session-a"] = repository.RefreshSession{UserID: userID, ExpiresAt: time.Now().Add(time.Hour)}
 	store.RefreshSessions["target-session-b"] = repository.RefreshSession{UserID: userID, ExpiresAt: time.Now().Add(time.Hour)}
 	store.RefreshSessions["other-session"] = repository.RefreshSession{UserID: "other", ExpiresAt: time.Now().Add(time.Hour)}
@@ -37,7 +38,10 @@ func TestSuspensionRevokesRefreshSessionsAndRejectsValidAccessToken(t *testing.T
 	app.Get("/protected", middlewares.Auth(secret), handler.RequireUser, func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Post("/users/:id/suspend", handler.SuspendUser)
+	app.Post("/users/:id/suspend", func(c *fiber.Ctx) error {
+		c.Locals(middlewares.UserIDKey, "platform-admin")
+		return c.Next()
+	}, handler.SuspendUser)
 
 	activeRequest := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	activeRequest.Header.Set("Authorization", "Bearer "+tokens.AccessToken)

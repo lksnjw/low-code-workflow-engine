@@ -192,7 +192,9 @@ func TestPersistentStoreNormalizesRequiredV1Policies(t *testing.T) {
 	}
 	legacy := NewStore()
 	delete(legacy.Roles, "role_client")
+	delete(legacy.Roles, RoleSystemAdminID)
 	legacy.Roles["role_admin"].Permissions = []string{"workflow:read"}
+	legacy.Roles[RoleBuilderID].Permissions = []string{}
 	legacy.Roles["role_custom"] = &models.Role{ID: "role_custom", Name: "Custom", Permissions: []string{"workflow:read"}}
 	permissions := legacy.Permissions[:0]
 	for _, permission := range legacy.Permissions {
@@ -217,11 +219,17 @@ func TestPersistentStoreNormalizesRequiredV1Policies(t *testing.T) {
 	if restored.Roles["role_client"] == nil {
 		t.Fatal("required client role was not restored")
 	}
+	if restored.Roles[RoleSystemAdminID] == nil {
+		t.Fatal("required system administrator role was not restored")
+	}
 	if restored.Roles["role_custom"] == nil {
 		t.Fatal("custom role was lost during normalization")
 	}
 	if !containsString(restored.Roles["role_admin"].Permissions, "settings:manage") {
 		t.Fatal("required administrator permissions were not merged")
+	}
+	if len(restored.Roles[RoleBuilderID].Permissions) != 0 {
+		t.Fatalf("revoked builder permissions were restored: %v", restored.Roles[RoleBuilderID].Permissions)
 	}
 	foundChatPermission := false
 	for _, permission := range restored.Permissions {
