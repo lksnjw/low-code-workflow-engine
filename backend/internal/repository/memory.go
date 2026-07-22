@@ -10,6 +10,13 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 )
 
+const (
+	RolePlatformAdminID = "role_admin"
+	RoleSystemAdminID   = "role_system_admin"
+	RoleBuilderID       = "role_builder"
+	RoleClientID        = "role_client"
+)
+
 // RefreshSession is the server-side record behind an opaque refresh token.
 // Only a SHA-256 digest of the token is used as the map key.
 type RefreshSession struct {
@@ -97,12 +104,16 @@ func NewStore() *Store {
 	}
 
 	// These are authorization policy definitions, not sample application data.
-	store.Roles["role_admin"] = &models.Role{
-		ID: "role_admin", Name: "Platform Admin", Description: "Full platform administrator",
+	store.Roles[RolePlatformAdminID] = &models.Role{
+		ID: RolePlatformAdminID, Name: "Platform Admin", Description: "Full platform administrator",
 		Permissions: allPermissions, CreatedAt: now,
 	}
-	store.Roles["role_builder"] = &models.Role{
-		ID: "role_builder", Name: "Workflow Builder", Description: "Creates, validates, and runs workflows",
+	store.Roles[RoleSystemAdminID] = &models.Role{
+		ID: RoleSystemAdminID, Name: "System Admin", Description: "Manages users, roles, settings, registries, and audit evidence without Platform Admin authority",
+		Permissions: []string{"user:manage", "settings:manage", "audit:read"}, CreatedAt: now,
+	}
+	store.Roles[RoleBuilderID] = &models.Role{
+		ID: RoleBuilderID, Name: "Workflow Builder", Description: "Creates, validates, and runs workflows",
 		Permissions: []string{"workflow:read", "workflow:write", "workflow:run"}, CreatedAt: now,
 	}
 	store.Roles["role_reviewer"] = &models.Role{
@@ -113,12 +124,36 @@ func NewStore() *Store {
 		ID: "role_auditor", Name: "Auditor", Description: "Reads workflow and audit evidence",
 		Permissions: []string{"workflow:read", "audit:read"}, CreatedAt: now,
 	}
-	store.Roles["role_client"] = &models.Role{
-		ID: "role_client", Name: "Client", Description: "Uses assigned workflows and views owned execution evidence",
+	store.Roles[RoleClientID] = &models.Role{
+		ID: RoleClientID, Name: "Client", Description: "Uses assigned workflows and views owned execution evidence",
 		Permissions: []string{"chat:use", "workflow:read_own", "workflow:run_own", "execution:read_own"}, CreatedAt: now,
 	}
 
 	return store
+}
+
+// EffectiveUser returns an immutable request-time snapshot whose role name and
+// permissions come from the current role definition. The denormalized fields on
+// older user records are never trusted for authorization.
+func (s *Store) EffectiveUser(userID string) (*models.User, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	user := s.Users[userID]
+	if user == nil {
+		return nil, false
+	}
+	copyUser := *user
+	if role := s.Roles[user.Role.ID]; role != nil {
+		copyUser.Role = models.RoleRef{ID: role.ID, Name: role.Name}
+		copyUser.Permissions = append([]string(nil), role.Permissions...)
+	} else {
+		// A missing role fails closed instead of retaining a stale permission copy.
+		copyUser.Permissions = nil
+	}
+	return &copyUser, true
 }
 
 func (s *Store) ActiveProvider() (models.ProviderConfig, bool) {
@@ -150,7 +185,7 @@ func ApplyDevUserRole(store *Store, roleName string) {
 
 	store.Mu.Lock()
 	defer store.Mu.Unlock()
-	if role := store.Roles["role_builder"]; role != nil {
+	if role := store.Roles[RoleBuilderID]; role != nil {
 		role.Name = roleName
 	}
 }

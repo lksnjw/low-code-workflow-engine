@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -74,6 +75,30 @@ func TestStorageDefaultsToMemory(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("memory configuration should be valid: %v", err)
+	}
+}
+
+func TestSampleDataSeedingIsExplicitlyOptIn(t *testing.T) {
+	t.Setenv("SEED_SAMPLE_DATA", "")
+	t.Setenv("SAMPLE_TOOL_SEED_PATH", "")
+	t.Setenv("SAMPLE_RULE_SEED_PATH", "")
+
+	cfg := Load()
+	if cfg.SeedSampleData {
+		t.Fatal("sample data seeding must default to disabled")
+	}
+	if !strings.Contains(filepath.ToSlash(cfg.SampleToolSeedPath), "configs/seed/sample_tools.json") {
+		t.Fatalf("unexpected sample tool seed path %q", cfg.SampleToolSeedPath)
+	}
+	if !strings.Contains(filepath.ToSlash(cfg.SampleRuleSeedPath), "configs/seed/sample_rules.json") {
+		t.Fatalf("unexpected sample rule seed path %q", cfg.SampleRuleSeedPath)
+	}
+}
+
+func TestEnabledSampleDataSeedingRequiresBothPaths(t *testing.T) {
+	cfg := Config{SeedSampleData: true, SampleToolSeedPath: "tools.json"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "SAMPLE_RULE_SEED_PATH") {
+		t.Fatalf("expected missing sample seed path error, got %v", err)
 	}
 }
 

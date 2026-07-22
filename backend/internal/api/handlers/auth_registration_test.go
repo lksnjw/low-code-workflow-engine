@@ -53,10 +53,22 @@ func TestFirstRegistrationRequiresConfiguredBootstrapToken(t *testing.T) {
 	if len(handler.Store.Users) != 1 {
 		t.Fatalf("user count=%d, want 1", len(handler.Store.Users))
 	}
+	registeredUserID := ""
 	for _, user := range handler.Store.Users {
 		if user.Role.ID != "role_admin" {
 			t.Fatalf("first user role=%q, want role_admin", user.Role.ID)
 		}
+		registeredUserID = user.ID
+	}
+	assignmentAudited := false
+	for _, entry := range handler.Store.AuditLogs {
+		if entry.Action == "user.role_assigned" && entry.Resource.ID == registeredUserID {
+			assignmentAudited = true
+			break
+		}
+	}
+	if !assignmentAudited {
+		t.Fatal("bootstrap Platform Admin role assignment was not audited")
 	}
 }
 

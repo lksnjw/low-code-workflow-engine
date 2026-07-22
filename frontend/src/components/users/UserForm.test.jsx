@@ -53,3 +53,20 @@ test("Create User button submits the account form", async () => {
   });
   expect(onCreated).toHaveBeenCalledTimes(1);
 });
+
+test("System Admin can only assign Builder and Client roles", () => {
+  render(
+    <UserForm
+      actorRoleId="role_system_admin"
+      roles={[
+        { id: "role_admin", name: "Platform Admin" },
+        { id: "role_system_admin", name: "System Admin" },
+        { id: "role_builder", name: "Workflow Builder" },
+        { id: "role_client", name: "Client" },
+      ]}
+    />
+  );
+
+  const options = Array.from(screen.getByRole("combobox").options).map((option) => option.value);
+  expect(options).toEqual(["role_builder", "role_client"]);
+});

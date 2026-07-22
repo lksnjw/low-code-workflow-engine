@@ -37,6 +37,9 @@ services:
       DATABASE_URL: postgres://workflow:workflow@postgres:5432/workflow?sslmode=disable
       TOOL_REGISTRY_PATH: /app/configs/registries/all_tools_master_registry.json
       RULE_REGISTRY_PATH: /app/configs/registries/all_rules_master_registry.json
+      SEED_SAMPLE_DATA: ${SEED_SAMPLE_DATA:-false}
+      SAMPLE_TOOL_SEED_PATH: /app/configs/seed/sample_tools.json
+      SAMPLE_RULE_SEED_PATH: /app/configs/seed/sample_rules.json
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
