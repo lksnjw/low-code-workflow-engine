@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -70,8 +71,8 @@ func TestPersistentStoreEncryptedRestartRoundTrip(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	store.Mu.Lock()
 	store.Users["user_1"] = &models.User{
-		ID: "user_1", Email: "client@example.test", Role: models.RoleRef{ID: "role_client", Name: "Client"},
-		Permissions: []string{"workflow:read_own", "workflow:run_own"}, CreatedAt: now,
+		ID: "user_1", Email: "client@example.test", RoleID: RoleClientID,
+		PermissionOverrides: []string{}, CreatedAt: now,
 	}
 	store.PasswordHashes["user_1"] = "password-hash"
 	store.RefreshSessions["refresh-digest"] = RefreshSession{UserID: "user_1", ExpiresAt: now.Add(time.Hour)}
@@ -225,8 +226,8 @@ func TestPersistentStoreNormalizesRequiredV1Policies(t *testing.T) {
 	if restored.Roles["role_custom"] == nil {
 		t.Fatal("custom role was lost during normalization")
 	}
-	if !containsString(restored.Roles["role_admin"].Permissions, "settings:manage") {
-		t.Fatal("required administrator permissions were not merged")
+	if len(restored.Roles["role_admin"].Permissions) != 1 || restored.Roles["role_admin"].Permissions[0] != "workflow:read" {
+		t.Fatalf("explicit administrator permissions were changed: %v", restored.Roles["role_admin"].Permissions)
 	}
 	if len(restored.Roles[RoleBuilderID].Permissions) != 0 {
 		t.Fatalf("revoked builder permissions were restored: %v", restored.Roles[RoleBuilderID].Permissions)
@@ -240,6 +241,103 @@ func TestPersistentStoreNormalizesRequiredV1Policies(t *testing.T) {
 	}
 	if !foundChatPermission {
 		t.Fatal("required permission definition was not merged")
+	}
+}
+
+func TestEmptyPermissionSetPersistsAndDenies(t *testing.T) {
+	backend := &testStateStore{}
+	codec, err := storage.NewAESGCMCodec(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x45}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewPersistentStore(context.Background(), backend, codec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Mu.Lock()
+	store.Roles[RoleBuilderID].Permissions = []string{}
+	store.Users["builder"] = &models.User{ID: "builder", RoleID: RoleBuilderID, PermissionOverrides: []string{}, Status: "Active"}
+	store.Mu.Unlock()
+
+	restored, err := NewPersistentStore(context.Background(), backend, codec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Roles[RoleBuilderID].Permissions == nil || len(restored.Roles[RoleBuilderID].Permissions) != 0 {
+		t.Fatalf("empty permission set did not persist: %#v", restored.Roles[RoleBuilderID].Permissions)
+	}
+	effective, ok := restored.EffectiveUser("builder")
+	if !ok {
+		t.Fatal("builder was not restored")
+	}
+	if len(effective.Permissions) != 0 {
+		t.Fatalf("empty role granted permissions after reload: %v", effective.Permissions)
+	}
+}
+
+func TestLegacyUserMigrationIsIdempotent(t *testing.T) {
+	backend := &testStateStore{}
+	codec, err := storage.NewAESGCMCodec(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x62}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := NewStore()
+	legacyState := persistedState{
+		Version:         persistedStateVersion,
+		Roles:           legacy.Roles,
+		Permissions:     legacy.Permissions,
+		PasswordHashes:  map[string]string{},
+		RefreshSessions: map[string]RefreshSession{},
+		Users: map[string]*storedUser{
+			"legacy": {
+				User:              models.User{ID: "legacy", Name: "Legacy User", Status: "Active"},
+				LegacyRole:        &models.RoleRef{ID: RoleBuilderID, Name: "Workflow Builder"},
+				LegacyPermissions: append([]string(nil), legacy.Roles[RoleClientID].Permissions...),
+			},
+		},
+	}
+	plaintext, err := json.Marshal(legacyState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.payload, err = codec.Encode(plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := NewPersistentStore(context.Background(), backend, codec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Users["legacy"].RoleID != RoleClientID {
+		t.Fatalf("legacy permissions mapped to %q, want %q", first.Users["legacy"].RoleID, RoleClientID)
+	}
+	firstPayload, found, err := backend.Load(context.Background())
+	if err != nil || !found {
+		t.Fatalf("load first migrated state: found=%t err=%v", found, err)
+	}
+	firstPlaintext, err := codec.Decode(firstPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := NewPersistentStore(context.Background(), backend, codec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Users["legacy"].RoleID != RoleClientID {
+		t.Fatalf("second migration changed role to %q", second.Users["legacy"].RoleID)
+	}
+	secondPayload, found, err := backend.Load(context.Background())
+	if err != nil || !found {
+		t.Fatalf("load second migrated state: found=%t err=%v", found, err)
+	}
+	secondPlaintext, err := codec.Decode(secondPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstPlaintext, secondPlaintext) {
+		t.Fatalf("second migration changed persisted state\nfirst: %s\nsecond: %s", firstPlaintext, secondPlaintext)
 	}
 }
 

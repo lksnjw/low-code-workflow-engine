@@ -90,7 +90,7 @@ export const NAVIGATION_GROUPS = [
     label: "Models",
     description: "Runtime generation providers",
     icon: "mdi:brain",
-    requiredAny: ["settings:manage"],
+    requiredAny: ["provider:manage"],
     subMenu: [{ id: "overview", label: "Provider Configs" }],
   },
   {
@@ -98,7 +98,7 @@ export const NAVIGATION_GROUPS = [
     label: "Registry",
     description: "Tool schemas and policy rules",
     icon: "mdi:book-cog-outline",
-    requiredAny: ["settings:manage"],
+    requiredAny: ["registry:read"],
     subMenu: [{ id: "overview", label: "Tools & Rules" }],
   },
   {

@@ -66,6 +66,15 @@ func main() {
 		defer store.Close()
 	}
 	zapLogger.Info("storage initialized", zap.String("driver", cfg.StorageDriver), zap.Bool("durable", stateBackend != nil))
+	bootstrapCreated, err := store.BootstrapPlatformAdmin(cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword)
+	if err != nil {
+		zapLogger.Fatal("bootstrap platform administrator", zap.Error(err))
+	}
+	if bootstrapCreated {
+		zapLogger.Info("platform administrator bootstrapped", zap.String("email", cfg.BootstrapAdminEmail))
+	} else {
+		zapLogger.Info("platform administrator bootstrap skipped because users already exist")
+	}
 
 	repository.ApplyDevUserRole(store, cfg.DevUserRole)
 	store.Mu.Lock()
@@ -132,16 +141,14 @@ func main() {
 		}
 	})
 	if cfg.SeedSampleData {
-		result, seedErr := handler.RegistryManager.SeedEmptyRegistries(cfg.SampleToolSeedPath, cfg.SampleRuleSeedPath)
+		preview, seedErr := handler.RegistryManager.LoadSeedPreview(cfg.SampleToolSeedPath, cfg.SampleRuleSeedPath)
 		if seedErr != nil {
-			zapLogger.Fatal("seed sample registries", zap.Error(seedErr))
+			zapLogger.Fatal("load isolated sample seed preview", zap.Error(seedErr))
 		}
-		zapLogger.Info("sample registry bootstrap evaluated",
-			zap.Bool("seeded", result.Seeded),
-			zap.Int("tools_added", result.ToolsAdded),
-			zap.Int("rules_added", result.RulesAdded),
-			zap.String("old_hash", result.OldHash),
-			zap.String("new_hash", result.NewHash),
+		zapLogger.Info("isolated sample seed preview loaded",
+			zap.Int("tools_loaded", len(preview.Tools)),
+			zap.Int("rules_loaded", len(preview.Rules)),
+			zap.String("evaluated_registry_hash", preview.EvaluatedRegistryHash),
 		)
 	}
 
@@ -161,7 +168,7 @@ func main() {
 	})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.CORSOrigins(),
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Bootstrap-Token",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		AllowMethods:     "GET,POST,PATCH,PUT,DELETE,OPTIONS",
 		AllowCredentials: true,
 	}))

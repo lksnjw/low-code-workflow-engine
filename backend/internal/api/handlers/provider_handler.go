@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
 type providerConfigRequest struct {
@@ -29,6 +30,9 @@ type providerConfigView struct {
 }
 
 func (h *Handler) ListProviders(c *fiber.Ctx) error {
+	if err := h.requirePlatformAdmin(c); err != nil {
+		return err
+	}
 	h.Store.Mu.RLock()
 	items := make([]providerConfigView, 0, len(h.Store.Providers))
 	for _, provider := range h.Store.Providers {
@@ -40,6 +44,9 @@ func (h *Handler) ListProviders(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateProvider(c *fiber.Ctx) error {
+	if err := h.requirePlatformAdmin(c); err != nil {
+		return err
+	}
 	var request providerConfigRequest
 	if err := h.parseBody(c, &request); err != nil {
 		return err
@@ -66,6 +73,9 @@ func (h *Handler) CreateProvider(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateProvider(c *fiber.Ctx) error {
+	if err := h.requirePlatformAdmin(c); err != nil {
+		return err
+	}
 	var request providerConfigRequest
 	if err := h.parseBody(c, &request); err != nil {
 		return err
@@ -98,6 +108,9 @@ func (h *Handler) UpdateProvider(c *fiber.Ctx) error {
 }
 
 func (h *Handler) ActivateProvider(c *fiber.Ctx) error {
+	if err := h.requirePlatformAdmin(c); err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	provider := h.Store.Providers[c.Params("id")]
 	if provider == nil {
@@ -115,6 +128,9 @@ func (h *Handler) ActivateProvider(c *fiber.Ctx) error {
 }
 
 func (h *Handler) TestProvider(c *fiber.Ctx) error {
+	if err := h.requirePlatformAdmin(c); err != nil {
+		return err
+	}
 	h.Store.Mu.RLock()
 	provider := h.Store.Providers[c.Params("id")]
 	if provider == nil {
@@ -192,4 +208,15 @@ func keyPreview(key string) string {
 		runes = runes[:4]
 	}
 	return string(runes) + "••••"
+}
+
+func (h *Handler) requirePlatformAdmin(c *fiber.Ctx) error {
+	user := h.currentUser(c)
+	if user == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Authenticated user no longer exists")
+	}
+	if user.AssignedRoleID() != repository.RolePlatformAdminID {
+		return fiber.NewError(fiber.StatusForbidden, "Provider configuration is restricted to Platform Admins")
+	}
+	return nil
 }

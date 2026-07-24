@@ -121,60 +121,39 @@ Compose supplies the container-network hostname `postgres`; it does not provide 
 
 ### Development
 
-`ALLOW_PUBLIC_REGISTRATION` defaults to `true` outside production. On a new
-empty development store, start the backend and frontend, open
-`http://127.0.0.1:5173`, select **Create one free**, and register the first
-account. The first account receives the **Platform Admin** role; later public
-registrations receive the **Client** role.
+Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` before starting a
+new empty store. Startup creates exactly one **Platform Admin**; there is no
+HTTP first-admin registration path and no default password.
 
-To make a development bootstrap explicit, set a non-empty
-`BOOTSTRAP_ADMIN_TOKEN` before starting the backend and include that value as
-`X-Bootstrap-Token` on the first registration. The sign-up page does not send
-that administrative header, so use the API command below when the token is set.
+`ALLOW_PUBLIC_REGISTRATION` defaults to `true` outside production. After
+bootstrap, public registrations always receive the **Client** role.
 
 ### Production
 
 Production starts fail closed unless all of these conditions are met:
 
 - `JWT_SECRET` is a unique secret of at least 32 bytes;
-- `BOOTSTRAP_ADMIN_TOKEN` is a unique secret of at least 32 bytes;
 - `ALLOW_PUBLIC_REGISTRATION=false`;
 - `STORAGE_DRIVER=postgres` with a valid `DATABASE_URL` and unique 32-byte `STORAGE_ENCRYPTION_KEY`;
 - `MCP_MODE` is not `mock`.
 
-Keep both secrets in a secret manager. On an empty production store, register
-the first administrator from a trusted machine with the bootstrap header:
+Keep the JWT, storage key, and bootstrap password in a secret manager. On an
+empty production store, supply the bootstrap credentials before starting:
 
 ```powershell
 $env:APP_ENV="production"
 $env:ALLOW_PUBLIC_REGISTRATION="false"
 $env:JWT_SECRET="<unique-secret-of-at-least-32-bytes>"
-$env:BOOTSTRAP_ADMIN_TOKEN="<different-secret-of-at-least-32-bytes>"
-
-$headers = @{
-  "Content-Type" = "application/json"
-  "X-Bootstrap-Token" = $env:BOOTSTRAP_ADMIN_TOKEN
-}
-$body = @{
-  name = "Platform Administrator"
-  email = "admin@example.com"
-  password = "<unique-long-admin-password>"
-} | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8080/api/auth/register" -Headers $headers -Body $body
+$env:BOOTSTRAP_ADMIN_EMAIL="admin@example.com"
+$env:BOOTSTRAP_ADMIN_PASSWORD="<unique-long-admin-password>"
+go run ./cmd/server
 ```
 
-Missing and incorrect bootstrap tokens return HTTP `403` without revealing
-whether the store is empty. The handler checks the empty-store condition and
-token again while holding the store write lock, preventing two concurrent
-requests from both becoming the first administrator. After the first account
-exists, the bootstrap header grants no privilege, and public registration
-remains disabled; create Builder and Client users from the authenticated Admin
-portal.
-
-`BOOTSTRAP_ADMIN_TOKEN` remains required at future production startups so a
-restored empty database cannot silently reopen an unprotected first-admin path.
-With PostgreSQL enabled, the user, password hash, roles, permissions, and
-refresh-session digest survive a restart.
+If either bootstrap variable is missing while the user store is empty, startup
+fails with a clear error. If any user exists, bootstrap is an idempotent no-op
+and logs that it was skipped; create additional users from the authenticated
+Admin portal. With PostgreSQL enabled, the user, bcrypt password hash, role ID,
+permission overrides, and refresh-session digest survive a restart.
 
 ## Restart verification
 

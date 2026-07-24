@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
 func (h *Handler) AdminToolsRegistry(c *fiber.Ctx) error {
@@ -16,6 +17,9 @@ func (h *Handler) AdminToolsRegistry(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateRegistryTool(c *fiber.Ctx) error {
+	if err := h.requireRegistryWrite(c); err != nil {
+		return err
+	}
 	result, err := h.RegistryManager.AddTool(c.Body())
 	if err != nil {
 		return registryMutationError(err)
@@ -25,6 +29,9 @@ func (h *Handler) CreateRegistryTool(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateRegistryTool(c *fiber.Ctx) error {
+	if err := h.requireRegistryWrite(c); err != nil {
+		return err
+	}
 	result, err := h.RegistryManager.UpdateTool(c.Params("id"), c.Body())
 	if err != nil {
 		return registryMutationError(err)
@@ -42,6 +49,9 @@ func (h *Handler) AdminRulesRegistry(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateRegistryRule(c *fiber.Ctx) error {
+	if err := h.requireRegistryWrite(c); err != nil {
+		return err
+	}
 	result, err := h.RegistryManager.AddRule(c.Body())
 	if err != nil {
 		return registryMutationError(err)
@@ -51,12 +61,26 @@ func (h *Handler) CreateRegistryRule(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateRegistryRule(c *fiber.Ctx) error {
+	if err := h.requireRegistryWrite(c); err != nil {
+		return err
+	}
 	result, err := h.RegistryManager.UpdateRule(c.Params("id"), c.Body())
 	if err != nil {
 		return registryMutationError(err)
 	}
 	h.auditRegistryMutation(c, "registry.rule.updated", result.Item.RuleID, result.OldHash, result.NewHash)
 	return c.JSON(models.OK(result, "Rule updated", nil))
+}
+
+func (h *Handler) requireRegistryWrite(c *fiber.Ctx) error {
+	user := h.currentUser(c)
+	if user == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Authenticated user no longer exists")
+	}
+	if user.AssignedRoleID() == repository.RoleSystemAdminID || !containsString(user.Permissions, "registry:write") {
+		return fiber.NewError(fiber.StatusForbidden, "Registry writes require Platform Admin authority")
+	}
+	return nil
 }
 
 func (h *Handler) auditRegistryMutation(c *fiber.Ctx, action, id, oldHash, newHash string) {

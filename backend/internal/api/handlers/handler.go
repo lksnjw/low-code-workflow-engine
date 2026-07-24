@@ -153,18 +153,26 @@ func (h *Handler) publicUser(user *models.User) map[string]interface{} {
 	if ok {
 		user = effective
 	}
+	return publicUserSnapshot(user)
+}
+
+func publicUserSnapshot(user *models.User) map[string]interface{} {
+	if user == nil {
+		return nil
+	}
 	return map[string]interface{}{
-		"id":               user.ID,
-		"name":             user.Name,
-		"email":            user.Email,
-		"role":             user.Role.Name,
-		"roleId":           user.Role.ID,
-		"permissions":      append([]string{}, user.Permissions...),
-		"status":           user.Status,
-		"initials":         user.Initials,
-		"timezone":         user.Timezone,
-		"twoFactorEnabled": user.TwoFactorEnabled,
-		"emailVerified":    user.EmailVerified,
+		"id":                  user.ID,
+		"name":                user.Name,
+		"email":               user.Email,
+		"role":                user.Role.Name,
+		"roleId":              user.AssignedRoleID(),
+		"permissions":         append([]string{}, user.Permissions...),
+		"permissionOverrides": append([]string{}, user.PermissionOverrides...),
+		"status":              user.Status,
+		"initials":            user.Initials,
+		"timezone":            user.Timezone,
+		"twoFactorEnabled":    user.TwoFactorEnabled,
+		"emailVerified":       user.EmailVerified,
 	}
 }
 

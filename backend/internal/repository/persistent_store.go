@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -187,10 +189,19 @@ type storedAPIKey struct {
 	Key string `json:"key"`
 }
 
+// storedUser is the durable user shape. LegacyRole and LegacyPermissions are
+// read-only migration inputs for v1 snapshots written before role-derived
+// authorization; marshalState never populates them.
+type storedUser struct {
+	models.User
+	LegacyRole        *models.RoleRef `json:"role,omitempty"`
+	LegacyPermissions []string        `json:"permissions,omitempty"`
+}
+
 type persistedState struct {
 	Version                 int                                       `json:"version"`
 	Counter                 uint64                                    `json:"counter"`
-	Users                   map[string]*models.User                   `json:"users"`
+	Users                   map[string]*storedUser                    `json:"users"`
 	PasswordHashes          map[string]string                         `json:"passwordHashes"`
 	RefreshSessions         map[string]RefreshSession                 `json:"refreshSessions"`
 	Roles                   map[string]*models.Role                   `json:"roles"`
@@ -216,6 +227,19 @@ type persistedState struct {
 }
 
 func marshalState(store *Store) ([]byte, error) {
+	users := make(map[string]*storedUser, len(store.Users))
+	for id, user := range store.Users {
+		if user == nil {
+			users[id] = nil
+			continue
+		}
+		copyUser := *user
+		copyUser.RoleID = user.AssignedRoleID()
+		copyUser.PermissionOverrides = append([]string{}, user.PermissionOverrides...)
+		copyUser.Role = models.RoleRef{}
+		copyUser.Permissions = nil
+		users[id] = &storedUser{User: copyUser}
+	}
 	workflows := make(map[string]*storedWorkflow, len(store.Workflows))
 	for id, workflow := range store.Workflows {
 		if workflow == nil {
@@ -249,7 +273,7 @@ func marshalState(store *Store) ([]byte, error) {
 	state := persistedState{
 		Version:                 persistedStateVersion,
 		Counter:                 store.counter.Load(),
-		Users:                   store.Users,
+		Users:                   users,
 		PasswordHashes:          store.PasswordHashes,
 		RefreshSessions:         store.RefreshSessions,
 		Roles:                   store.Roles,
@@ -289,7 +313,6 @@ func restoreState(store *Store, payload []byte) error {
 		return fmt.Errorf("unsupported persisted runtime state version %d", state.Version)
 	}
 
-	setMap(&store.Users, state.Users)
 	setMap(&store.PasswordHashes, state.PasswordHashes)
 	setMap(&store.RefreshSessions, state.RefreshSessions)
 	setMap(&store.Roles, state.Roles)
@@ -353,6 +376,9 @@ func restoreState(store *Store, payload []byte) error {
 	setMap(&store.UploadContents, state.UploadContents)
 	store.advanceCounterTo(state.Counter)
 	normalizePersistedStateV1(store)
+	if state.Users != nil {
+		store.Users = migrateStoredUsers(state.Users, store.Roles)
+	}
 	return nil
 }
 
@@ -369,11 +395,9 @@ func (s *Store) advanceCounterTo(minimum uint64) {
 }
 
 // normalizePersistedStateV1 is the v1 envelope upgrader. Persisted business
-// records remain authoritative, while policy definitions required by the
-// running binary are added so an older snapshot cannot hide a newly introduced
-// permission or built-in role. Existing roles other than the non-editable
-// Platform Admin role are intentionally not merged: an explicit revocation
-// must survive a restart.
+// records remain authoritative, while missing policy definitions required by
+// the running binary are added. Existing role permission slices, including an
+// explicitly empty slice, are never merged with defaults.
 func normalizePersistedStateV1(store *Store) {
 	defaults := NewStore()
 	existingPermissions := make(map[string]struct{}, len(store.Permissions))
@@ -396,23 +420,80 @@ func normalizePersistedStateV1(store *Store) {
 			roleCopy := *required
 			roleCopy.Permissions = append([]string(nil), required.Permissions...)
 			store.Roles[roleID] = &roleCopy
-			continue
-		}
-		if roleID != RolePlatformAdminID {
-			continue
-		}
-		seen := make(map[string]struct{}, len(existing.Permissions))
-		for _, permission := range existing.Permissions {
-			seen[permission] = struct{}{}
-		}
-		for _, permission := range required.Permissions {
-			if _, exists := seen[permission]; exists {
-				continue
-			}
-			existing.Permissions = append(existing.Permissions, permission)
-			seen[permission] = struct{}{}
 		}
 	}
+}
+
+func migrateStoredUsers(storedUsers map[string]*storedUser, roles map[string]*models.Role) map[string]*models.User {
+	users := make(map[string]*models.User, len(storedUsers))
+	for id, stored := range storedUsers {
+		if stored == nil {
+			users[id] = nil
+			continue
+		}
+		user := stored.User
+		roleID := strings.TrimSpace(user.RoleID)
+		if roleID == "" && stored.LegacyRole != nil {
+			roleID = strings.TrimSpace(stored.LegacyRole.ID)
+		}
+		if stored.LegacyPermissions != nil {
+			roleID = closestRoleID(stored.LegacyPermissions, roleID, roles)
+		}
+		if roleID == "" {
+			roleID = RoleClientID
+		}
+		user.RoleID = roleID
+		user.PermissionOverrides = append([]string{}, user.PermissionOverrides...)
+		user.Role = models.RoleRef{}
+		user.Permissions = nil
+		users[id] = &user
+	}
+	return users
+}
+
+// closestRoleID deterministically minimizes symmetric set difference. A
+// legacy role reference wins ties, then the lexicographically smallest role ID.
+func closestRoleID(legacyPermissions []string, preferredRoleID string, roles map[string]*models.Role) string {
+	roleIDs := make([]string, 0, len(roles))
+	for roleID, role := range roles {
+		if role != nil {
+			roleIDs = append(roleIDs, roleID)
+		}
+	}
+	sort.Strings(roleIDs)
+	if len(roleIDs) == 0 {
+		return preferredRoleID
+	}
+
+	legacy := make(map[string]struct{}, len(legacyPermissions))
+	for _, permission := range legacyPermissions {
+		legacy[strings.TrimSpace(permission)] = struct{}{}
+	}
+	bestRoleID := ""
+	bestDistance := int(^uint(0) >> 1)
+	for _, roleID := range roleIDs {
+		role := roles[roleID]
+		roleSet := make(map[string]struct{}, len(role.Permissions))
+		for _, permission := range role.Permissions {
+			roleSet[strings.TrimSpace(permission)] = struct{}{}
+		}
+		distance := 0
+		for permission := range legacy {
+			if _, exists := roleSet[permission]; !exists {
+				distance++
+			}
+		}
+		for permission := range roleSet {
+			if _, exists := legacy[permission]; !exists {
+				distance++
+			}
+		}
+		if distance < bestDistance || (distance == bestDistance && roleID == preferredRoleID) {
+			bestRoleID = roleID
+			bestDistance = distance
+		}
+	}
+	return bestRoleID
 }
 
 func setMap[K comparable, V any](target *map[K]V, value map[K]V) {

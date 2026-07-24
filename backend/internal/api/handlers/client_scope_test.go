@@ -11,19 +11,20 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 	"go.uber.org/zap"
 )
 
-func TestClientScopeAndWorkflowAssignment(t *testing.T) {
+func TestClientOwnScopeUnchanged(t *testing.T) {
 	registryValidator, store, executor, _ := newGateComponents()
 	registryValidator.Tools.ReplaceAll([]registry.Tool{{
 		ToolID: "TEST-TOOL-001", Name: "test.transfer", Status: "active_mcp_schema_present",
 		AllowedRoles: []string{"Platform Admin", "Client"}, RiskLevel: "low", IsReadOnly: true,
 	}}, "tools-client-v1")
 
-	store.Users["admin"] = &models.User{ID: "admin", Name: "Admin", Status: "Active", Role: models.RoleRef{ID: "role_admin", Name: "Platform Admin"}, Permissions: []string{"workflow:read", "workflow:write", "workflow:run"}}
-	store.Users["client-a"] = &models.User{ID: "client-a", Name: "Client A", Status: "Active", Role: models.RoleRef{ID: "role_client", Name: "Client"}, Permissions: []string{"chat:use", "workflow:read_own", "workflow:run_own", "execution:read_own"}}
-	store.Users["client-b"] = &models.User{ID: "client-b", Name: "Client B", Status: "Active", Role: models.RoleRef{ID: "role_client", Name: "Client"}, Permissions: []string{"chat:use", "workflow:read_own", "workflow:run_own", "execution:read_own"}}
+	store.Users["admin"] = &models.User{ID: "admin", Name: "Admin", Status: "Active", RoleID: repository.RolePlatformAdminID}
+	store.Users["client-a"] = &models.User{ID: "client-a", Name: "Client A", Status: "Active", RoleID: repository.RoleClientID}
+	store.Users["client-b"] = &models.User{ID: "client-b", Name: "Client B", Status: "Active", RoleID: repository.RoleClientID}
 
 	now := time.Now().UTC()
 	store.Workflows["wf-a"] = scopedTestWorkflow("wf-a", "Client A Workflow", "client-a", now)

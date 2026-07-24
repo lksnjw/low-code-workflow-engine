@@ -23,7 +23,8 @@ type Config struct {
 	DevUserRole string
 
 	AllowPublicRegistration bool
-	BootstrapAdminToken     string
+	BootstrapAdminEmail     string
+	BootstrapAdminPassword  string
 
 	DatabaseURL string
 	RedisURL    string
@@ -113,7 +114,8 @@ func Load() Config {
 		TokenTTL:                           time.Duration(getEnvInt("JWT_EXPIRES_MINUTES", 60)) * time.Minute,
 		DevUserRole:                        devUserRole,
 		AllowPublicRegistration:            getEnvBool("ALLOW_PUBLIC_REGISTRATION", !isProduction),
-		BootstrapAdminToken:                getEnv("BOOTSTRAP_ADMIN_TOKEN", ""),
+		BootstrapAdminEmail:                getEnv("BOOTSTRAP_ADMIN_EMAIL", ""),
+		BootstrapAdminPassword:             getEnv("BOOTSTRAP_ADMIN_PASSWORD", ""),
 		DatabaseURL:                        getEnv("DATABASE_URL", "postgres://workflow:workflow@localhost:5432/workflow?sslmode=disable"),
 		RedisURL:                           getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		StorageDriver:                      strings.ToLower(strings.TrimSpace(getEnv("STORAGE_DRIVER", "memory"))),
@@ -190,9 +192,6 @@ func (c Config) Validate() error {
 		jwtSecret := strings.TrimSpace(c.JWTSecret)
 		if len([]byte(jwtSecret)) < 32 || jwtSecret == "local-development-secret-change-me" || jwtSecret == "change-me-before-production" {
 			return fmt.Errorf("JWT_SECRET must be a unique secret of at least 32 bytes when APP_ENV=production")
-		}
-		if len([]byte(strings.TrimSpace(c.BootstrapAdminToken))) < 32 {
-			return fmt.Errorf("BOOTSTRAP_ADMIN_TOKEN must be a unique secret of at least 32 bytes when APP_ENV=production")
 		}
 		if c.AllowPublicRegistration {
 			return fmt.Errorf("ALLOW_PUBLIC_REGISTRATION must be false when APP_ENV=production")

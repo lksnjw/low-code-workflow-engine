@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Button from "../shared/ui/Button";
 import Input from "../shared/ui/Input";
 import Select from "../shared/ui/Select";
@@ -6,14 +6,11 @@ import { userService } from "../../services/user.service";
 import { apiErrorMessage } from "../../services/api";
 import { useNotifications } from "../../context/NotificationContext";
 
-function UserForm({ roles = [], actorRoleId, onCreated }) {
+function UserForm({ roles = [], onCreated }) {
   const [form, setForm] = useState({ name: "", email: "", password: "", roleId: "role_builder" });
   const [saving, setSaving] = useState(false);
   const { notify } = useNotifications();
-  const assignableRoles = useMemo(() => {
-    if (actorRoleId !== "role_system_admin") return roles;
-    return roles.filter((role) => role.id === "role_builder" || role.id === "role_client");
-  }, [actorRoleId, roles]);
+  const assignableRoles = roles;
   const change = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
   const submit = async (event) => {
     event.preventDefault();

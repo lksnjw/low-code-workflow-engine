@@ -45,11 +45,11 @@ steps:
 func TestGovernedDemoFlowThroughRealRoutes(t *testing.T) {
 	app := newGovernedDemoApp(t)
 
-	adminSession, _ := demoJSON[demoAuthSession](t, app, http.MethodPost, "/api/auth/register", "", map[string]interface{}{
-		"name": "Demo Admin", "email": "admin@demo.test", "password": "admin-password",
-	}, http.StatusCreated)
+	adminSession, _ := demoJSON[demoAuthSession](t, app, http.MethodPost, "/api/auth/login", "", map[string]interface{}{
+		"email": "admin@demo.test", "password": "admin-password",
+	}, http.StatusOK)
 	if adminSession.User.Role != "Platform Admin" {
-		t.Fatalf("first registered account must bootstrap Platform Admin, got %q", adminSession.User.Role)
+		t.Fatalf("bootstrap account role=%q, want Platform Admin", adminSession.User.Role)
 	}
 
 	const fakeGeminiKey = "demo-gemini-key-not-real"
@@ -69,8 +69,8 @@ func TestGovernedDemoFlowThroughRealRoutes(t *testing.T) {
 	client, _ := demoJSON[models.User](t, app, http.MethodPost, "/api/users", adminSession.AccessToken, map[string]interface{}{
 		"name": "Demo Client", "email": "client@demo.test", "password": "client-password", "roleId": "role_client",
 	}, http.StatusCreated)
-	if builder.Role.ID != "role_builder" || client.Role.ID != "role_client" {
-		t.Fatalf("unexpected demo user roles: builder=%q client=%q", builder.Role.ID, client.Role.ID)
+	if builder.RoleID != "role_builder" || client.RoleID != "role_client" {
+		t.Fatalf("unexpected demo user roles: builder=%q client=%q", builder.RoleID, client.RoleID)
 	}
 
 	demoJSON[map[string]interface{}](t, app, http.MethodPost, "/api/registry/rules", adminSession.AccessToken, demoAmountRule(), http.StatusCreated)
@@ -200,6 +200,9 @@ func newGovernedDemoApp(t *testing.T) *fiber.App {
 		ToolRegistryPath: toolPath, RuleRegistryPath: rulePath,
 	}
 	store := repository.NewStore()
+	if created, bootstrapErr := store.BootstrapPlatformAdmin("admin@demo.test", "admin-password"); bootstrapErr != nil || !created {
+		t.Fatalf("bootstrap demo administrator: created=%t err=%v", created, bootstrapErr)
+	}
 	validator := workflowvalidator.NewWorkflowValidator()
 	registryValidator := workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules, store)
 	mcp := tools.NewMCPClient("", time.Second)

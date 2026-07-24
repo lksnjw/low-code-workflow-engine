@@ -320,7 +320,11 @@ func (h *Handler) WorkflowVersions(c *fiber.Ctx) error {
 func (h *Handler) ListAssignableWorkflowUsers(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
 	users := make([]map[string]interface{}, 0, len(h.Store.Users))
-	for _, user := range h.Store.Users {
+	for userID := range h.Store.Users {
+		user, ok := h.Store.EffectiveUserLocked(userID)
+		if !ok {
+			continue
+		}
 		if !strings.EqualFold(user.Status, "active") {
 			continue
 		}

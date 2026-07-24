@@ -98,17 +98,18 @@ The first semantic-search startup creates a persistent FAISS/embedding cache und
 
 ## Authentication
 
-All protected API routes require a signed JWT. In development, register the
-first account through `POST /api/auth/register` (or the frontend sign-up page),
-then use the returned access token as `Authorization: Bearer <access-token>`.
-Later development registrations are controlled by
-`ALLOW_PUBLIC_REGISTRATION`, which defaults to `true` outside production.
+All protected API routes require a signed JWT. An empty user store requires
+`BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`; startup creates exactly
+one Platform Admin through the shared bcrypt path and otherwise refuses to
+listen. Once any user exists, bootstrap is skipped and those variables may be
+unset.
 
-Production startup requires a unique `JWT_SECRET` and
-`BOOTSTRAP_ADMIN_TOKEN` of at least 32 bytes and requires
-`ALLOW_PUBLIC_REGISTRATION=false`. The first administrator must register with
-the bootstrap token in the `X-Bootstrap-Token` header. See
-`../docs/BOOTSTRAP_FLOW.md` for the exact command and restart-safe workflow.
+Later development registrations are controlled by
+`ALLOW_PUBLIC_REGISTRATION`, which defaults to `true` outside production, and
+always receive the Client role. Production also requires a unique
+`JWT_SECRET`, durable PostgreSQL storage, and
+`ALLOW_PUBLIC_REGISTRATION=false`. See `../docs/BOOTSTRAP_FLOW.md` for the
+restart-safe workflow.
 
 ## Implemented API Groups
 

@@ -8,18 +8,36 @@ type RoleRef struct {
 }
 
 type User struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Email            string     `json:"email"`
-	Role             RoleRef    `json:"role"`
-	Permissions      []string   `json:"permissions"`
-	Status           string     `json:"status"`
-	Initials         string     `json:"initials"`
-	Timezone         string     `json:"timezone,omitempty"`
-	LastLoginAt      *time.Time `json:"lastLoginAt"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	TwoFactorEnabled bool       `json:"twoFactorEnabled,omitempty"`
-	EmailVerified    bool       `json:"emailVerified,omitempty"`
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	Email               string     `json:"email"`
+	RoleID              string     `json:"roleId"`
+	PermissionOverrides []string   `json:"permissionOverrides"`
+	Status              string     `json:"status"`
+	Initials            string     `json:"initials"`
+	Timezone            string     `json:"timezone,omitempty"`
+	LastLoginAt         *time.Time `json:"lastLoginAt"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	TwoFactorEnabled    bool       `json:"twoFactorEnabled,omitempty"`
+	EmailVerified       bool       `json:"emailVerified,omitempty"`
+
+	// Role and Permissions exist only on request-time snapshots returned by
+	// repository.Store.EffectiveUser. They are deliberately excluded from the
+	// persisted user shape so authorization cannot depend on copied role data.
+	Role        RoleRef  `json:"-"`
+	Permissions []string `json:"-"`
+}
+
+// AssignedRoleID accepts the old in-memory RoleRef shape while tests and
+// callers migrate to RoleID. Persistent legacy data is migrated separately.
+func (u *User) AssignedRoleID() string {
+	if u == nil {
+		return ""
+	}
+	if u.RoleID != "" {
+		return u.RoleID
+	}
+	return u.Role.ID
 }
 
 type Role struct {

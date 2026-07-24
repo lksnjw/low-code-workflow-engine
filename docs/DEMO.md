@@ -75,16 +75,19 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api` to the backend on port `8080`.
 
-## 3. Register the first administrator
+## 3. Sign in as the bootstrap administrator
 
-The first account in an empty installation becomes the Platform Admin.
+Before starting an empty installation, set `BOOTSTRAP_ADMIN_EMAIL` and
+`BOOTSTRAP_ADMIN_PASSWORD`. The backend creates exactly one Platform Admin and
+refuses to start if either value is missing.
 
-1. On the sign-in screen, click **Create one free**.
-2. Enter a name, email, and password of at least eight characters.
-3. Click **Create account**.
+1. Open the sign-in screen.
+2. Enter the bootstrap email and password.
+3. Click **Sign in**.
 4. Confirm that the administration navigation includes **Models**, **Registry**, and **Users**.
 
-If the backend uses the memory store, restarting it creates a new empty installation and the first-account bootstrap happens again.
+If the backend uses the memory store, restarting it creates a new empty
+installation, so the environment-provided bootstrap runs again.
 
 ## 4. Configure Gemini 2.5 Flash
 

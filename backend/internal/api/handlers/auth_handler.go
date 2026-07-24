@@ -2,18 +2,17 @@ package handlers
 
 import (
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sanjeewa/agentic-orchestrator/internal/authn"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
-	"golang.org/x/crypto/bcrypt"
 )
 
-var dummyPasswordHash, _ = bcrypt.GenerateFromPassword([]byte("invalid-password"), bcrypt.DefaultCost)
+var dummyPasswordHash, _ = authn.HashPassword("invalid-password")
 
 func (h *Handler) Login(c *fiber.Ctx) error {
 	var req models.LoginRequest
@@ -37,11 +36,11 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 	}
 	h.Store.Mu.RUnlock()
 
-	hash := []byte(passwordHash)
+	hash := passwordHash
 	if user == nil || passwordHash == "" {
 		hash = dummyPasswordHash
 	}
-	if bcrypt.CompareHashAndPassword(hash, []byte(req.Password)) != nil || user == nil {
+	if !authn.VerifyPassword(hash, req.Password) || user == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(models.Fail("Invalid email or password", nil))
 	}
 	if !strings.EqualFold(user.Status, "active") {
@@ -82,20 +81,26 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	}
 
 	h.Store.Mu.RLock()
-	firstRegistration := len(h.Store.Users) == 0
+	emptyStore := len(h.Store.Users) == 0
 	h.Store.Mu.RUnlock()
-	if !h.registrationAuthorized(c, firstRegistration) {
+	if emptyStore {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail("Platform bootstrap has not completed", nil))
+	}
+	if !h.Cfg.AllowPublicRegistration {
 		return registrationForbidden(c)
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	passwordHash, err := authn.HashPassword(req.Password)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Could not secure password")
 	}
 
 	h.Store.Mu.Lock()
-	firstRegistration = len(h.Store.Users) == 0
-	if !h.registrationAuthorized(c, firstRegistration) {
+	if len(h.Store.Users) == 0 {
+		h.Store.Mu.Unlock()
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail("Platform bootstrap has not completed", nil))
+	}
+	if !h.Cfg.AllowPublicRegistration {
 		h.Store.Mu.Unlock()
 		return registrationForbidden(c)
 	}
@@ -106,12 +111,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		}
 	}
 
-	roleID := repository.RoleClientID
-	if firstRegistration {
-		// The first registered account bootstraps administration for an empty install.
-		roleID = repository.RolePlatformAdminID
-	}
-	role := h.Store.Roles[roleID]
+	role := h.Store.Roles[repository.RoleClientID]
 	if role == nil {
 		h.Store.Mu.Unlock()
 		return fiber.NewError(fiber.StatusInternalServerError, "Default role is not configured")
@@ -120,8 +120,8 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	now := time.Now().UTC()
 	id := h.Store.NextID("usr")
 	user := &models.User{
-		ID: id, Name: req.Name, Email: req.Email, Role: models.RoleRef{ID: role.ID, Name: role.Name},
-		Permissions: append([]string{}, role.Permissions...), Status: "Active", Initials: initials(req.Name),
+		ID: id, Name: req.Name, Email: req.Email, RoleID: role.ID, PermissionOverrides: []string{},
+		Status: "Active", Initials: initials(req.Name),
 		Timezone: "UTC", CreatedAt: now, EmailVerified: false,
 	}
 	tokens, err := h.tokenForUser(id)
@@ -130,7 +130,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Could not sign access token")
 	}
 	h.Store.Users[id] = user
-	h.Store.PasswordHashes[id] = string(passwordHash)
+	h.Store.PasswordHashes[id] = passwordHash
 	h.Store.Audit(principalFromUser(user), "user.registered", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"email": req.Email, "roleId": role.ID}, c.IP(), c.Get("User-Agent"))
 	h.Store.Audit(principalFromUser(user), "user.role_assigned", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"roleId": role.ID, "source": "registration"}, c.IP(), c.Get("User-Agent"))
 	h.Store.RefreshSessions[refreshTokenDigest(tokens.RefreshToken)] = repository.RefreshSession{UserID: id, ExpiresAt: now.Add(7 * 24 * time.Hour)}
@@ -138,24 +138,6 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 
 	session := models.AuthSession{AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken, ExpiresIn: tokens.ExpiresIn, User: h.publicUser(user)}
 	return c.Status(fiber.StatusCreated).JSON(models.OK(session, "Registration successful", nil))
-}
-
-func (h *Handler) registrationAuthorized(c *fiber.Ctx, firstRegistration bool) bool {
-	if firstRegistration {
-		expected := strings.TrimSpace(h.Cfg.BootstrapAdminToken)
-		if expected == "" {
-			return true
-		}
-
-		expectedDigest := sha256.Sum256([]byte(expected))
-		providedDigest := sha256.Sum256([]byte(strings.TrimSpace(c.Get("X-Bootstrap-Token"))))
-		if subtle.ConstantTimeCompare(expectedDigest[:], providedDigest[:]) != 1 {
-			return false
-		}
-		return true
-	}
-
-	return h.Cfg.AllowPublicRegistration
 }
 
 func registrationForbidden(c *fiber.Ctx) error {
