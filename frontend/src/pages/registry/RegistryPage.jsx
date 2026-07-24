@@ -9,6 +9,7 @@ import { useNotifications } from "../../context/NotificationContext";
 import { registryService } from "../../services/registry.service";
 import { semanticService } from "../../services/semantic.service";
 import { apiErrorMessage } from "../../services/api";
+import { usePermissions } from "../../hooks/usePermissions";
 
 const TABS = [
   { id: "tools", label: "Tools" },
@@ -73,6 +74,8 @@ function RegistryPage() {
   const [parseError, setParseError] = useState("");
   const queryClient = useQueryClient();
   const { notify } = useNotifications();
+  const { has } = usePermissions();
+  const canWrite = has("registry:write");
   const query = useQuery({ queryKey: ["admin-registry"], queryFn: registryService.load });
 
   const items = query.data?.[kind] ?? [];
@@ -151,9 +154,9 @@ function RegistryPage() {
             Manage the JSON-backed tool schemas and policy rules used by the deterministic gate.
           </p>
         </div>
-        <Button onClick={openCreate}>
+        {canWrite ? <Button onClick={openCreate}>
           <Icon icon="mdi:plus" className="h-4 w-4" /> Add {kind === "tools" ? "tool" : "rule"}
-        </Button>
+        </Button> : <span className="rounded-full border border-gray-200 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-500 dark:border-gray-800">Read only</span>}
       </section>
 
       <Tabs
@@ -203,7 +206,7 @@ function RegistryPage() {
                 if (column.key === "name") return <><p className="font-bold text-gray-950 dark:text-white">{kind === "tools" ? row.display_name || row.name : row.rule_name}</p><p className="font-mono text-[10px] text-gray-500">{row.id}</p></>;
                 if (column.key === "scope") return kind === "tools" ? row.module : row.domain;
                 if (column.key === "state") return kind === "tools" ? row.status : row.enabled ? "Enabled" : "Disabled";
-                return <div className="flex gap-2"><Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSelected(row)}>View</Button><Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={() => openEdit(row)}>Edit</Button></div>;
+                return <div className="flex gap-2"><Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSelected(row)}>View</Button>{canWrite ? <Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={() => openEdit(row)}>Edit</Button> : null}</div>;
               }}
             />
           )}

@@ -68,6 +68,9 @@ func NewStore() *Store {
 		{Key: "workflow:run_own", Name: "Run assigned workflows", Description: "Run workflows owned by or assigned to the current user", Group: "Execution"},
 		{Key: "execution:read_own", Name: "Read own executions", Description: "View executions started by the current user", Group: "Execution"},
 		{Key: "settings:manage", Name: "Manage settings", Description: "Manage runtime settings, integrations, webhooks, and API keys", Group: "Administration"},
+		{Key: "provider:manage", Name: "Manage providers", Description: "View and manage generation provider configuration", Group: "Administration"},
+		{Key: "registry:read", Name: "Read registries", Description: "View tool and rule registry definitions", Group: "Governance"},
+		{Key: "registry:write", Name: "Write registries", Description: "Create and update tool and rule registry definitions", Group: "Governance"},
 		{Key: "user:manage", Name: "Manage users", Description: "Manage users, roles, and invitations", Group: "Administration"},
 		{Key: "audit:read", Name: "Read audit logs", Description: "View and export governance audit records", Group: "Governance"},
 	}
@@ -109,20 +112,12 @@ func NewStore() *Store {
 		Permissions: allPermissions, CreatedAt: now,
 	}
 	store.Roles[RoleSystemAdminID] = &models.Role{
-		ID: RoleSystemAdminID, Name: "System Admin", Description: "Manages users, roles, settings, registries, and audit evidence without Platform Admin authority",
-		Permissions: []string{"user:manage", "settings:manage", "audit:read"}, CreatedAt: now,
+		ID: RoleSystemAdminID, Name: "System Admin", Description: "Manages users and roles and reads registries and audit evidence",
+		Permissions: []string{"user:manage", "registry:read", "audit:read"}, CreatedAt: now,
 	}
 	store.Roles[RoleBuilderID] = &models.Role{
 		ID: RoleBuilderID, Name: "Workflow Builder", Description: "Creates, validates, and runs workflows",
-		Permissions: []string{"workflow:read", "workflow:write", "workflow:run"}, CreatedAt: now,
-	}
-	store.Roles["role_reviewer"] = &models.Role{
-		ID: "role_reviewer", Name: "Execution Reviewer", Description: "Reviews workflows and execution evidence",
-		Permissions: []string{"workflow:read", "workflow:run", "audit:read"}, CreatedAt: now,
-	}
-	store.Roles["role_auditor"] = &models.Role{
-		ID: "role_auditor", Name: "Auditor", Description: "Reads workflow and audit evidence",
-		Permissions: []string{"workflow:read", "audit:read"}, CreatedAt: now,
+		Permissions: []string{"workflow:read", "workflow:write", "workflow:run", "chat:use", "registry:read"}, CreatedAt: now,
 	}
 	store.Roles[RoleClientID] = &models.Role{
 		ID: RoleClientID, Name: "Client", Description: "Uses assigned workflows and views owned execution evidence",
@@ -132,28 +127,56 @@ func NewStore() *Store {
 	return store
 }
 
-// EffectiveUser returns an immutable request-time snapshot whose role name and
-// permissions come from the current role definition. The denormalized fields on
-// older user records are never trusted for authorization.
+// EffectiveUser returns an immutable request-time snapshot. Effective
+// permissions are the deterministic union of the current role definition and
+// the user's additive overrides; no permission result is cached.
 func (s *Store) EffectiveUser(userID string) (*models.User, bool) {
 	if s == nil {
 		return nil, false
 	}
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
+	return s.EffectiveUserLocked(userID)
+}
+
+// EffectiveUserLocked derives a user snapshot while the caller already holds
+// Store.Mu for reading or writing.
+func (s *Store) EffectiveUserLocked(userID string) (*models.User, bool) {
 	user := s.Users[userID]
 	if user == nil {
 		return nil, false
 	}
 	copyUser := *user
-	if role := s.Roles[user.Role.ID]; role != nil {
+	copyUser.RoleID = user.AssignedRoleID()
+	copyUser.PermissionOverrides = append([]string(nil), user.PermissionOverrides...)
+	if role := s.Roles[copyUser.RoleID]; role != nil {
 		copyUser.Role = models.RoleRef{ID: role.ID, Name: role.Name}
-		copyUser.Permissions = append([]string(nil), role.Permissions...)
+		copyUser.Permissions = permissionUnion(role.Permissions, copyUser.PermissionOverrides)
 	} else {
-		// A missing role fails closed instead of retaining a stale permission copy.
-		copyUser.Permissions = nil
+		// A missing role fails closed except for explicit additive overrides.
+		copyUser.Role = models.RoleRef{ID: copyUser.RoleID}
+		copyUser.Permissions = permissionUnion(nil, copyUser.PermissionOverrides)
 	}
 	return &copyUser, true
+}
+
+func permissionUnion(rolePermissions, overrides []string) []string {
+	permissions := make([]string, 0, len(rolePermissions)+len(overrides))
+	seen := make(map[string]struct{}, cap(permissions))
+	for _, group := range [][]string{rolePermissions, overrides} {
+		for _, permission := range group {
+			permission = strings.TrimSpace(permission)
+			if permission == "" {
+				continue
+			}
+			if _, exists := seen[permission]; exists {
+				continue
+			}
+			seen[permission] = struct{}{}
+			permissions = append(permissions, permission)
+		}
+	}
+	return permissions
 }
 
 func (s *Store) ActiveProvider() (models.ProviderConfig, bool) {

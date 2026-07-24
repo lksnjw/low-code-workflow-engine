@@ -19,8 +19,7 @@ func TestSystemAdminHierarchyRolePropagationAndAudit(t *testing.T) {
 	store := repository.NewStore()
 	store.Users["platform"] = &models.User{
 		ID: "platform", Name: "Platform Owner", Email: "platform@example.test", Status: "Active",
-		Role:        models.RoleRef{ID: repository.RolePlatformAdminID, Name: "Platform Admin"},
-		Permissions: append([]string(nil), store.Roles[repository.RolePlatformAdminID].Permissions...),
+		RoleID: repository.RolePlatformAdminID,
 	}
 	handler := &Handler{Store: store}
 	app := newAdminHierarchyApp(handler)
@@ -40,6 +39,10 @@ func TestSystemAdminHierarchyRolePropagationAndAudit(t *testing.T) {
 		{email: "client@example.test", roleID: repository.RoleClientID},
 	} {
 		response = adminTestRequest(t, app, http.MethodPost, "/users", systemUser.ID, map[string]interface{}{
+			"name": "Managed User", "email": item.email, "password": "password123", "roleId": item.roleID,
+		})
+		assertAdminStatus(t, response, fiber.StatusForbidden)
+		response = adminTestRequest(t, app, http.MethodPost, "/users", "platform", map[string]interface{}{
 			"name": "Managed User", "email": item.email, "password": "password123", "roleId": item.roleID,
 		})
 		assertAdminStatus(t, response, fiber.StatusCreated)
@@ -64,7 +67,7 @@ func TestSystemAdminHierarchyRolePropagationAndAudit(t *testing.T) {
 	store.Roles["role_custom"] = &models.Role{ID: "role_custom", Name: "Custom Operator", Permissions: []string{"workflow:read"}}
 	store.Users["custom-user"] = &models.User{
 		ID: "custom-user", Name: "Custom User", Email: "custom@example.test", Status: "Active",
-		Role: models.RoleRef{ID: "role_custom", Name: "Custom Operator"}, Permissions: []string{"workflow:read"},
+		RoleID: "role_custom",
 	}
 	store.Mu.Unlock()
 
@@ -75,12 +78,10 @@ func TestSystemAdminHierarchyRolePropagationAndAudit(t *testing.T) {
 	response = adminTestRequest(t, app, http.MethodGet, "/protected", "custom-user", nil)
 	assertAdminStatus(t, response, fiber.StatusForbidden)
 
-	store.Mu.RLock()
-	if len(store.Roles["role_custom"].Permissions) != 0 || len(store.Users["custom-user"].Permissions) != 0 {
-		store.Mu.RUnlock()
-		t.Fatal("explicit empty role permissions were not propagated to assigned users")
+	effective, ok := store.EffectiveUser("custom-user")
+	if !ok || len(effective.Permissions) != 0 {
+		t.Fatalf("explicit empty role permissions were not effective for assigned user: %+v", effective)
 	}
-	store.Mu.RUnlock()
 	response = adminTestRequest(t, app, http.MethodDelete, "/roles/role_custom", "platform", nil)
 	assertAdminStatus(t, response, fiber.StatusConflict)
 	response = adminTestRequest(t, app, http.MethodDelete, "/users/custom-user", "platform", nil)

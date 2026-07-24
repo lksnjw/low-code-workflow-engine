@@ -23,8 +23,8 @@ func TestProviderSecretsAreWriteOnlyAndActivationAffectsNextSynthesis(t *testing
 	defer providerB.Close()
 
 	store := repository.NewStore()
-	store.Users["admin"] = &models.User{ID: "admin", Name: "Admin", Role: models.RoleRef{ID: "role_admin", Name: "Platform Admin"}, Permissions: []string{"settings:manage"}}
-	store.Users["client"] = &models.User{ID: "client", Name: "Client", Role: models.RoleRef{ID: "role_client", Name: "Client"}, Permissions: []string{"workflow:read_own"}}
+	store.Users["admin"] = &models.User{ID: "admin", Name: "Admin", RoleID: repository.RolePlatformAdminID}
+	store.Users["client"] = &models.User{ID: "client", Name: "Client", RoleID: repository.RoleClientID}
 	synth := synthesizer.NewServiceWithProvider("", "", false, "gemini", "", "fallback")
 	synth.SetProviderResolver(store.ActiveProvider)
 	handler := &Handler{Store: store, Synth: synth, Log: zap.NewNop()}

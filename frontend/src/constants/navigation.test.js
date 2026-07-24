@@ -10,6 +10,9 @@ test("admin navigation shows every group", () => {
     "workflow:write",
     "workflow:run",
     "settings:manage",
+    "provider:manage",
+    "registry:read",
+    "registry:write",
     "user:manage",
     "audit:read",
   ];
@@ -18,6 +21,12 @@ test("admin navigation shows every group", () => {
   expect(visible.map((group) => group.id)).toEqual(
     NAVIGATION_GROUPS.map((group) => group.id)
   );
+});
+
+test("system admin navigation excludes providers and platform settings but includes read-only registry", () => {
+  const permissions = ["user:manage", "registry:read", "audit:read"];
+  const visible = filterNavigationGroups(NAVIGATION_GROUPS, allow(permissions), "role_system_admin");
+  expect(visible.map((group) => group.id).sort()).toEqual(["profile", "registry", "users"].sort());
 });
 
 test("client navigation contains only chat, owned workflows and executions, and profile", () => {

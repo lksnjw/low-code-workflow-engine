@@ -36,8 +36,8 @@ func TestRegistryMutationPersistsSwapsHashRejectsOldTokenAndAudits(t *testing.T)
 		t.Fatalf("load registry fixture: %v", err)
 	}
 	store := repository.NewStore()
-	store.Users["admin"] = &models.User{ID: "admin", Name: "Admin", Role: models.RoleRef{ID: "role_admin", Name: "Platform Admin"}, Permissions: []string{"settings:manage"}}
-	store.Users["client"] = &models.User{ID: "client", Name: "Client", Role: models.RoleRef{ID: "role_client", Name: "Client"}, Permissions: []string{"workflow:read_own"}}
+	store.Users["admin"] = &models.User{ID: "admin", Name: "Admin", RoleID: repository.RolePlatformAdminID}
+	store.Users["client"] = &models.User{ID: "client", Name: "Client", RoleID: repository.RoleClientID}
 	validator := workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules, store)
 	spy := &handlerSpyTool{}
 	executableTools := tools.NewRegistry(nil)

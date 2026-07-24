@@ -106,7 +106,8 @@ func TestDevelopmentDefaultsAreLocalAndAllowRegistration(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("APP_HOST", "")
 	t.Setenv("ALLOW_PUBLIC_REGISTRATION", "")
-	t.Setenv("BOOTSTRAP_ADMIN_TOKEN", "")
+	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "")
+	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 	t.Setenv("EXPERIMENT_BASELINE", "")
 
 	cfg := Load()
@@ -157,10 +158,7 @@ func TestUnknownStorageDriverRefusesStartup(t *testing.T) {
 }
 
 func TestProductionSafetyGuards(t *testing.T) {
-	const (
-		strongJWT       = "jwt-secret-0123456789abcdef-0123456789abcdef"
-		strongBootstrap = "bootstrap-0123456789abcdef-0123456789abcdef"
-	)
+	const strongJWT = "jwt-secret-0123456789abcdef-0123456789abcdef"
 	tests := []struct {
 		name string
 		cfg  Config
@@ -168,32 +166,22 @@ func TestProductionSafetyGuards(t *testing.T) {
 	}{
 		{
 			name: "default JWT secret",
-			cfg:  Config{Environment: "production", JWTSecret: "local-development-secret-change-me", BootstrapAdminToken: strongBootstrap},
+			cfg:  Config{Environment: "production", JWTSecret: "local-development-secret-change-me"},
 			want: "JWT_SECRET",
 		},
 		{
 			name: "short JWT secret",
-			cfg:  Config{Environment: "production", JWTSecret: "too-short", BootstrapAdminToken: strongBootstrap},
+			cfg:  Config{Environment: "production", JWTSecret: "too-short"},
 			want: "JWT_SECRET",
 		},
 		{
-			name: "missing bootstrap token",
-			cfg:  Config{Environment: "production", JWTSecret: strongJWT},
-			want: "BOOTSTRAP_ADMIN_TOKEN",
-		},
-		{
-			name: "short bootstrap token",
-			cfg:  Config{Environment: "production", JWTSecret: strongJWT, BootstrapAdminToken: "too-short"},
-			want: "BOOTSTRAP_ADMIN_TOKEN",
-		},
-		{
 			name: "public registration",
-			cfg:  Config{Environment: "production", JWTSecret: strongJWT, BootstrapAdminToken: strongBootstrap, AllowPublicRegistration: true},
+			cfg:  Config{Environment: "production", JWTSecret: strongJWT, AllowPublicRegistration: true},
 			want: "ALLOW_PUBLIC_REGISTRATION",
 		},
 		{
 			name: "mock MCP",
-			cfg:  Config{Environment: "production", JWTSecret: strongJWT, BootstrapAdminToken: strongBootstrap, MCPMode: "mock"},
+			cfg:  Config{Environment: "production", JWTSecret: strongJWT, MCPMode: "mock"},
 			want: "MCP_MODE=mock",
 		},
 	}
@@ -211,7 +199,6 @@ func TestValidProductionSecurityConfiguration(t *testing.T) {
 	cfg := Config{
 		Environment:          "production",
 		JWTSecret:            "jwt-secret-0123456789abcdef-0123456789abcdef",
-		BootstrapAdminToken:  "bootstrap-0123456789abcdef-0123456789abcdef",
 		MCPMode:              "remote",
 		StorageDriver:        "postgres",
 		DatabaseURL:          "postgres://database.example.test/workflow",
@@ -224,11 +211,10 @@ func TestValidProductionSecurityConfiguration(t *testing.T) {
 
 func TestProductionRequiresDurablePostgresStorage(t *testing.T) {
 	cfg := Config{
-		Environment:         "production",
-		JWTSecret:           "jwt-secret-0123456789abcdef-0123456789abcdef",
-		BootstrapAdminToken: "bootstrap-0123456789abcdef-0123456789abcdef",
-		MCPMode:             "remote",
-		StorageDriver:       "memory",
+		Environment:   "production",
+		JWTSecret:     "jwt-secret-0123456789abcdef-0123456789abcdef",
+		MCPMode:       "remote",
+		StorageDriver: "memory",
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "STORAGE_DRIVER") {
 		t.Fatalf("expected production memory storage refusal, got %v", err)

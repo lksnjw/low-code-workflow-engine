@@ -21,14 +21,12 @@ type MutationResult[T any] struct {
 	SemanticRebuildSuggested bool   `json:"semanticRebuildSuggested"`
 }
 
-// SeedResult describes an optional first-start registry bootstrap. Seeding is
-// all-or-nothing and occurs only when both live registries are empty.
-type SeedResult struct {
-	Seeded     bool   `json:"seeded"`
-	ToolsAdded int    `json:"toolsAdded"`
-	RulesAdded int    `json:"rulesAdded"`
-	OldHash    string `json:"oldHash"`
-	NewHash    string `json:"newHash"`
+// SeedPreview is an isolated, read-only load of sample definitions. It is
+// intentionally separate from the evaluated bundle and durable master files.
+type SeedPreview struct {
+	Tools                 []Tool `json:"tools"`
+	Rules                 []Rule `json:"rules"`
+	EvaluatedRegistryHash string `json:"evaluatedRegistryHash"`
 }
 
 type Manager struct {
@@ -102,65 +100,37 @@ func (m *Manager) UpdateRule(id string, raw []byte) (MutationResult[Rule], error
 	return m.mutateRule(rule, id, true)
 }
 
-// SeedEmptyRegistries loads strictly validated sample definitions through the
-// registry manager's durable-write and atomic-publication path. A partially
-// populated installation is left untouched so example data can never be mixed
-// into a real registry by accident.
-func (m *Manager) SeedEmptyRegistries(toolSeedPath, ruleSeedPath string) (SeedResult, error) {
-	if err := m.validatePaths(); err != nil {
-		return SeedResult{}, err
+// LoadSeedPreview strictly validates sample definitions without publishing,
+// persisting, or registering any of them in the evaluated registry.
+func (m *Manager) LoadSeedPreview(toolSeedPath, ruleSeedPath string) (SeedPreview, error) {
+	if m == nil || m.bundle == nil || m.bundle.Tools == nil || m.bundle.Rules == nil {
+		return SeedPreview{}, errors.New("registry manager is not configured")
 	}
 	if strings.TrimSpace(toolSeedPath) == "" || strings.TrimSpace(ruleSeedPath) == "" {
-		return SeedResult{}, errors.New("sample tool and rule seed file paths are required")
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	oldHash := combinedHash(m.bundle.Tools.Version(), m.bundle.Rules.Version())
-	currentTools := m.bundle.Tools.GetAllTools()
-	currentRules := m.bundle.Rules.GetAllRules()
-	if len(currentTools) != 0 || len(currentRules) != 0 {
-		return SeedResult{OldHash: oldHash, NewHash: oldHash}, nil
+		return SeedPreview{}, errors.New("sample tool and rule seed file paths are required")
 	}
 
 	tools, err := loadToolSeed(toolSeedPath)
 	if err != nil {
-		return SeedResult{}, err
+		return SeedPreview{}, err
 	}
 	rules, err := loadRuleSeed(ruleSeedPath)
 	if err != nil {
-		return SeedResult{}, err
+		return SeedPreview{}, err
 	}
 	if len(tools) == 0 || len(rules) == 0 {
-		return SeedResult{}, errors.New("sample seed files must each contain at least one definition")
+		return SeedPreview{}, errors.New("sample seed files must each contain at least one definition")
 	}
 	if err := validateToolSet(tools); err != nil {
-		return SeedResult{}, err
+		return SeedPreview{}, err
 	}
 	if err := validateRuleSet(rules); err != nil {
-		return SeedResult{}, err
+		return SeedPreview{}, err
 	}
-
-	toolVersion, err := m.persistToolsLocked(tools)
-	if err != nil {
-		return SeedResult{}, err
-	}
-	ruleVersion, err := m.persistRulesLocked(rules)
-	if err != nil {
-		if _, rollbackErr := m.persistToolsLocked(currentTools); rollbackErr != nil {
-			return SeedResult{}, fmt.Errorf("persist sample rules: %v; roll back tool registry: %w", err, rollbackErr)
-		}
-		return SeedResult{}, fmt.Errorf("persist sample rules: %w", err)
-	}
-
-	m.publishToolsLocked(tools, toolVersion, tools)
-	m.publishRulesLocked(rules, ruleVersion)
-	return SeedResult{
-		Seeded:     true,
-		ToolsAdded: len(tools),
-		RulesAdded: len(rules),
-		OldHash:    oldHash,
-		NewHash:    combinedHash(toolVersion, ruleVersion),
+	return SeedPreview{
+		Tools:                 tools,
+		Rules:                 rules,
+		EvaluatedRegistryHash: m.Hash(),
 	}, nil
 }
 

@@ -49,11 +49,18 @@ func TestRegistrationPersistenceFailureRollsBackWholeAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if created, bootstrapErr := store.BootstrapPlatformAdmin("admin@example.test", "admin-password"); bootstrapErr != nil || !created {
+		t.Fatalf("bootstrap administrator: created=%t err=%v", created, bootstrapErr)
+	}
+	initialUsers := len(store.Users)
+	initialHashes := len(store.PasswordHashes)
+	initialAudits := len(store.AuditLogs)
 	backend.failNext = true
 	handler := &Handler{
 		Cfg: config.Config{
-			JWTSecret: "test-registration-jwt-secret",
-			TokenTTL:  time.Hour,
+			JWTSecret:               "test-registration-jwt-secret",
+			TokenTTL:                time.Hour,
+			AllowPublicRegistration: true,
 		},
 		Store: store,
 	}
@@ -61,12 +68,12 @@ func TestRegistrationPersistenceFailureRollsBackWholeAccount(t *testing.T) {
 	app.Use(middlewares.PersistenceFailureGuard(store))
 	app.Post("/register", handler.Register)
 
-	response := registrationRequest(t, app, "", "rollback@example.test")
+	response := registrationRequest(t, app, "rollback@example.test")
 	defer response.Body.Close()
 	if response.StatusCode != fiber.StatusServiceUnavailable {
 		t.Fatalf("status=%d, want %d", response.StatusCode, fiber.StatusServiceUnavailable)
 	}
-	if len(store.Users) != 0 || len(store.PasswordHashes) != 0 || len(store.RefreshSessions) != 0 || len(store.AuditLogs) != 0 {
+	if len(store.Users) != initialUsers || len(store.PasswordHashes) != initialHashes || len(store.RefreshSessions) != 0 || len(store.AuditLogs) != initialAudits {
 		t.Fatalf("partial registration survived rollback: users=%d hashes=%d sessions=%d audits=%d", len(store.Users), len(store.PasswordHashes), len(store.RefreshSessions), len(store.AuditLogs))
 	}
 }

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,67 +11,14 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestSeedEmptyRegistriesPersistsPublishesAndIsIdempotent(t *testing.T) {
+func TestSeedNotLoadedIntoEvaluatedRegistry(t *testing.T) {
 	dir := t.TempDir()
-	toolPath := filepath.Join(dir, "tools.json")
-	rulePath := filepath.Join(dir, "rules.json")
-	toolSeedPath := filepath.Join(dir, "sample-tools.json")
-	ruleSeedPath := filepath.Join(dir, "sample-rules.json")
-	writeSeedFixture(t, toolPath, []Tool{})
-	writeSeedFixture(t, rulePath, []Rule{})
-	seedTools := []Tool{seedTestTool("SAMPLE-001", "sample.lookup"), seedTestTool("SAMPLE-002", "sample.submit")}
-	seedRules := []Rule{seedTestRule("SAMPLE-RULE-001")}
-	writeSeedFixture(t, toolSeedPath, seedTools)
-	writeSeedFixture(t, ruleSeedPath, seedRules)
-
-	bundle, err := LoadBundle(toolPath, rulePath, zap.NewNop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager := NewManager(bundle, toolPath, rulePath)
-	upserted := []string{}
-	manager.SetToolUpsert(func(tool Tool) { upserted = append(upserted, tool.ToolID) })
-	oldHash := manager.Hash()
-
-	result, err := manager.SeedEmptyRegistries(toolSeedPath, ruleSeedPath)
-	if err != nil {
-		t.Fatalf("seed empty registries: %v", err)
-	}
-	if !result.Seeded || result.ToolsAdded != 2 || result.RulesAdded != 1 {
-		t.Fatalf("unexpected seed result: %+v", result)
-	}
-	if result.OldHash != oldHash || result.NewHash == oldHash || manager.Hash() != result.NewHash {
-		t.Fatalf("registry hash was not updated consistently: result=%+v live=%s", result, manager.Hash())
-	}
-	if len(manager.Tools()) != 2 || len(manager.Rules()) != 1 {
-		t.Fatalf("seed was not atomically published: tools=%d rules=%d", len(manager.Tools()), len(manager.Rules()))
-	}
-	if strings.Join(upserted, ",") != "SAMPLE-001,SAMPLE-002" {
-		t.Fatalf("tool upsert callback values = %v", upserted)
-	}
-	assertRegistryLength[Tool](t, toolPath, 2)
-	assertRegistryLength[Rule](t, rulePath, 1)
-
-	second, err := manager.SeedEmptyRegistries(toolSeedPath, ruleSeedPath)
-	if err != nil {
-		t.Fatalf("repeat seed: %v", err)
-	}
-	if second.Seeded || second.OldHash != result.NewHash || second.NewHash != result.NewHash {
-		t.Fatalf("repeat seed was not a no-op: %+v", second)
-	}
-	if len(upserted) != 2 {
-		t.Fatalf("repeat seed invoked callbacks: %v", upserted)
-	}
-}
-
-func TestSeedEmptyRegistriesDoesNotMixSamplesIntoPopulatedRegistry(t *testing.T) {
-	dir := t.TempDir()
-	toolPath := filepath.Join(dir, "tools.json")
-	rulePath := filepath.Join(dir, "rules.json")
+	toolPath := filepath.Join(dir, "all_tools_master_registry.json")
+	rulePath := filepath.Join(dir, "all_rules_master_registry.json")
 	toolSeedPath := filepath.Join(dir, "sample-tools.json")
 	ruleSeedPath := filepath.Join(dir, "sample-rules.json")
 	writeSeedFixture(t, toolPath, []Tool{seedTestTool("REAL-001", "real.lookup")})
-	writeSeedFixture(t, rulePath, []Rule{})
+	writeSeedFixture(t, rulePath, []Rule{seedTestRule("REAL-RULE-001")})
 	writeSeedFixture(t, toolSeedPath, []Tool{seedTestTool("SAMPLE-001", "sample.lookup")})
 	writeSeedFixture(t, ruleSeedPath, []Rule{seedTestRule("SAMPLE-RULE-001")})
 
@@ -79,19 +27,35 @@ func TestSeedEmptyRegistriesDoesNotMixSamplesIntoPopulatedRegistry(t *testing.T)
 		t.Fatal(err)
 	}
 	manager := NewManager(bundle, toolPath, rulePath)
-	before := manager.Hash()
-	result, err := manager.SeedEmptyRegistries(toolSeedPath, ruleSeedPath)
+	beforeHash := manager.Hash()
+	beforeTools, err := os.ReadFile(toolPath)
 	if err != nil {
-		t.Fatalf("evaluate seed on populated registry: %v", err)
+		t.Fatal(err)
 	}
-	if result.Seeded || manager.Hash() != before || len(manager.Tools()) != 1 || len(manager.Rules()) != 0 {
-		t.Fatalf("populated registry was changed: result=%+v", result)
+	beforeRules, err := os.ReadFile(rulePath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	assertRegistryLength[Tool](t, toolPath, 1)
-	assertRegistryLength[Rule](t, rulePath, 0)
+
+	preview, err := manager.LoadSeedPreview(toolSeedPath, ruleSeedPath)
+	if err != nil {
+		t.Fatalf("load isolated seed preview: %v", err)
+	}
+	if len(preview.Tools) != 1 || len(preview.Rules) != 1 || preview.EvaluatedRegistryHash != beforeHash {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
+	afterTools, _ := os.ReadFile(toolPath)
+	afterRules, _ := os.ReadFile(rulePath)
+	if manager.Hash() != beforeHash || !bytes.Equal(beforeTools, afterTools) || !bytes.Equal(beforeRules, afterRules) {
+		t.Fatal("seed preview changed the evaluated registry or a master registry file")
+	}
+	if len(manager.Tools()) != 1 || manager.Tools()[0].ToolID != "REAL-001" ||
+		len(manager.Rules()) != 1 || manager.Rules()[0].RuleID != "REAL-RULE-001" {
+		t.Fatal("sample definitions reached the evaluated registry")
+	}
 }
 
-func TestSeedEmptyRegistriesStrictlyRejectsUnknownFieldsBeforeMutation(t *testing.T) {
+func TestSeedPreviewStrictlyRejectsUnknownFieldsBeforeMutation(t *testing.T) {
 	dir := t.TempDir()
 	toolPath := filepath.Join(dir, "tools.json")
 	rulePath := filepath.Join(dir, "rules.json")
@@ -110,15 +74,13 @@ func TestSeedEmptyRegistriesStrictlyRejectsUnknownFieldsBeforeMutation(t *testin
 	}
 	manager := NewManager(bundle, toolPath, rulePath)
 	before := manager.Hash()
-	_, err = manager.SeedEmptyRegistries(toolSeedPath, ruleSeedPath)
+	_, err = manager.LoadSeedPreview(toolSeedPath, ruleSeedPath)
 	if err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("expected strict seed schema rejection, got %v", err)
 	}
 	if manager.Hash() != before || len(manager.Tools()) != 0 || len(manager.Rules()) != 0 {
 		t.Fatal("invalid seed changed the live registries")
 	}
-	assertRegistryLength[Tool](t, toolPath, 0)
-	assertRegistryLength[Rule](t, rulePath, 0)
 }
 
 func TestBundledSampleSeedsAreStrictAndComplete(t *testing.T) {
@@ -175,20 +137,5 @@ func writeSeedFixture(t *testing.T, path string, value interface{}) {
 	}
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func assertRegistryLength[T any](t *testing.T, path string, expected int) {
-	t.Helper()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var items []T
-	if err := json.Unmarshal(raw, &items); err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != expected {
-		t.Fatalf("%s contains %d entries, want %d", path, len(items), expected)
 	}
 }

@@ -13,14 +13,14 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
-func TestSuspensionRevokesRefreshSessionsAndRejectsValidAccessToken(t *testing.T) {
+func TestSuspendedUserRejectedOnNextRequest(t *testing.T) {
 	const (
 		userID = "user_target"
 		secret = "runtime-security-test-secret"
 	)
 	store := repository.NewStore()
-	store.Users[userID] = &models.User{ID: userID, Name: "Target", Status: "Active"}
-	store.Users["platform-admin"] = &models.User{ID: "platform-admin", Name: "Platform Admin", Status: "Active", Role: models.RoleRef{ID: repository.RolePlatformAdminID, Name: "Platform Admin"}}
+	store.Users[userID] = &models.User{ID: userID, Name: "Target", Status: "Active", RoleID: repository.RoleClientID}
+	store.Users["platform-admin"] = &models.User{ID: "platform-admin", Name: "Platform Admin", Status: "Active", RoleID: repository.RolePlatformAdminID}
 	store.RefreshSessions["target-session-a"] = repository.RefreshSession{UserID: userID, ExpiresAt: time.Now().Add(time.Hour)}
 	store.RefreshSessions["target-session-b"] = repository.RefreshSession{UserID: userID, ExpiresAt: time.Now().Add(time.Hour)}
 	store.RefreshSessions["other-session"] = repository.RefreshSession{UserID: "other", ExpiresAt: time.Now().Add(time.Hour)}

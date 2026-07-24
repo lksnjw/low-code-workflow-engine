@@ -12,8 +12,11 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
-func TestRegisterDefaultsSecondUserToClientRole(t *testing.T) {
+func TestRegisterDefaultsNewUsersToClientRole(t *testing.T) {
 	store := repository.NewStore()
+	if created, err := store.BootstrapPlatformAdmin("admin@example.com", "admin-password"); err != nil || !created {
+		t.Fatalf("bootstrap administrator: created=%t err=%v", created, err)
+	}
 	handler := &Handler{
 		Cfg:   config.Config{JWTSecret: "test-secret", TokenTTL: time.Hour, AllowPublicRegistration: true},
 		Store: store,
@@ -21,39 +24,31 @@ func TestRegisterDefaultsSecondUserToClientRole(t *testing.T) {
 	app := fiber.New()
 	app.Post("/register", handler.Register)
 
-	register := func(name, email string) map[string]interface{} {
-		t.Helper()
-		body, _ := json.Marshal(map[string]string{
-			"name": name, "email": email, "password": "password123",
-		})
-		request := httptest.NewRequest("POST", "/register", bytes.NewReader(body))
-		request.Header.Set("Content-Type", "application/json")
-		response, err := app.Test(request)
-		if err != nil {
-			t.Fatalf("register %s: %v", email, err)
-		}
-		defer response.Body.Close()
-		if response.StatusCode != fiber.StatusCreated {
-			t.Fatalf("register %s returned %d", email, response.StatusCode)
-		}
-		var payload struct {
-			Data struct {
-				User map[string]interface{} `json:"user"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode registration response: %v", err)
-		}
-		return payload.Data.User
+	body, _ := json.Marshal(map[string]string{
+		"name": "Client User", "email": "client@example.com", "password": "password123",
+	})
+	request := httptest.NewRequest("POST", "/register", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := app.Test(request)
+	if err != nil {
+		t.Fatalf("register client: %v", err)
 	}
-
-	first := register("Admin User", "admin@example.com")
-	second := register("Client User", "client@example.com")
-
-	if first["roleId"] != "role_admin" {
-		t.Fatalf("first registration roleId = %v, want role_admin", first["roleId"])
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusCreated {
+		t.Fatalf("register client returned %d", response.StatusCode)
 	}
-	if second["roleId"] != "role_client" {
-		t.Fatalf("second registration roleId = %v, want role_client", second["roleId"])
+	var payload struct {
+		Data struct {
+			User map[string]interface{} `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode registration response: %v", err)
+	}
+	if payload.Data.User["roleId"] != repository.RoleClientID {
+		t.Fatalf("registration roleId = %v, want %s", payload.Data.User["roleId"], repository.RoleClientID)
+	}
+	if len(store.Users) != 2 {
+		t.Fatalf("user count=%d, want bootstrap administrator plus client", len(store.Users))
 	}
 }

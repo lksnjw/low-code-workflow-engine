@@ -157,6 +157,9 @@ steps:
 		GeminiAPIKey:                       "test-key",
 	}
 	store := repository.NewStore()
+	if created, bootstrapErr := store.BootstrapPlatformAdmin("integration@example.test", "correct-horse-battery-staple"); bootstrapErr != nil || !created {
+		t.Fatalf("bootstrap integration administrator: created=%t err=%v", created, bootstrapErr)
+	}
 	synth := synthesizer.NewServiceWithProvider("", "", false, "gemini", "test-key", "gemini-test")
 	synth.Gemini.BaseURL = geminiServer.URL
 	validator := workflowvalidator.NewWorkflowValidator()
@@ -170,13 +173,13 @@ steps:
 	app := fiber.New()
 	routes.Register(app, handler)
 	registrationBody, _ := json.Marshal(map[string]interface{}{
-		"name": "Integration Admin", "email": "integration@example.test", "password": "correct-horse-battery-staple",
+		"email": "integration@example.test", "password": "correct-horse-battery-staple",
 	})
-	registrationRequest := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(registrationBody))
+	registrationRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(registrationBody))
 	registrationRequest.Header.Set("Content-Type", "application/json")
 	registrationResponse, err := app.Test(registrationRequest)
-	if err != nil || registrationResponse.StatusCode != http.StatusCreated {
-		t.Fatalf("register test user: status=%d err=%v", registrationResponse.StatusCode, err)
+	if err != nil || registrationResponse.StatusCode != http.StatusOK {
+		t.Fatalf("login test user: status=%d err=%v", registrationResponse.StatusCode, err)
 	}
 	var registrationPayload struct {
 		Data struct {

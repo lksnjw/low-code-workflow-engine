@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sanjeewa/agentic-orchestrator/internal/authn"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
-	"golang.org/x/crypto/bcrypt"
 )
 
 func (h *Handler) ListUsers(c *fiber.Ctx) error {
@@ -17,15 +17,10 @@ func (h *Handler) ListUsers(c *fiber.Ctx) error {
 	q := strings.ToLower(c.Query("q"))
 	h.Store.Mu.RLock()
 	users := make([]models.User, 0, len(h.Store.Users))
-	for _, stored := range h.Store.Users {
-		user := *stored
-		if role := h.Store.Roles[stored.Role.ID]; role != nil {
-			user.Role = models.RoleRef{ID: role.ID, Name: role.Name}
-			user.Permissions = append([]string(nil), role.Permissions...)
-		} else {
-			user.Permissions = nil
+	for userID := range h.Store.Users {
+		if user, ok := h.Store.EffectiveUserLocked(userID); ok {
+			users = append(users, *user)
 		}
-		users = append(users, user)
 	}
 	h.Store.Mu.RUnlock()
 	filtered := []models.User{}
@@ -42,7 +37,11 @@ func (h *Handler) ListUsers(c *fiber.Ctx) error {
 		filtered = append(filtered, user)
 	}
 	paged, meta := paginate(filtered, page, limit)
-	return c.JSON(models.OK(paged, "OK", meta))
+	response := make([]map[string]interface{}, 0, len(paged))
+	for i := range paged {
+		response = append(response, publicUserSnapshot(&paged[i]))
+	}
+	return c.JSON(models.OK(response, "OK", meta))
 }
 
 func (h *Handler) CreateUser(c *fiber.Ctx) error {
@@ -53,7 +52,7 @@ func (h *Handler) CreateUser(c *fiber.Ctx) error {
 	if name == "" || name == "<nil>" || email == "" || email == "<nil>" || len(password) < 8 {
 		return fiber.NewError(fiber.StatusBadRequest, "Name, email, and a password of at least 8 characters are required")
 	}
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	passwordHash, err := authn.HashPassword(password)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Could not secure password")
 	}
@@ -76,15 +75,19 @@ func (h *Handler) CreateUser(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Role not found")
 	}
 	if !canAssignRole(actorUser, role.ID) {
-		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Your role cannot assign the requested role", nil))
+		return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot assign role %q", role.ID), nil))
+	}
+	if permission, denied := firstUnheldPermission(actorUser, role.Permissions); denied {
+		return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot grant permission %q", permission), nil))
 	}
 	id := h.Store.NextID("usr")
-	user := &models.User{ID: id, Name: name, Email: email, Role: models.RoleRef{ID: role.ID, Name: role.Name}, Permissions: append([]string{}, role.Permissions...), Status: "Active", Initials: initials(name), Timezone: "UTC", CreatedAt: time.Now().UTC(), EmailVerified: false}
+	user := &models.User{ID: id, Name: name, Email: email, RoleID: role.ID, PermissionOverrides: []string{}, Status: "Active", Initials: initials(name), Timezone: "UTC", CreatedAt: time.Now().UTC(), EmailVerified: false}
 	h.Store.Users[id] = user
-	h.Store.PasswordHashes[id] = string(passwordHash)
+	h.Store.PasswordHashes[id] = passwordHash
 	h.Store.Audit(actor, "user.created", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"email": email, "roleId": role.ID}, c.IP(), c.Get("User-Agent"))
 	h.Store.Audit(actor, "user.role_assigned", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"roleId": role.ID, "source": "administration"}, c.IP(), c.Get("User-Agent"))
-	return c.Status(fiber.StatusCreated).JSON(models.OK(user, "User created", nil))
+	effective, _ := h.Store.EffectiveUserLocked(id)
+	return c.Status(fiber.StatusCreated).JSON(models.OK(publicUserSnapshot(effective), "User created", nil))
 }
 
 func (h *Handler) GetUser(c *fiber.Ctx) error {
@@ -92,11 +95,32 @@ func (h *Handler) GetUser(c *fiber.Ctx) error {
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "User not found")
 	}
-	return c.JSON(models.OK(user, "OK", nil))
+	return c.JSON(models.OK(publicUserSnapshot(user), "OK", nil))
 }
 
 func (h *Handler) UpdateUser(c *fiber.Ctx) error {
+	return h.updateUser(c, decodeMap(c))
+}
+
+func (h *Handler) UpdateUserRole(c *fiber.Ctx) error {
 	body := decodeMap(c)
+	roleID, provided := requestString(body, "roleId")
+	if !provided {
+		return fiber.NewError(fiber.StatusBadRequest, "roleId is required")
+	}
+	return h.updateUser(c, map[string]interface{}{"roleId": roleID})
+}
+
+func (h *Handler) UpdateUserStatus(c *fiber.Ctx) error {
+	body := decodeMap(c)
+	status, provided := requestString(body, "status")
+	if !provided {
+		return fiber.NewError(fiber.StatusBadRequest, "status is required")
+	}
+	return h.updateUser(c, map[string]interface{}{"status": status})
+}
+
+func (h *Handler) updateUser(c *fiber.Ctx, body map[string]interface{}) error {
 	actorUser := h.currentUser(c)
 	if actorUser == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(models.Fail("Authenticated user no longer exists", nil))
@@ -111,17 +135,31 @@ func (h *Handler) UpdateUser(c *fiber.Ctx) error {
 	requestedRoleID, roleProvided := requestString(body, "roleId")
 	requestedStatus, statusProvided := requestString(body, "status")
 	if statusProvided && !validUserStatus(requestedStatus) {
-		return fiber.NewError(fiber.StatusBadRequest, "Status must be Active or Suspended")
+		return fiber.NewError(fiber.StatusBadRequest, "Status must be active or suspended")
+	}
+	if statusProvided {
+		requestedStatus = canonicalUserStatus(requestedStatus)
+	}
+	currentRoleID := user.AssignedRoleID()
+	demotingPlatformAdmin := roleProvided && currentRoleID == repository.RolePlatformAdminID && requestedRoleID != repository.RolePlatformAdminID
+	suspendingPlatformAdmin := statusProvided && currentRoleID == repository.RolePlatformAdminID && !strings.EqualFold(requestedStatus, "active")
+	if actorUser.AssignedRoleID() != repository.RolePlatformAdminID && (demotingPlatformAdmin || suspendingPlatformAdmin) {
+		return c.Status(fiber.StatusForbidden).JSON(models.Fail("The target Platform Admin outranks the caller", nil))
+	}
+	if strings.EqualFold(user.Status, "active") &&
+		(demotingPlatformAdmin || suspendingPlatformAdmin) &&
+		countActiveUsersWithRoleLocked(h.Store, repository.RolePlatformAdminID) <= 1 {
+		return c.Status(fiber.StatusConflict).JSON(models.Fail("At least one active Platform Admin must remain", nil))
 	}
 	if user.ID == actorUser.ID {
-		if roleProvided && requestedRoleID != user.Role.ID {
+		if roleProvided {
 			return c.Status(fiber.StatusConflict).JSON(models.Fail("You cannot change your own role", nil))
 		}
 		if statusProvided && !strings.EqualFold(requestedStatus, "active") {
 			return c.Status(fiber.StatusConflict).JSON(models.Fail("You cannot deactivate your own account", nil))
 		}
 	}
-	if protectedAdministratorAccount(user) && actorUser.Role.ID != repository.RolePlatformAdminID {
+	if protectedAdministratorAccount(user) && actorUser.AssignedRoleID() != repository.RolePlatformAdminID {
 		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Only a Platform Admin can modify administrator accounts", nil))
 	}
 	var requestedRole *models.Role
@@ -130,14 +168,16 @@ func (h *Handler) UpdateUser(c *fiber.Ctx) error {
 		if requestedRole == nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Role not found")
 		}
-		if requestedRole.ID != user.Role.ID && !canAssignRole(actorUser, requestedRole.ID) {
-			return c.Status(fiber.StatusForbidden).JSON(models.Fail("Your role cannot assign the requested role", nil))
+		if requestedRole.ID != currentRoleID && !canAssignRole(actorUser, requestedRole.ID) {
+			return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot assign role %q", requestedRole.ID), nil))
+		}
+		if requestedRole.ID != currentRoleID {
+			if permission, denied := firstUnheldPermission(actorUser, requestedRole.Permissions); denied {
+				return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot grant permission %q", permission), nil))
+			}
 		}
 	}
-	if statusProvided && user.Role.ID == repository.RolePlatformAdminID && !strings.EqualFold(requestedStatus, "active") && countActiveUsersWithRoleLocked(h.Store, repository.RolePlatformAdminID) <= 1 {
-		return c.Status(fiber.StatusConflict).JSON(models.Fail("The last active Platform Admin cannot be suspended", nil))
-	}
-	before := map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": user.Role.ID}
+	before := map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": currentRoleID}
 	if name, provided := requestString(body, "name"); provided {
 		user.Name = name
 		user.Initials = initials(name)
@@ -149,15 +189,17 @@ func (h *Handler) UpdateUser(c *fiber.Ctx) error {
 		}
 	}
 	if requestedRole != nil {
-		if requestedRole.ID != user.Role.ID {
-			oldRoleID := user.Role.ID
-			user.Role = models.RoleRef{ID: requestedRole.ID, Name: requestedRole.Name}
-			user.Permissions = append([]string(nil), requestedRole.Permissions...)
+		if requestedRole.ID != currentRoleID {
+			oldRoleID := currentRoleID
+			user.RoleID = requestedRole.ID
+			user.Role = models.RoleRef{}
+			user.Permissions = nil
 			h.Store.Audit(actor, "user.role_assigned", models.ResourceRef{Type: "user", ID: user.ID}, map[string]interface{}{"roleId": oldRoleID}, map[string]interface{}{"roleId": requestedRole.ID, "source": "administration"}, c.IP(), c.Get("User-Agent"))
 		}
 	}
-	h.Store.Audit(actor, "user.updated", models.ResourceRef{Type: "user", ID: user.ID}, before, map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": user.Role.ID}, c.IP(), c.Get("User-Agent"))
-	return c.JSON(models.OK(user, "User updated", nil))
+	h.Store.Audit(actor, "user.updated", models.ResourceRef{Type: "user", ID: user.ID}, before, map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": user.AssignedRoleID()}, c.IP(), c.Get("User-Agent"))
+	effective, _ := h.Store.EffectiveUserLocked(user.ID)
+	return c.JSON(models.OK(publicUserSnapshot(effective), "User updated", nil))
 }
 
 func (h *Handler) DeleteUser(c *fiber.Ctx) error {
@@ -175,16 +217,16 @@ func (h *Handler) DeleteUser(c *fiber.Ctx) error {
 	if user == nil {
 		return fiber.NewError(fiber.StatusNotFound, "User not found")
 	}
-	if protectedAdministratorAccount(user) && actorUser.Role.ID != repository.RolePlatformAdminID {
+	if protectedAdministratorAccount(user) && actorUser.AssignedRoleID() != repository.RolePlatformAdminID {
 		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Only a Platform Admin can delete administrator accounts", nil))
 	}
-	if user.Role.ID == repository.RolePlatformAdminID && strings.EqualFold(user.Status, "active") && countActiveUsersWithRoleLocked(h.Store, repository.RolePlatformAdminID) <= 1 {
+	if user.AssignedRoleID() == repository.RolePlatformAdminID && strings.EqualFold(user.Status, "active") && countActiveUsersWithRoleLocked(h.Store, repository.RolePlatformAdminID) <= 1 {
 		return c.Status(fiber.StatusConflict).JSON(models.Fail("The last Platform Admin cannot be deleted", nil))
 	}
 	delete(h.Store.Users, userID)
 	delete(h.Store.PasswordHashes, userID)
 	revokeRefreshSessionsLocked(h.Store, userID)
-	h.Store.Audit(principalFromUser(actorUser), "user.deleted", models.ResourceRef{Type: "user", ID: userID}, map[string]interface{}{"email": user.Email, "roleId": user.Role.ID}, nil, c.IP(), c.Get("User-Agent"))
+	h.Store.Audit(principalFromUser(actorUser), "user.deleted", models.ResourceRef{Type: "user", ID: userID}, map[string]interface{}{"email": user.Email, "roleId": user.AssignedRoleID()}, nil, c.IP(), c.Get("User-Agent"))
 	return c.JSON(models.OK(map[string]bool{"deleted": true}, "User deleted", nil))
 }
 
@@ -211,13 +253,13 @@ func (h *Handler) setUserStatus(c *fiber.Ctx, status string) error {
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "User not found")
 	}
-	if protectedAdministratorAccount(user) && actorUser.Role.ID != repository.RolePlatformAdminID {
+	if protectedAdministratorAccount(user) && actorUser.AssignedRoleID() != repository.RolePlatformAdminID {
 		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Only a Platform Admin can change administrator accounts", nil))
 	}
 	if user.ID == actorUser.ID && !strings.EqualFold(status, "active") {
 		return c.Status(fiber.StatusConflict).JSON(models.Fail("You cannot deactivate your own account", nil))
 	}
-	if user.Role.ID == repository.RolePlatformAdminID && !strings.EqualFold(status, "active") && countActiveUsersWithRoleLocked(h.Store, repository.RolePlatformAdminID) <= 1 {
+	if user.AssignedRoleID() == repository.RolePlatformAdminID && !strings.EqualFold(status, "active") && countActiveUsersWithRoleLocked(h.Store, repository.RolePlatformAdminID) <= 1 {
 		return c.Status(fiber.StatusConflict).JSON(models.Fail("The last active Platform Admin cannot be suspended", nil))
 	}
 	before := user.Status
@@ -226,7 +268,8 @@ func (h *Handler) setUserStatus(c *fiber.Ctx, status string) error {
 		revokeRefreshSessionsLocked(h.Store, user.ID)
 	}
 	h.Store.Audit(principalFromUser(actorUser), "user.status_changed", models.ResourceRef{Type: "user", ID: user.ID}, map[string]interface{}{"status": before}, map[string]interface{}{"status": status}, c.IP(), c.Get("User-Agent"))
-	return c.JSON(models.OK(user, "User status updated", nil))
+	effective, _ := h.Store.EffectiveUserLocked(user.ID)
+	return c.JSON(models.OK(publicUserSnapshot(effective), "User status updated", nil))
 }
 
 // revokeRefreshSessionsLocked removes every refresh session for a user. The
@@ -263,8 +306,8 @@ func (h *Handler) CreateRole(c *fiber.Ctx) error {
 	if err := validateRolePermissionsLocked(h.Store, permissions); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	if actorUser.Role.ID == repository.RoleSystemAdminID && containsAdministrativePermission(permissions) {
-		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Only a Platform Admin can grant administrative permissions", nil))
+	if permission, denied := firstUnheldPermission(actorUser, permissions); denied {
+		return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot grant permission %q", permission), nil))
 	}
 	for _, existing := range h.Store.Roles {
 		if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
@@ -300,10 +343,7 @@ func (h *Handler) UpdateRole(c *fiber.Ctx) error {
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Role not found")
 	}
-	if role.ID == repository.RolePlatformAdminID {
-		return c.Status(fiber.StatusConflict).JSON(models.Fail("The Platform Admin role is protected", nil))
-	}
-	if role.ID == repository.RoleSystemAdminID && actorUser.Role.ID != repository.RolePlatformAdminID {
+	if role.ID == repository.RoleSystemAdminID && actorUser.AssignedRoleID() != repository.RolePlatformAdminID {
 		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Only a Platform Admin can modify the System Admin role", nil))
 	}
 	newName := role.Name
@@ -315,26 +355,26 @@ func (h *Handler) UpdateRole(c *fiber.Ctx) error {
 			}
 		}
 	}
-	newPermissions := append([]string(nil), role.Permissions...)
+	newPermissions := append([]string{}, role.Permissions...)
 	if rawPermissions, provided := body["permissions"]; provided {
 		permissions := normalizeStringSlice(rawPermissions)
 		if err := validateRolePermissionsLocked(h.Store, permissions); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
-		if actorUser.Role.ID == repository.RoleSystemAdminID && containsAdministrativePermission(permissions) {
-			return c.Status(fiber.StatusForbidden).JSON(models.Fail("Only a Platform Admin can grant administrative permissions", nil))
+		if permission, missing := missingPlatformAdminFloorPermission(role.ID, permissions); missing {
+			return c.Status(fiber.StatusConflict).JSON(models.Fail(fmt.Sprintf("Permission %q is required for the Platform Admin role", permission), nil))
+		}
+		if permission, denied := firstRemovedUnheldPermission(actorUser, role.Permissions, permissions); denied {
+			return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot remove permission %q because you do not hold it", permission), nil))
+		}
+		if permission, denied := firstUnheldPermission(actorUser, permissions); denied {
+			return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot grant permission %q", permission), nil))
 		}
 		newPermissions = permissions
 	}
 	before := roleAuditState(role)
 	role.Name = newName
 	role.Permissions = newPermissions
-	for _, user := range h.Store.Users {
-		if user.Role.ID == role.ID {
-			user.Role.Name = role.Name
-			user.Permissions = append([]string(nil), role.Permissions...)
-		}
-	}
 	h.Store.Audit(principalFromUser(actorUser), "role.updated", models.ResourceRef{Type: "role", ID: role.ID}, before, roleAuditState(role), c.IP(), c.Get("User-Agent"))
 	return c.JSON(models.OK(role, "Role updated", nil))
 }
@@ -354,10 +394,9 @@ func (h *Handler) DeleteRole(c *fiber.Ctx) error {
 	if protectedRoleID(roleID) {
 		return c.Status(fiber.StatusConflict).JSON(models.Fail("Built-in roles cannot be deleted", nil))
 	}
-	for _, user := range h.Store.Users {
-		if user.Role.ID == roleID {
-			return c.Status(fiber.StatusConflict).JSON(models.Fail("Role is assigned to one or more users", nil))
-		}
+	holders := countUsersWithRoleLocked(h.Store, roleID)
+	if holders > 0 {
+		return c.Status(fiber.StatusConflict).JSON(models.Fail(fmt.Sprintf("Role is assigned to %d user(s)", holders), map[string]interface{}{"holders": holders}))
 	}
 	before := roleAuditState(role)
 	delete(h.Store.Roles, roleID)
@@ -449,18 +488,18 @@ func canAssignRole(actor *models.User, roleID string) bool {
 	if actor == nil {
 		return false
 	}
-	switch actor.Role.ID {
+	switch actor.AssignedRoleID() {
 	case repository.RolePlatformAdminID:
 		return true
 	case repository.RoleSystemAdminID:
-		return roleID == repository.RoleBuilderID || roleID == repository.RoleClientID
+		return roleID != repository.RolePlatformAdminID && roleID != repository.RoleSystemAdminID
 	default:
 		return false
 	}
 }
 
 func canManageRoles(actor *models.User) bool {
-	return actor != nil && (actor.Role.ID == repository.RolePlatformAdminID || actor.Role.ID == repository.RoleSystemAdminID)
+	return actor != nil && (actor.AssignedRoleID() == repository.RolePlatformAdminID || actor.AssignedRoleID() == repository.RoleSystemAdminID)
 }
 
 func normalizeStringSlice(value interface{}) []string {
@@ -494,8 +533,47 @@ func validateRolePermissionsLocked(store *repository.Store, permissions []string
 	return nil
 }
 
-func containsAdministrativePermission(permissions []string) bool {
-	return containsString(permissions, "user:manage") || containsString(permissions, "settings:manage")
+func firstUnheldPermission(actor *models.User, requested []string) (string, bool) {
+	if actor == nil {
+		return "", true
+	}
+	if actor.AssignedRoleID() == repository.RolePlatformAdminID {
+		return "", false
+	}
+	held := make(map[string]struct{}, len(actor.Permissions))
+	for _, permission := range actor.Permissions {
+		held[permission] = struct{}{}
+	}
+	for _, permission := range requested {
+		if _, ok := held[permission]; !ok {
+			return permission, true
+		}
+	}
+	return "", false
+}
+
+func firstRemovedUnheldPermission(actor *models.User, current, requested []string) (string, bool) {
+	if actor == nil {
+		return "", true
+	}
+	for _, permission := range current {
+		if !containsString(requested, permission) && !containsString(actor.Permissions, permission) {
+			return permission, true
+		}
+	}
+	return "", false
+}
+
+func missingPlatformAdminFloorPermission(roleID string, permissions []string) (string, bool) {
+	if roleID != repository.RolePlatformAdminID {
+		return "", false
+	}
+	for _, permission := range []string{"provider:manage", "registry:write", "user:manage", "settings:manage"} {
+		if !containsString(permissions, permission) {
+			return permission, true
+		}
+	}
+	return "", false
 }
 
 func protectedRoleID(roleID string) bool {
@@ -511,17 +589,35 @@ func protectedAdministratorAccount(user *models.User) bool {
 	if user == nil {
 		return false
 	}
-	return user.Role.ID == repository.RolePlatformAdminID || user.Role.ID == repository.RoleSystemAdminID
+	roleID := user.AssignedRoleID()
+	return roleID == repository.RolePlatformAdminID || roleID == repository.RoleSystemAdminID
 }
 
 func validUserStatus(status string) bool {
 	return strings.EqualFold(status, "active") || strings.EqualFold(status, "suspended")
 }
 
+func canonicalUserStatus(status string) string {
+	if strings.EqualFold(status, "suspended") {
+		return "Suspended"
+	}
+	return "Active"
+}
+
+func countUsersWithRoleLocked(store *repository.Store, roleID string) int {
+	count := 0
+	for _, user := range store.Users {
+		if user != nil && user.AssignedRoleID() == roleID {
+			count++
+		}
+	}
+	return count
+}
+
 func countActiveUsersWithRoleLocked(store *repository.Store, roleID string) int {
 	count := 0
 	for _, user := range store.Users {
-		if user.Role.ID == roleID && strings.EqualFold(user.Status, "active") {
+		if user != nil && user.AssignedRoleID() == roleID && strings.EqualFold(user.Status, "active") {
 			count++
 		}
 	}
