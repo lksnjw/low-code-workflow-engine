@@ -4,6 +4,7 @@ export default {
   transform: {
     "^.+\\.[jt]sx?$": "babel-jest",
   },
+  setupFiles: ["<rootDir>/src/tests/setup.js"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
     "\\.css$": "<rootDir>/src/tests/__mocks__/styleMock.js",

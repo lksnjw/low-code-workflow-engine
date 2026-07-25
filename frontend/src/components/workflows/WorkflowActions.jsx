@@ -27,14 +27,15 @@ function WorkflowActions({ workflow, onChanged }) {
     let input;
     try {
       input = JSON.parse(runtimeInput);
-      if (input === null || Array.isArray(input) || typeof input !== "object") {
-        throw new Error("Runtime input must be a JSON object.");
-      }
-      setInputError("");
-    } catch (error) {
-      setInputError(error.message || "Enter a valid JSON object.");
+    } catch {
+      setInputError("The workflow input is not valid JSON. Enter a JSON object and try again.");
       return;
     }
+    if (input === null || Array.isArray(input) || typeof input !== "object") {
+      setInputError("Runtime input must be a JSON object.");
+      return;
+    }
+    setInputError("");
 
     setRunning(true);
     try {

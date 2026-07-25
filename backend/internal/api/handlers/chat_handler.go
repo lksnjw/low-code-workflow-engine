@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"go.uber.org/zap"
 )
 
 func (h *Handler) Synthesize(c *fiber.Ctx) error {
@@ -208,7 +209,7 @@ func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
 		if h.Cfg.ChatTraceBoxes {
 			fmt.Print(orchestrator.RenderTerminalError(chatReq, elapsed, err))
 		}
-		return fiber.NewError(fiber.StatusBadGateway, "workflow orchestration failed: "+err.Error())
+		return h.chatOrchestrationFailure(err)
 	}
 	if h.Cfg.ChatTraceBoxes {
 		fmt.Print(orchestrator.RenderTerminalTrace(chatReq, response, elapsed))
@@ -246,4 +247,12 @@ func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
 		"blocking_errors":        response.BlockingErrors,
 		"next_action":            response.NextAction,
 	}, "Message processed", nil))
+}
+
+func (h *Handler) chatOrchestrationFailure(err error) error {
+	traceID := randomHex(8)
+	if h.Log != nil {
+		h.Log.Error("workflow orchestration failed", zap.String("trace_id", traceID), zap.Error(err))
+	}
+	return fiber.NewError(fiber.StatusBadGateway, "Workflow generation could not be completed. Try again or contact support with trace ID "+traceID+".")
 }

@@ -66,6 +66,10 @@ func main() {
 		defer store.Close()
 	}
 	zapLogger.Info("storage initialized", zap.String("driver", cfg.StorageDriver), zap.Bool("durable", stateBackend != nil))
+	reconciledExecutions := handlers.ReconcileOrphanedRunningExecutions(store, time.Now().UTC())
+	if reconciledExecutions > 0 {
+		zapLogger.Warn("orphaned running executions marked failed after restart", zap.Int("count", reconciledExecutions))
+	}
 	bootstrapCreated, err := store.BootstrapPlatformAdmin(cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword)
 	if err != nil {
 		zapLogger.Fatal("bootstrap platform administrator", zap.Error(err))

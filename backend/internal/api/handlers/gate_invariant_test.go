@@ -23,13 +23,17 @@ import (
 )
 
 type handlerSpyTool struct {
-	calls int
+	calls   int
+	failure error
 }
 
 func (s *handlerSpyTool) Name() string        { return "test.transfer" }
 func (s *handlerSpyTool) Description() string { return "handler gate spy" }
 func (s *handlerSpyTool) Execute(_ context.Context, _ map[string]interface{}) (map[string]interface{}, error) {
 	s.calls++
+	if s.failure != nil {
+		return nil, s.failure
+	}
 	return map[string]interface{}{"ok": true}, nil
 }
 
@@ -174,8 +178,8 @@ func TestDispatchViolationMarksExecutionFailedWithoutHealing(t *testing.T) {
 	store.Workflows["wf-dispatch"] = &models.Workflow{ID: "wf-dispatch", Name: "dispatch", YAML: validWorkflowYAML(`"{{input.amount}}"`), Status: models.StatusPending}
 	beforeHealing := len(store.Healing)
 	response := gateRequest(t, app, http.MethodPost, "/workflows/wf-dispatch/run", map[string]interface{}{"input": map[string]interface{}{"amount": 101}})
-	if response.StatusCode != fiber.StatusOK {
-		t.Fatalf("expected completed execution result, got %d: %s", response.StatusCode, responseBody(t, response))
+	if response.StatusCode != fiber.StatusUnprocessableEntity {
+		t.Fatalf("expected failed execution result 422, got %d: %s", response.StatusCode, responseBody(t, response))
 	}
 	var execution *models.Execution
 	for _, candidate := range store.Executions {
