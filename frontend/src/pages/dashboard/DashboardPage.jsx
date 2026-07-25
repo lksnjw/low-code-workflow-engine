@@ -7,10 +7,24 @@ import RecentWorkflows from "../../components/dashboard/RecentWorkflows";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useDashboard } from "../../hooks/useDashboard";
 
-function DashboardPage() {
+function DashboardPage({ view = "overview" }) {
   const { data, loading, error, reload } = useDashboard();
   if (loading) return <LoadingState label="Loading platform state…" />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
+
+  if (view === "activity") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="page-heading text-gray-950 dark:text-white">Platform Activity</h1>
+          <p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">
+            Recorded workflow runs, governance decisions, and recovery events.
+          </p>
+        </div>
+        <ActivityFeed items={data?.activity || []} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

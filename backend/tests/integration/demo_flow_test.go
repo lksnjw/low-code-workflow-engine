@@ -107,9 +107,10 @@ func TestGovernedDemoFlowThroughRealRoutes(t *testing.T) {
 		t.Fatalf("safe execution did not use deterministic demo MCP: %+v", safeLogs)
 	}
 
-	unsafeExecution, _ := demoJSON[models.Execution](t, app, http.MethodPost, "/api/workflows/"+workflow.ID+"/run", clientSession.AccessToken, map[string]interface{}{
+	unsafeFailure := demoFailureJSON(t, app, http.MethodPost, "/api/workflows/"+workflow.ID+"/run", clientSession.AccessToken, map[string]interface{}{
 		"input": map[string]interface{}{"message": "this call must never reach the tool", "amount": 125},
-	}, http.StatusOK)
+	}, http.StatusUnprocessableEntity)
+	unsafeExecution, _ := demoJSON[models.Execution](t, app, http.MethodGet, "/api/executions/"+unsafeFailure.Meta.ExecutionID, clientSession.AccessToken, nil, http.StatusOK)
 	if unsafeExecution.Status != models.StatusFailed {
 		t.Fatalf("policy-unsafe execution was not blocked: %+v", unsafeExecution)
 	}
@@ -142,6 +143,15 @@ type demoEnvelope[T any] struct {
 	Success bool   `json:"success"`
 	Data    T      `json:"data"`
 	Message string `json:"message"`
+}
+
+type demoFailureEnvelope struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Meta    struct {
+		ExecutionID string `json:"executionId"`
+		Status      string `json:"status"`
+	} `json:"meta"`
 }
 
 func demoJSON[T any](t *testing.T, app *fiber.App, method, path, token string, body interface{}, expectedStatus int) (T, []byte) {
@@ -181,6 +191,37 @@ func demoJSON[T any](t *testing.T, app *fiber.App, method, path, token string, b
 		t.Fatalf("%s %s returned unsuccessful envelope: %s", method, path, raw)
 	}
 	return payload.Data, raw
+}
+
+func demoFailureJSON(t *testing.T, app *fiber.App, method, path, token string, body interface{}, expectedStatus int) demoFailureEnvelope {
+	t.Helper()
+	rawBody, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("encode %s %s request: %v", method, path, err)
+	}
+	req := httptest.NewRequest(method, path, bytes.NewReader(rawBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s %s response: %v", method, path, err)
+	}
+	if resp.StatusCode != expectedStatus {
+		t.Fatalf("%s %s: expected %d, got %d: %s", method, path, expectedStatus, resp.StatusCode, raw)
+	}
+	var payload demoFailureEnvelope
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("decode %s %s response: %v: %s", method, path, err, raw)
+	}
+	if payload.Success || payload.Meta.ExecutionID == "" || payload.Meta.Status != models.StatusFailed {
+		t.Fatalf("%s %s returned invalid failure envelope: %s", method, path, raw)
+	}
+	return payload
 }
 
 func newGovernedDemoApp(t *testing.T) *fiber.App {

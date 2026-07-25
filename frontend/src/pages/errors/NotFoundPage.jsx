@@ -5,7 +5,7 @@ function NotFoundPage() {
     <EmptyState
       icon="mdi:map-marker-off-outline"
       title="Page not found"
-      description="The selected workflow console route does not have an implementation yet."
+      description="This URL does not match a workflow console route."
     />
   );
 }

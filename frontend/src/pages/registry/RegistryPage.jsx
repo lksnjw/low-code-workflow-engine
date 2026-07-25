@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ErrorState, EmptyState, LoadingState } from "../../components/shared/ResourceState";
 import DataTable from "../../components/shared/tables/DataTable";
 import Button from "../../components/shared/ui/Button";
@@ -66,13 +67,14 @@ const NEW_RULE = {
 
 const pretty = (value) => JSON.stringify(value, null, 2);
 
-function RegistryPage() {
-  const [kind, setKind] = useState("tools");
+function RegistryPage({ initialKind = "tools" }) {
+  const [kind, setKind] = useState(initialKind);
   const [selected, setSelected] = useState(null);
   const [editor, setEditor] = useState(null);
   const [draft, setDraft] = useState("");
   const [parseError, setParseError] = useState("");
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { notify } = useNotifications();
   const { has } = usePermissions();
   const canWrite = has("registry:write");
@@ -136,8 +138,8 @@ function RegistryPage() {
       const value = JSON.parse(draft);
       setParseError("");
       mutation.mutate({ value });
-    } catch (error) {
-      setParseError(`Invalid JSON: ${error.message}`);
+    } catch {
+      setParseError("The registry definition is not valid JSON. Correct the document and try again.");
     }
   };
 
@@ -164,6 +166,7 @@ function RegistryPage() {
         active={kind}
         onChange={(next) => {
           setKind(next);
+          navigate(`/registry/${next}`);
           setSelected(null);
           setEditor(null);
           setParseError("");

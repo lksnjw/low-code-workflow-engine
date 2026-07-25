@@ -7,7 +7,7 @@ export function unwrap(response, fallback = null) {
 }
 
 export function apiErrorMessage(error, fallback = "The request could not be completed.") {
-  return error?.response?.data?.message || error?.message || fallback;
+  return error?.response?.data?.message || fallback;
 }
 
 export function formatRelativeTime(value) {

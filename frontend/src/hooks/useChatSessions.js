@@ -2,12 +2,12 @@ import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { chatService } from "../services/chat.service";
 
-export function useChatSessions() {
+export function useChatSessions(initialSessionId = "") {
   const queryClient = useQueryClient();
-  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState(initialSessionId);
   const query = useQuery({ queryKey: ["chat-sessions"], queryFn: chatService.listSessions });
   const sessions = query.data || [];
-  const activeSessionId = sessions.some((item) => item.id === selectedSessionId) ? selectedSessionId : sessions[0]?.id || "";
+  const activeSessionId = initialSessionId || selectedSessionId || sessions[0]?.id || "";
 
   const createSession = useCallback(async (title) => {
     const created = await chatService.createSession(title);
@@ -37,7 +37,7 @@ export function useChatSessions() {
     renameSession,
     reload: query.refetch,
     loading: query.isLoading,
-    error: query.error?.response?.data?.message || query.error?.message || "",
+    error: query.error,
   };
 }
 

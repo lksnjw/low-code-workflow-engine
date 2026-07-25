@@ -42,7 +42,7 @@ function ProfilePage() {
           {update.isPending ? "Saving…" : "Update Profile"}
         </Button>
         {update.isSuccess ? <p className="mt-3 text-sm text-emerald-600">Profile updated.</p> : null}
-        {update.error ? <p className="mt-3 text-sm text-red-600">{update.error.message}</p> : null}
+        {update.error ? <p className="mt-3 text-sm text-red-600">The profile could not be updated. Try again.</p> : null}
       </Card>
       <Card>
         <h2 className="section-title">Account Details</h2>

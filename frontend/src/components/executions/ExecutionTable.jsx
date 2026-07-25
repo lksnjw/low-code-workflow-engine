@@ -1,5 +1,6 @@
 import DataTable from "../shared/tables/DataTable";
 import ExecutionStatus from "./ExecutionStatus";
+import { Link } from "react-router-dom";
 
 const columns = [
   { key: "id", label: "Run ID" },
@@ -20,7 +21,7 @@ function ExecutionTable({ executions }) {
           return <ExecutionStatus status={run.status} />;
         }
         if (column.key === "id") {
-          return <span className="font-bold text-primary">{run.id}</span>;
+          return <Link className="font-bold text-primary hover:underline" to={`/executions/${encodeURIComponent(run.id)}`}>{run.id}</Link>;
         }
         return run[column.key];
       }}

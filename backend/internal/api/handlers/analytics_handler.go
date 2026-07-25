@@ -22,11 +22,11 @@ func (h *Handler) AnalyticsSummary(c *fiber.Ctx) error {
 		if execution.StartedAt.UTC().Format("2006-01-02") == today {
 			runsToday++
 		}
-		if execution.Status == models.StatusDone {
-			succeeded++
+		if terminal, success := terminalExecutionOutcome(&execution); terminal {
 			finished++
-		} else if execution.Status == models.StatusFailed {
-			finished++
+			if success {
+				succeeded++
+			}
 		}
 		if execution.CompletedAt != nil {
 			totalLatency += execution.DurationMS
@@ -63,11 +63,11 @@ func (h *Handler) AnalyticsPerformance(c *fiber.Ctx) error {
 		finished := 0
 		var totalLatency int64
 		for _, execution := range day.Executions {
-			if execution.Status == models.StatusDone {
-				succeeded++
+			if terminal, success := terminalExecutionOutcome(&execution); terminal {
 				finished++
-			} else if execution.Status == models.StatusFailed {
-				finished++
+				if success {
+					succeeded++
+				}
 			}
 			if execution.CompletedAt != nil {
 				latencies = append(latencies, execution.DurationMS)

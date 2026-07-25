@@ -24,11 +24,11 @@ func (h *Handler) DashboardSummary(c *fiber.Ctx) error {
 	totalLatency := int64(0)
 	latencySamples := 0
 	for _, execution := range h.Store.Executions {
-		if execution.Status == models.StatusDone {
-			successfulRuns++
+		if terminal, success := terminalExecutionOutcome(execution); terminal {
 			finishedRuns++
-		} else if execution.Status == models.StatusFailed {
-			finishedRuns++
+			if success {
+				successfulRuns++
+			}
 		}
 		if execution.CompletedAt != nil {
 			totalLatency += execution.DurationMS

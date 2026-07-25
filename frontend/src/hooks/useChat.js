@@ -37,7 +37,7 @@ export function useChat(sessionId) {
     messages,
     artifact,
     loading: sendMutation.isPending || session.isLoading,
-    error: error?.response?.data?.message || error?.message || "",
+    error: error?.response?.data?.message || (error ? "Chat could not complete the request. Try again." : ""),
     send,
   };
 }

@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/runner"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
 func (h *Handler) RunWorkflow(c *fiber.Ctx) error {
@@ -77,12 +79,13 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	completed := time.Now().UTC()
 	execution.CompletedAt = &completed
 	execution.DurationMS = completed.Sub(now).Milliseconds()
+	failedStep, failedTool, failureReason := "", "", ""
 
 	if err != nil {
+		failedStep, failedTool, failureReason = executionFailureDetails(blueprint, runResult, err)
+		execution.Status = models.StatusFailed
 		var policyViolation *runner.ErrDispatchPolicyViolation
-		if errors.As(err, &policyViolation) {
-			execution.Status = models.StatusFailed
-		} else {
+		if !errors.As(err, &policyViolation) && h.Healer != nil {
 			execution.Status = models.StatusHealing
 			repairedYAML, event, healErr := h.Healer.Repair(c.Context(), workflow.Name, workflow.YAML, err)
 			if healErr == nil {
@@ -92,20 +95,29 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 					event["validation"] = repairValidation
 				}
 				h.Store.Mu.Lock()
-				status := "REPAIRED_NOT_SAVED"
+				status := "REPAIR_REJECTED"
 				summary := "Execution failed and self-healing generated YAML, but it did not pass full registry validation."
 				if repairValid {
 					workflow.YAML = repairedYAML
-					status = "REPAIRED"
-					summary = "Execution failed and the self-healing module generated a corrected YAML path that passed validation."
+					status = "VALIDATED_REPAIR_AVAILABLE"
+					summary = "Execution failed; a validated repair is available, but it was not re-executed."
 				}
-				h.Store.Healing[executionID] = models.HealingReport{ExecutionID: executionID, WorkflowID: workflow.ID, Status: status, Summary: summary, Events: []map[string]interface{}{event}, Metrics: map[string]interface{}{}}
+				events := []map[string]interface{}{}
+				if event != nil {
+					events = append(events, event)
+				}
+				h.Store.Healing[executionID] = models.HealingReport{ExecutionID: executionID, WorkflowID: workflow.ID, Status: status, Summary: summary, Events: events, Metrics: map[string]interface{}{}}
 				h.Store.Mu.Unlock()
 			} else {
 				h.Store.Mu.Lock()
 				h.Store.Healing[executionID] = models.HealingReport{ExecutionID: executionID, WorkflowID: workflow.ID, Status: "REPAIR_FAILED", Summary: "Execution failed and no validated repair could be generated.", Events: []map[string]interface{}{}, Metrics: map[string]interface{}{}}
 				h.Store.Mu.Unlock()
 			}
+			execution.Status = models.StatusFailed
+		} else if !errors.As(err, &policyViolation) {
+			h.Store.Mu.Lock()
+			h.Store.Healing[executionID] = models.HealingReport{ExecutionID: executionID, WorkflowID: workflow.ID, Status: "HEALING_NOT_ATTEMPTED", Summary: "Execution failed and self-healing was not available.", Events: []map[string]interface{}{}, Metrics: map[string]interface{}{}}
+			h.Store.Mu.Unlock()
 		}
 	} else {
 		execution.Status = models.StatusDone
@@ -119,7 +131,27 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	h.updateWorkflowExecutionMetricsLocked(workflow.ID, completed)
 	h.Store.Mu.Unlock()
 
-	return c.JSON(models.OK(execution, "Execution completed", nil))
+	if execution.Status == models.StatusFailed {
+		message := "Workflow " + workflow.Name + " failed at step " + failedStep + " using tool " + failedTool + ": " + failureReason
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail(message, map[string]interface{}{"executionId": execution.ID, "status": execution.Status}))
+	}
+	message := "Workflow " + workflow.Name + " completed successfully in " + strconv.Itoa(len(runResult.Timeline)) + " steps"
+	return c.JSON(models.OK(execution, message, nil))
+}
+
+func executionFailureDetails(blueprint models.WorkflowBlueprint, result runner.Result, runErr error) (string, string, string) {
+	index := len(result.Timeline)
+	if index > 0 && result.Timeline[index-1].Status == models.StatusFailed {
+		index--
+	}
+	if index >= len(blueprint.Steps) {
+		index = len(blueprint.Steps) - 1
+	}
+	if index < 0 {
+		return "unknown", "unknown", runErr.Error()
+	}
+	step := blueprint.Steps[index]
+	return step.ID, step.Action, runErr.Error()
 }
 
 func (h *Handler) ListExecutions(c *fiber.Ctx) error {
@@ -264,11 +296,92 @@ func (h *Handler) updateWorkflowExecutionMetricsLocked(workflowID string, lastRu
 		if execution.WorkflowID != workflowID {
 			continue
 		}
-		if execution.Status == models.StatusDone {
-			succeeded++
+		if terminal, success := terminalExecutionOutcome(execution); terminal {
 			finished++
-		} else if execution.Status == models.StatusFailed {
+			if success {
+				succeeded++
+			}
+		}
+	}
+	workflow.LastRunAt = &lastRun
+	workflow.SuccessRate = percentage(succeeded, finished)
+	workflow.UpdatedAt = lastRun
+}
+
+func terminalExecutionOutcome(execution *models.Execution) (terminal, succeeded bool) {
+	if execution == nil {
+		return false, false
+	}
+	switch execution.Status {
+	case models.StatusDone:
+		return true, true
+	case models.StatusFailed:
+		return true, false
+	case models.StatusPending, models.StatusRunning:
+		return false, false
+	default:
+		return execution.CompletedAt != nil, false
+	}
+}
+
+const restartFailureReason = "Execution failed because the process restarted mid-run."
+
+// ReconcileOrphanedRunningExecutions resolves durable RUNNING records before
+// the HTTP server accepts traffic. The store write lock also persists the
+// reconciliation when PostgreSQL-backed state is configured.
+func ReconcileOrphanedRunningExecutions(store *repository.Store, reconciledAt time.Time) int {
+	if store == nil {
+		return 0
+	}
+	reconciledAt = reconciledAt.UTC()
+	store.Mu.Lock()
+	defer store.Mu.Unlock()
+
+	reconciled := 0
+	workflows := map[string]struct{}{}
+	for _, execution := range store.Executions {
+		if execution == nil || execution.Status != models.StatusRunning {
+			continue
+		}
+		execution.Status = models.StatusFailed
+		completed := reconciledAt
+		execution.CompletedAt = &completed
+		execution.DurationMS = completed.Sub(execution.StartedAt).Milliseconds()
+		if execution.DurationMS < 0 {
+			execution.DurationMS = 0
+		}
+		store.ExecutionLogs[execution.ID] = append(store.ExecutionLogs[execution.ID], models.ExecutionLog{
+			ID:          execution.ID + "_restart",
+			ExecutionID: execution.ID,
+			Timestamp:   reconciledAt,
+			Level:       "error",
+			Message:     restartFailureReason,
+			Metadata:    map[string]interface{}{"reason": "process_restarted_mid_run"},
+		})
+		workflows[execution.WorkflowID] = struct{}{}
+		reconciled++
+	}
+	for workflowID := range workflows {
+		recalculateWorkflowExecutionMetricsLocked(store, workflowID, reconciledAt)
+	}
+	return reconciled
+}
+
+func recalculateWorkflowExecutionMetricsLocked(store *repository.Store, workflowID string, lastRun time.Time) {
+	workflow := store.Workflows[workflowID]
+	if workflow == nil {
+		return
+	}
+	finished, succeeded := 0, 0
+	for _, execution := range store.Executions {
+		if execution.WorkflowID != workflowID {
+			continue
+		}
+		if terminal, success := terminalExecutionOutcome(execution); terminal {
 			finished++
+			if success {
+				succeeded++
+			}
 		}
 	}
 	workflow.LastRunAt = &lastRun

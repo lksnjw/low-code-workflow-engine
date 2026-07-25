@@ -14,7 +14,7 @@ import { useUsers } from "../../hooks/useUsers";
 import { apiErrorMessage } from "../../services/api";
 import { userService } from "../../services/user.service";
 
-function UserListPage() {
+function UserListPage({ view = "directory" }) {
   const { user, refreshUser } = useAuthContext();
   const { notify } = useNotifications();
   const { has, roleId } = usePermissions();
@@ -91,14 +91,21 @@ function UserListPage() {
   if (loading) return <LoadingState label="Loading users and permissions..." />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
 
+  const headings = {
+    directory: ["User Directory", "Create accounts, assign roles, and change active status."],
+    roles: ["Roles & Permissions", "Manage role definitions and inspect the effective permission matrix."],
+    audit: ["Audit Logs", "Review recorded administrative and governance actions."],
+  };
+  const [title, description] = headings[view] || headings.directory;
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-heading text-gray-950 dark:text-white">Users & Access</h1>
-        <p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">Manage real accounts, roles, permissions, and audit records.</p>
+        <h1 className="page-heading text-gray-950 dark:text-white">{title}</h1>
+        <p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">{description}</p>
       </div>
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-4">
+      {view === "directory" ? (
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <UserTable
             users={data?.users}
             roles={assignableRoles}
@@ -116,6 +123,14 @@ function UserListPage() {
               status === "suspended" ? "User suspended." : "User reactivated."
             )}
           />
+          <Card>
+            <h2 className="section-title mb-5">Create User</h2>
+            <UserForm roles={assignableRoles} onCreated={reload} />
+          </Card>
+        </section>
+      ) : null}
+      {view === "roles" ? (
+        <section className="space-y-4">
           <RolePermissionEditor
             roles={editableRoles}
             permissions={grantablePermissions}
@@ -131,13 +146,9 @@ function UserListPage() {
             onCreate={createRole}
           />
           <PermissionMatrix rows={data?.matrix} />
-          <AuditLogTable logs={data?.audit} />
-        </div>
-        <Card>
-          <h2 className="section-title mb-5">Create User</h2>
-          <UserForm roles={assignableRoles} onCreated={reload} />
-        </Card>
-      </section>
+        </section>
+      ) : null}
+      {view === "audit" ? <AuditLogTable logs={data?.audit} /> : null}
     </div>
   );
 }

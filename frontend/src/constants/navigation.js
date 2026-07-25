@@ -4,10 +4,10 @@ export const NAVIGATION_GROUPS = [
     label: "Dashboard",
     description: "Operational overview",
     icon: "mdi:chart-pie",
-		requiredAny: ["workflow:read"],
+    requiredAny: ["workflow:read"],
     subMenu: [
-      { id: "overview", label: "Overview" },
-      { id: "activity", label: "Activity" },
+      { id: "overview", label: "Overview", path: "/" },
+      { id: "activity", label: "Activity", path: "/activity" },
     ],
   },
   {
@@ -18,10 +18,10 @@ export const NAVIGATION_GROUPS = [
 		clientLabel: "My Workflows",
 		requiredAny: ["workflow:read", "workflow:read_own"],
     subMenu: [
-      { id: "list", label: "All Workflows", clientLabel: "My Workflows", requiredAny: ["workflow:read", "workflow:read_own"] },
-      { id: "builder", label: "Flow Builder", requiredAny: ["workflow:write"] },
-      { id: "templates", label: "Templates", requiredAny: ["workflow:read"] },
-      { id: "detail", label: "Runbook Detail", requiredAny: ["workflow:read", "workflow:read_own"] },
+      { id: "list", label: "All Workflows", clientLabel: "My Workflows", path: "/workflows", requiredAny: ["workflow:read", "workflow:read_own"] },
+      { id: "builder", label: "Flow Builder", path: "/builder", requiredAny: ["workflow:write"] },
+      { id: "templates", label: "Templates", path: "/workflows/templates", requiredAny: ["workflow:read"] },
+      { id: "detail", label: "Runbook Detail", path: "/workflows/:workflowId", requiredAny: ["workflow:read", "workflow:read_own"] },
     ],
   },
   {
@@ -32,8 +32,8 @@ export const NAVIGATION_GROUPS = [
 		clientLabel: "Chat",
 		requiredAny: ["chat:use", "workflow:write"],
     subMenu: [
-      { id: "session", label: "Synthesis Chat" },
-      { id: "history", label: "Chat History" },
+      { id: "session", label: "Synthesis Chat", path: "/chat" },
+      { id: "history", label: "Chat History", path: "/chat/history" },
     ],
   },
   {
@@ -44,9 +44,9 @@ export const NAVIGATION_GROUPS = [
 		clientLabel: "My Executions",
 		requiredAny: ["workflow:read", "execution:read_own"],
     subMenu: [
-      { id: "history", label: "Run History" },
-      { id: "live", label: "Live Logs", hasNotification: true },
-      { id: "healing", label: "Healing Events" },
+      { id: "history", label: "Run History", path: "/executions" },
+      { id: "live", label: "Live Logs", path: "/executions/logs", hasNotification: true },
+      { id: "healing", label: "Healing Events", path: "/executions/healing" },
     ],
   },
   {
@@ -56,9 +56,9 @@ export const NAVIGATION_GROUPS = [
     icon: "mdi:chart-bar",
 		requiredAny: ["workflow:read"],
     subMenu: [
-      { id: "performance", label: "Performance" },
-      { id: "usage", label: "Usage & Cost" },
-      { id: "healing", label: "Self-Healing" },
+      { id: "performance", label: "Performance", path: "/analytics/performance" },
+      { id: "usage", label: "Usage & Cost", path: "/analytics/usage" },
+      { id: "healing", label: "Self-Healing", path: "/analytics/healing" },
     ],
   },
   {
@@ -68,9 +68,9 @@ export const NAVIGATION_GROUPS = [
     icon: "solar:users-group-rounded-linear",
 		requiredAny: ["user:manage", "audit:read"],
     subMenu: [
-      { id: "directory", label: "Directory" },
-      { id: "roles", label: "Roles" },
-      { id: "audit", label: "Audit Logs" },
+      { id: "directory", label: "Directory", path: "/users", requiredAny: ["user:manage"] },
+      { id: "roles", label: "Roles", path: "/roles", requiredAny: ["user:manage"] },
+      { id: "audit", label: "Audit Logs", path: "/audit", requiredAny: ["audit:read"] },
     ],
   },
   {
@@ -80,9 +80,9 @@ export const NAVIGATION_GROUPS = [
     icon: "mdi:cog-outline",
 		requiredAny: ["settings:manage"],
     subMenu: [
-      { id: "general", label: "General" },
-      { id: "integrations", label: "Integrations" },
-      { id: "llm", label: "LLM Policy" },
+      { id: "general", label: "General", path: "/settings" },
+      { id: "integrations", label: "Integrations", path: "/settings/integrations" },
+      { id: "llm", label: "LLM Policy", path: "/settings/llm" },
     ],
   },
   {
@@ -91,7 +91,7 @@ export const NAVIGATION_GROUPS = [
     description: "Runtime generation providers",
     icon: "mdi:brain",
     requiredAny: ["provider:manage"],
-    subMenu: [{ id: "overview", label: "Provider Configs" }],
+    subMenu: [{ id: "overview", label: "Provider Configs", path: "/settings/providers" }],
   },
   {
     id: "registry",
@@ -99,7 +99,7 @@ export const NAVIGATION_GROUPS = [
     description: "Tool schemas and policy rules",
     icon: "mdi:book-cog-outline",
     requiredAny: ["registry:read"],
-    subMenu: [{ id: "overview", label: "Tools & Rules" }],
+    subMenu: [{ id: "overview", label: "Tools & Rules", path: "/registry/tools" }],
   },
   {
     id: "mcp_bridge",
@@ -116,9 +116,9 @@ export const NAVIGATION_GROUPS = [
     icon: "mdi:database-sync-outline",
 		requiredAny: ["workflow:read"],
     subMenu: [
-      { id: "overview", label: "Pipeline Status" },
-      { id: "metrics", label: "Vector Metrics" },
-      { id: "config", label: "Configuration" }
+      { id: "overview", label: "Pipeline Status", path: "/datafeed" },
+      { id: "metrics", label: "Vector Metrics", path: "/datafeed/metrics" },
+      { id: "config", label: "Configuration", path: "/datafeed/configuration" }
     ],
   },
   {
@@ -127,7 +127,7 @@ export const NAVIGATION_GROUPS = [
     description: "ERP data & queries",
     icon: "mdi:robot-industrial",
 		requiredAny: ["workflow:read"],
-    subMenu: [{ id: "overview", label: "Model Integration", path: "/finetune" }],
+    subMenu: [{ id: "overview", label: "Model Integration", path: "/erp-models" }],
   },
   {
     id: "profile",
@@ -135,8 +135,8 @@ export const NAVIGATION_GROUPS = [
     description: "Account and security",
     icon: "solar:user-linear",
     subMenu: [
-      { id: "profile", label: "My Profile" },
-      { id: "security", label: "Security" },
+      { id: "profile", label: "My Profile", path: "/profile" },
+      { id: "security", label: "Security", path: "/profile/security" },
     ],
   },
 ];

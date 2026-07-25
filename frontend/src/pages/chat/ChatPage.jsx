@@ -3,13 +3,27 @@ import ChatWindow from "../../components/chat/ChatWindow";
 import ChatArtifactPanel from "../../components/chat/ChatArtifactPanel";
 import { useChat } from "../../hooks/useChat";
 import { useChatSessions } from "../../hooks/useChatSessions";
+import { useNavigate, useParams } from "react-router-dom";
 
 function ChatPage() {
-  const sessions = useChatSessions();
+  const { sessionId = "" } = useParams();
+  const navigate = useNavigate();
+  const sessions = useChatSessions(sessionId);
   const chat = useChat(sessions.selectedSessionId);
 
   const handleCreateSession = async () => {
-    await sessions.createSession("Workflow conversation");
+    const session = await sessions.createSession("Workflow conversation");
+    navigate(`/chat/${encodeURIComponent(session.id)}`);
+  };
+
+  const handleSelectSession = (selectedSessionId) => {
+    sessions.setSelectedSessionId(selectedSessionId);
+    navigate(`/chat/${encodeURIComponent(selectedSessionId)}`);
+  };
+
+  const handleDeleteSession = async (deletedSessionId) => {
+    await sessions.deleteSession(deletedSessionId);
+    if (deletedSessionId === sessionId) navigate("/chat");
   };
 
   // options = { model, mode } forwarded from ChatWindow's toolbar
@@ -20,6 +34,7 @@ function ChatPage() {
         text.slice(0, 64) || "Workflow conversation"
       );
       sessionId = session.id;
+      navigate(`/chat/${encodeURIComponent(sessionId)}`);
     }
     return chat.send(text, sessionId, options);
   };
@@ -35,12 +50,13 @@ function ChatPage() {
         <ChatHistory
           sessions={sessions.sessions}
           activeSessionId={sessions.selectedSessionId}
-          onSelect={sessions.setSelectedSessionId}
+          onSelect={handleSelectSession}
           onCreate={handleCreateSession}
-          onDelete={sessions.deleteSession}
+          onDelete={handleDeleteSession}
           onRename={sessions.renameSession}
           loading={sessions.loading}
           error={sessions.error}
+          onRetry={sessions.reload}
         />
       </div>
 
