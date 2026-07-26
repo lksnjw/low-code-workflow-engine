@@ -14,7 +14,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/sanjeewa/agentic-orchestrator/internal/api/middlewares"
 	"github.com/sanjeewa/agentic-orchestrator/internal/config"
+	generationcontext "github.com/sanjeewa/agentic-orchestrator/internal/core/context"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/healing"
+	"github.com/sanjeewa/agentic-orchestrator/internal/core/importer"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator"
 	coreregistry "github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/runner"
@@ -33,6 +35,8 @@ type Handler struct {
 	Validator         *workflowvalidator.WorkflowValidator
 	Dataset           *coreregistry.Bundle
 	RegistryManager   *coreregistry.Manager
+	RegistryContext   *generationcontext.Service
+	Importer          *importer.Service
 	RegistryValidator *workflowvalidator.RegistryValidator
 	Search            *semanticsearch.Service
 	Orchestrator      *orchestrator.ChatOrchestrator
@@ -45,9 +49,15 @@ func New(cfg config.Config, store *repository.Store, synth *synthesizer.Service,
 	if registryValidator == nil {
 		panic("handler requires a registry validator")
 	}
-	handler := &Handler{Cfg: cfg, Store: store, Synth: synth, Validator: validator, Dataset: dataset, RegistryManager: coreregistry.NewManager(dataset, cfg.ToolRegistryPath, cfg.RuleRegistryPath), RegistryValidator: registryValidator, Search: search, Orchestrator: chatOrch, Runner: exec, Healer: healer, Log: log}
+	manager := coreregistry.NewManager(dataset, cfg.ToolRegistryPath, cfg.RuleRegistryPath)
+	contextService := generationcontext.NewService(manager, log)
+	handler := &Handler{Cfg: cfg, Store: store, Synth: synth, Validator: validator, Dataset: dataset, RegistryManager: manager, RegistryContext: contextService, Importer: importer.NewServiceWithContext(manager, contextService, log), RegistryValidator: registryValidator, Search: search, Orchestrator: chatOrch, Runner: exec, Healer: healer, Log: log}
 	if synth != nil && store != nil {
 		synth.SetProviderResolver(store.ActiveProvider)
+	}
+	if synth != nil && strings.TrimSpace(cfg.ToolRegistryPath) != "" && strings.TrimSpace(cfg.RuleRegistryPath) != "" {
+		synth.SetRegistryContext(contextService)
+		synth.SetLogger(log)
 	}
 	return handler
 }
@@ -171,6 +181,7 @@ func publicUserSnapshot(user *models.User) map[string]interface{} {
 		"status":              user.Status,
 		"initials":            user.Initials,
 		"timezone":            user.Timezone,
+		"departmentId":        user.DepartmentID,
 		"twoFactorEnabled":    user.TwoFactorEnabled,
 		"emailVerified":       user.EmailVerified,
 	}
@@ -202,6 +213,14 @@ func randomHex(size int) string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(buffer)
+}
+
+func (h *Handler) tracedBusinessError(status int, operation, message string, err error) error {
+	traceID := randomHex(8)
+	if h.Log != nil {
+		h.Log.Error(operation, zap.String("trace_id", traceID), zap.Error(err))
+	}
+	return fiber.NewError(status, message+" Contact support with trace ID "+traceID+".")
 }
 
 func pageLimit(c *fiber.Ctx) (int, int) {

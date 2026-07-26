@@ -40,7 +40,7 @@ test("Create User button submits the account form", async () => {
   fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Client User" } });
   fireEvent.change(screen.getByPlaceholderText("Email address"), { target: { value: "client@example.test" } });
   fireEvent.change(screen.getByPlaceholderText("Temporary password (8+ characters)"), { target: { value: "client-password" } });
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: "role_client" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Role" }), { target: { value: "role_client" } });
   fireEvent.click(screen.getByRole("button", { name: "Create User" }));
 
   await waitFor(() => {
@@ -63,6 +63,6 @@ test("User form renders only the permission-filtered roles supplied by its paren
     />
   );
 
-  const options = Array.from(screen.getByRole("combobox").options).map((option) => option.value);
+  const options = Array.from(screen.getByRole("combobox", { name: "Role" }).options).map((option) => option.value);
   expect(options).toEqual(["role_custom"]);
 });

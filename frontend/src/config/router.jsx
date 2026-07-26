@@ -16,6 +16,7 @@ import AppLayout from "../layouts/AppLayout";
 
 export const lazyRouteComponents = {
   DashboardPage: lazy(() => import("../pages/dashboard/DashboardPage")),
+  CompanyPage: lazy(() => import("../pages/company/CompanyPage")),
   WorkflowListPage: lazy(() => import("../pages/workflows/WorkflowListPage")),
   WorkflowBuilderPage: lazy(() => import("../pages/workflows/WorkflowBuilderPage")),
   WorkflowTemplatePage: lazy(() => import("../pages/workflows/WorkflowTemplatePage")),
@@ -30,6 +31,8 @@ export const lazyRouteComponents = {
   SettingsPage: lazy(() => import("../pages/settings/SettingsPage")),
   ModelsPage: lazy(() => import("../pages/models/ModelsPage")),
   RegistryPage: lazy(() => import("../pages/registry/RegistryPage")),
+  RegistryImportPage: lazy(() => import("../pages/registry/RegistryImportPage")),
+  RegistryContextPage: lazy(() => import("../pages/registry/RegistryContextPage")),
   McpBridgePage: lazy(() => import("../pages/mcp_bridge/McpBridgePage")),
   DatafeedPage: lazy(() => import("../pages/datafeed/DatafeedPage")),
   VectorMetricsPage: lazy(() => import("../pages/datafeed/VectorMetricsPage")),
@@ -49,6 +52,7 @@ const C = lazyRouteComponents;
 export const protectedRouteDefinitions = [
   { id: "dashboard.overview", path: "/", Component: C.DashboardPage, requiredAny: ["workflow:read"], componentProps: { view: "overview" } },
   { id: "dashboard.activity", path: "/activity", Component: C.DashboardPage, requiredAny: ["workflow:read"], componentProps: { view: "activity" } },
+  { id: "company.overview", path: "/company", Component: C.CompanyPage, requiredAny: [] },
   { id: "workflows.list", path: "/workflows", Component: C.WorkflowListPage, requiredAny: ["workflow:read", "workflow:read_own"] },
   { id: "workflows.builder", path: "/builder", Component: C.WorkflowBuilderPage, requiredAny: ["workflow:write"] },
   { id: "workflows.builder-detail", path: "/builder/:workflowId", Component: C.WorkflowBuilderPage, requiredAny: ["workflow:write"] },
@@ -73,6 +77,8 @@ export const protectedRouteDefinitions = [
   { id: "models.overview", path: "/settings/providers", Component: C.ModelsPage, requiredAny: ["provider:manage"] },
   { id: "registry.overview", path: "/registry/tools", Component: C.RegistryPage, requiredAny: ["registry:read"], componentProps: { initialKind: "tools" } },
   { id: "registry.rules", path: "/registry/rules", Component: C.RegistryPage, requiredAny: ["registry:read"], componentProps: { initialKind: "rules" } },
+  { id: "registry.import", path: "/registry/import", Component: C.RegistryImportPage, requiredAny: ["registry:write"] },
+  { id: "registry.context", path: "/registry/context", Component: C.RegistryContextPage, requiredAny: ["registry:read"] },
   { id: "mcp_bridge.overview", path: "/mcp-bridge", Component: C.McpBridgePage, requiredAny: ["workflow:read"] },
   { id: "datafeed.overview", path: "/datafeed", Component: C.DatafeedPage, requiredAny: ["workflow:read"] },
   { id: "datafeed.metrics", path: "/datafeed/metrics", Component: C.VectorMetricsPage, requiredAny: ["workflow:read"] },

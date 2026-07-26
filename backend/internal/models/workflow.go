@@ -50,6 +50,8 @@ type Workflow struct {
 	PublishedVersion int                    `json:"publishedVersion"`
 	DraftVersion     int                    `json:"draftVersion"`
 	Tags             []string               `json:"tags"`
+	DomainTags       []string               `json:"domainTags"`
+	CanRun           bool                   `json:"canRun"`
 	YAML             string                 `json:"-"`
 	Canvas           WorkflowCanvas         `json:"-"`
 	CreatedAt        time.Time              `json:"createdAt"`

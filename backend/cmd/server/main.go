@@ -14,6 +14,7 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/healing"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator"
 	coreregistry "github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
+	"github.com/sanjeewa/agentic-orchestrator/internal/core/relevance"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/runner"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/synthesizer"
@@ -36,6 +37,17 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		zapLogger.Fatal("invalid server configuration", zap.Error(err))
 	}
+	runtimeRegistry, err := config.EnsureRuntimeRegistries(cfg)
+	if err != nil {
+		zapLogger.Fatal("initialize runtime registries", zap.Error(err))
+	}
+	zapLogger.Info("active runtime registry",
+		zap.String("tool_path", runtimeRegistry.ToolPath),
+		zap.String("tool_sha256", runtimeRegistry.ToolSHA256),
+		zap.String("rule_path", runtimeRegistry.RulePath),
+		zap.String("rule_sha256", runtimeRegistry.RuleSHA256),
+		zap.Bool("writable", runtimeRegistry.Writable),
+	)
 
 	_ = config.NewRedisCache(cfg, zapLogger)
 
@@ -139,6 +151,19 @@ func main() {
 	exec.SetBaselineB(cfg.BaselineBEnabled())
 	healer := healing.NewHealer(synth)
 	handler := handlers.New(cfg, store, synth, validator, registryBundle, registryValidator, searchService, chatOrchestrator, exec, healer, zapLogger)
+	backfilledWorkflows, err := relevance.BackfillWorkflowDomainTags(store, handler.RegistryManager.Tools())
+	if err != nil {
+		zapLogger.Fatal("backfill workflow domain tags", zap.Error(err))
+	}
+	zapLogger.Info("workflow domain-tag backfill complete", zap.Int("workflows_updated", backfilledWorkflows))
+	contextDocument, err := handler.RegistryContext.Regenerate()
+	if err != nil {
+		zapLogger.Fatal("generate runtime registry context", zap.Error(err))
+	}
+	zapLogger.Info("runtime registry generation context ready",
+		zap.String("registry_hash", contextDocument.FrontMatter.RegistryHash),
+		zap.Int("size_bytes", contextDocument.SizeBytes),
+	)
 	handler.RegistryManager.SetToolUpsert(func(toolDef coreregistry.Tool) {
 		if !registry.Has(toolDef.Name) {
 			registry.Register(tools.GenericMCPTool{Action: toolDef.Name, Client: mcp})

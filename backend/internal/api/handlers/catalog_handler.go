@@ -58,7 +58,7 @@ func (h *Handler) SemanticServiceHealth(c *fiber.Ctx) error {
 	}
 	payload, err := h.Search.ExternalStatus(c.Context(), http.MethodGet, "/health")
 	if err != nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail(err.Error(), nil))
+		return h.tracedBusinessError(fiber.StatusServiceUnavailable, "load semantic search service health", "Semantic search service health could not be loaded. Check the search service and try again.", err)
 	}
 	return c.JSON(models.OK(payload, "Semantic search service health loaded", nil))
 }
@@ -69,7 +69,7 @@ func (h *Handler) SemanticIndexMetadata(c *fiber.Ctx) error {
 	}
 	payload, err := h.Search.ExternalStatus(c.Context(), http.MethodGet, "/index/status")
 	if err != nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(models.Fail(err.Error(), nil))
+		return h.tracedBusinessError(fiber.StatusServiceUnavailable, "load semantic index metadata", "Semantic index metadata could not be loaded. Check the search service and try again.", err)
 	}
 	return c.JSON(models.OK(payload, "Semantic index metadata loaded", nil))
 }
@@ -80,7 +80,7 @@ func (h *Handler) RebuildSemanticIndex(c *fiber.Ctx) error {
 	}
 	payload, err := h.Search.ExternalStatus(c.Context(), http.MethodPost, "/index/rebuild")
 	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(models.Fail(err.Error(), nil))
+		return h.tracedBusinessError(fiber.StatusBadGateway, "rebuild semantic index", "Semantic index rebuild could not be started. Check the search service and try again.", err)
 	}
 	return c.JSON(models.OK(payload, "Semantic index rebuilt", nil))
 }
@@ -143,7 +143,7 @@ func (h *Handler) SemanticSearch(c *fiber.Ctx) error {
 		TopKExamples:  toInt(body["top_k_examples"], h.Cfg.SemanticSearchTopKExamples),
 	})
 	if err != nil {
-		return fiber.NewError(fiber.StatusBadGateway, err.Error())
+		return h.tracedBusinessError(fiber.StatusBadGateway, "search registry catalog", "The builder tool palette could not be searched. Check the search service and try again.", err)
 	}
 	return c.JSON(models.OK(result, "Semantic search completed", nil))
 }
@@ -159,7 +159,7 @@ func (h *Handler) CanvasValidateWorkflow(c *fiber.Ctx) error {
 	}
 	_, result, err := h.validateWithFullGate(c, "CanvasValidateWorkflow", yamlText)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate canvas workflow", "The canvas workflow could not be checked against the registry. Try validation again.", err)
 	}
 	stepErrors := []map[string]interface{}{}
 	if result.ParsedWorkflow != nil {

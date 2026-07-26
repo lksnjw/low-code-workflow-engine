@@ -23,6 +23,8 @@ backend/backend-dev.err.zip
 frontend/src.zip
 coverage.out
 *.test
+backend/configs/runtime/*.json
+backend/configs/runtime/generated/
 qa-*.png
 
 RECONSTRUCTED_PLAN.md

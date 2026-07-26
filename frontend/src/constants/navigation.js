@@ -25,6 +25,15 @@ export const NAVIGATION_GROUPS = [
     ],
   },
   {
+    id: "company",
+    label: "Company",
+    description: "Organization and ERP context",
+    icon: "mdi:office-building-cog-outline",
+    subMenu: [
+      { id: "overview", label: "Company Profile", path: "/company" },
+    ],
+  },
+  {
     id: "chat",
     label: "Agent Chat",
     description: "Natural language synthesis",
@@ -99,7 +108,11 @@ export const NAVIGATION_GROUPS = [
     description: "Tool schemas and policy rules",
     icon: "mdi:book-cog-outline",
     requiredAny: ["registry:read"],
-    subMenu: [{ id: "overview", label: "Tools & Rules", path: "/registry/tools" }],
+    subMenu: [
+      { id: "overview", label: "Tools & Rules", path: "/registry/tools" },
+      { id: "import", label: "Bulk Import", path: "/registry/import", requiredAny: ["registry:write"] },
+      { id: "context", label: "Generation Context", path: "/registry/context" },
+    ],
   },
   {
     id: "mcp_bridge",

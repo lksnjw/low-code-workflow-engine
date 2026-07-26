@@ -36,15 +36,17 @@ services:
       STORAGE_DRIVER: ${STORAGE_DRIVER:-memory}
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
       DATABASE_URL: postgres://workflow:workflow@postgres:5432/workflow?sslmode=disable
-      TOOL_REGISTRY_PATH: /app/configs/registries/all_tools_master_registry.json
-      RULE_REGISTRY_PATH: /app/configs/registries/all_rules_master_registry.json
+      TOOL_REGISTRY_PATH: /app/configs/runtime/all_tools_master_registry.json
+      RULE_REGISTRY_PATH: /app/configs/runtime/all_rules_master_registry.json
+      RUNTIME_REGISTRY_SEED: ${RUNTIME_REGISTRY_SEED:-copy}
+      FROZEN_EVAL_REGISTRY_DIR: /opt/agentic-orchestrator/configs/registries
       SEED_SAMPLE_DATA: ${SEED_SAMPLE_DATA:-false}
       SAMPLE_TOOL_SEED_PATH: /app/configs/seed/sample_tools.json
       SAMPLE_RULE_SEED_PATH: /app/configs/seed/sample_rules.json
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - registry_data:/app/configs/registries
+      - registry_data:/app/configs/runtime
     depends_on:
       postgres:
         condition: service_healthy

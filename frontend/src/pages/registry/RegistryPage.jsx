@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import RegistryStatusBanner from "../../components/registry/RegistryStatusBanner";
 import { ErrorState, EmptyState, LoadingState } from "../../components/shared/ResourceState";
 import DataTable from "../../components/shared/tables/DataTable";
 import Button from "../../components/shared/ui/Button";
@@ -111,6 +112,7 @@ function RegistryPage({ initialKind = "tools" }) {
         : registryService.create(kind, value),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-registry"] });
+      await queryClient.invalidateQueries({ queryKey: ["registry-status"] });
       setEditor(null);
       setDraft("");
       notify("Registry saved. Semantic search may need a rebuild.", "success", {
@@ -160,6 +162,8 @@ function RegistryPage({ initialKind = "tools" }) {
           <Icon icon="mdi:plus" className="h-4 w-4" /> Add {kind === "tools" ? "tool" : "rule"}
         </Button> : <span className="rounded-full border border-gray-200 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-500 dark:border-gray-800">Read only</span>}
       </section>
+
+      <RegistryStatusBanner />
 
       <Tabs
         tabs={TABS}

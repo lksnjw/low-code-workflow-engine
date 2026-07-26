@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/authn"
+	"github.com/sanjeewa/agentic-orchestrator/internal/core/company"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
@@ -60,6 +61,7 @@ func (h *Handler) CreateUser(c *fiber.Ctx) error {
 	if roleID == "" || roleID == "<nil>" {
 		roleID = repository.RoleBuilderID
 	}
+	departmentID := nullableString(body["departmentId"])
 	actorUser := h.currentUser(c)
 	actor := principalFromUser(actorUser)
 
@@ -80,8 +82,11 @@ func (h *Handler) CreateUser(c *fiber.Ctx) error {
 	if permission, denied := firstUnheldPermission(actorUser, role.Permissions); denied {
 		return c.Status(fiber.StatusForbidden).JSON(models.Fail(fmt.Sprintf("You cannot grant permission %q", permission), nil))
 	}
+	if departmentID != nil && !departmentExistsLocked(h.Store, *departmentID) {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Department %q was not found", *departmentID))
+	}
 	id := h.Store.NextID("usr")
-	user := &models.User{ID: id, Name: name, Email: email, RoleID: role.ID, PermissionOverrides: []string{}, Status: "Active", Initials: initials(name), Timezone: "UTC", CreatedAt: time.Now().UTC(), EmailVerified: false}
+	user := &models.User{ID: id, Name: name, Email: email, RoleID: role.ID, PermissionOverrides: []string{}, Status: "Active", Initials: initials(name), Timezone: "UTC", DepartmentID: departmentID, CreatedAt: time.Now().UTC(), EmailVerified: false}
 	h.Store.Users[id] = user
 	h.Store.PasswordHashes[id] = passwordHash
 	h.Store.Audit(actor, "user.created", models.ResourceRef{Type: "user", ID: id}, nil, map[string]interface{}{"email": email, "roleId": role.ID}, c.IP(), c.Get("User-Agent"))
@@ -134,6 +139,8 @@ func (h *Handler) updateUser(c *fiber.Ctx, body map[string]interface{}) error {
 	}
 	requestedRoleID, roleProvided := requestString(body, "roleId")
 	requestedStatus, statusProvided := requestString(body, "status")
+	rawDepartmentID, departmentProvided := body["departmentId"]
+	requestedDepartmentID := nullableString(rawDepartmentID)
 	if statusProvided && !validUserStatus(requestedStatus) {
 		return fiber.NewError(fiber.StatusBadRequest, "Status must be active or suspended")
 	}
@@ -177,7 +184,10 @@ func (h *Handler) updateUser(c *fiber.Ctx, body map[string]interface{}) error {
 			}
 		}
 	}
-	before := map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": currentRoleID}
+	if departmentProvided && requestedDepartmentID != nil && !departmentExistsLocked(h.Store, *requestedDepartmentID) {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Department %q was not found", *requestedDepartmentID))
+	}
+	before := map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": currentRoleID, "departmentId": user.DepartmentID}
 	if name, provided := requestString(body, "name"); provided {
 		user.Name = name
 		user.Initials = initials(name)
@@ -197,7 +207,10 @@ func (h *Handler) updateUser(c *fiber.Ctx, body map[string]interface{}) error {
 			h.Store.Audit(actor, "user.role_assigned", models.ResourceRef{Type: "user", ID: user.ID}, map[string]interface{}{"roleId": oldRoleID}, map[string]interface{}{"roleId": requestedRole.ID, "source": "administration"}, c.IP(), c.Get("User-Agent"))
 		}
 	}
-	h.Store.Audit(actor, "user.updated", models.ResourceRef{Type: "user", ID: user.ID}, before, map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": user.AssignedRoleID()}, c.IP(), c.Get("User-Agent"))
+	if departmentProvided {
+		user.DepartmentID = requestedDepartmentID
+	}
+	h.Store.Audit(actor, "user.updated", models.ResourceRef{Type: "user", ID: user.ID}, before, map[string]interface{}{"name": user.Name, "status": user.Status, "roleId": user.AssignedRoleID(), "departmentId": user.DepartmentID}, c.IP(), c.Get("User-Agent"))
 	effective, _ := h.Store.EffectiveUserLocked(user.ID)
 	return c.JSON(models.OK(publicUserSnapshot(effective), "User updated", nil))
 }
@@ -633,4 +646,28 @@ func roleAuditState(role *models.Role) map[string]interface{} {
 		"description": role.Description,
 		"permissions": append([]string(nil), role.Permissions...),
 	}
+}
+
+func nullableString(value interface{}) *string {
+	if value == nil {
+		return nil
+	}
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "" || text == "<nil>" {
+		return nil
+	}
+	return &text
+}
+
+func departmentExistsLocked(store *repository.Store, departmentID string) bool {
+	profile, err := company.Decode(store.CompanyProfile)
+	if err != nil {
+		return false
+	}
+	for _, department := range profile.Departments {
+		if strings.EqualFold(department.ID, departmentID) {
+			return true
+		}
+	}
+	return false
 }

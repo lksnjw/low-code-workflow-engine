@@ -13,6 +13,8 @@ export function normalizeWorkflow(workflow) {
     successRate: hasRuns ? `${Number(workflow.successRate || 0).toFixed(1)}%` : "—",
     successRateValue: Number(workflow.successRate || 0),
     lastRun: formatRelativeTime(workflow.lastRunAt),
+    domainTags: Array.isArray(workflow.domainTags) ? workflow.domainTags : [],
+    canRun: Boolean(workflow.canRun),
   };
 }
 

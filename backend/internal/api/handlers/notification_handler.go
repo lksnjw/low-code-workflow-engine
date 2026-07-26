@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sanjeewa/agentic-orchestrator/internal/core/relevance"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 	"github.com/sanjeewa/agentic-orchestrator/pkg/parser"
@@ -130,9 +131,13 @@ func (h *Handler) ImportWorkflow(c *fiber.Ctx) error {
 	if !fullValidation.Passed {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
 	}
+	domainTags, err := relevance.DomainTagsFromBlueprint(blueprint, h.activeRegistryTools())
+	if err != nil {
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "derive imported workflow domains", "The workflow domains could not be derived from the active registry. Try again.", err)
+	}
 	now := time.Now().UTC()
 	id := "wf-" + randomHex(4)
-	workflow := &models.Workflow{ID: id, Name: blueprint.Name, Description: blueprint.Description, Owner: principalFromUser(h.currentUser(c)), Status: models.StatusPending, Trigger: map[string]interface{}{"type": blueprint.Trigger.Type, "displayName": blueprint.Trigger.DisplayName, "config": blueprint.Trigger.Config}, Steps: len(blueprint.Steps), DraftVersion: 1, YAML: yamlText, Canvas: previewCanvas(id, blueprint), CreatedAt: now, UpdatedAt: now}
+	workflow := &models.Workflow{ID: id, Name: blueprint.Name, Description: blueprint.Description, Owner: principalFromUser(h.currentUser(c)), Status: models.StatusPending, Trigger: map[string]interface{}{"type": blueprint.Trigger.Type, "displayName": blueprint.Trigger.DisplayName, "config": blueprint.Trigger.Config}, Steps: len(blueprint.Steps), DraftVersion: 1, DomainTags: domainTags, YAML: yamlText, Canvas: previewCanvas(id, blueprint), CreatedAt: now, UpdatedAt: now}
 	if workflow.Name == "" {
 		workflow.Name = "Imported Workflow"
 	}

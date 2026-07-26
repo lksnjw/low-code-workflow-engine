@@ -214,6 +214,7 @@ type persistedState struct {
 	Timelines               map[string][]models.ExecutionStep         `json:"timelines"`
 	Healing                 map[string]models.HealingReport           `json:"healing"`
 	Chats                   map[string]*models.ChatSessionDetail      `json:"chats"`
+	Company                 json.RawMessage                           `json:"company"`
 	Settings                models.SettingsBundle                     `json:"settings"`
 	Providers               map[string]*storedProvider                `json:"providers"`
 	Integrations            map[string]*models.Integration            `json:"integrations"`
@@ -236,6 +237,10 @@ func marshalState(store *Store) ([]byte, error) {
 		copyUser := *user
 		copyUser.RoleID = user.AssignedRoleID()
 		copyUser.PermissionOverrides = append([]string{}, user.PermissionOverrides...)
+		if user.DepartmentID != nil {
+			departmentID := *user.DepartmentID
+			copyUser.DepartmentID = &departmentID
+		}
 		copyUser.Role = models.RoleRef{}
 		copyUser.Permissions = nil
 		users[id] = &storedUser{User: copyUser}
@@ -286,6 +291,7 @@ func marshalState(store *Store) ([]byte, error) {
 		Timelines:               store.Timelines,
 		Healing:                 store.Healing,
 		Chats:                   store.Chats,
+		Company:                 append(json.RawMessage(nil), store.CompanyProfile...),
 		Settings:                store.Settings,
 		Providers:               providers,
 		Integrations:            store.Integrations,
@@ -340,6 +346,9 @@ func restoreState(store *Store, payload []byte) error {
 	setMap(&store.Timelines, state.Timelines)
 	setMap(&store.Healing, state.Healing)
 	setMap(&store.Chats, state.Chats)
+	if len(state.Company) > 0 {
+		store.CompanyProfile = append(json.RawMessage(nil), state.Company...)
+	}
 	if state.Settings.General != nil || state.Settings.LLM != nil || state.Settings.RBAC != nil {
 		store.Settings = state.Settings
 	}

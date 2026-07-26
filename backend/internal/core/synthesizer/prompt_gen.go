@@ -12,6 +12,10 @@ func NewPromptBuilder() PromptBuilder {
 }
 
 func (b PromptBuilder) Build(userPrompt, mode string, context map[string]interface{}) string {
+	return b.BuildWithRegistryContext(userPrompt, mode, context, "")
+}
+
+func (b PromptBuilder) BuildWithRegistryContext(userPrompt, mode string, context map[string]interface{}, registryContext string) string {
 	if mode == "" {
 		mode = "balanced"
 	}
@@ -45,7 +49,14 @@ Governance:
 - Include retryCount on external connector calls.
 
 Mode: %s
-Context: %s
-User request: %s
-`, mode, string(contextJSON), userPrompt)
+
+REGISTRY GENERATION CONTEXT:
+%s
+
+RETRIEVED FOCUS:
+%s
+
+USER REQUEST:
+%s
+`, mode, registryContext, string(contextJSON), userPrompt)
 }

@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	generationcontext "github.com/sanjeewa/agentic-orchestrator/internal/core/context"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"go.uber.org/zap"
 )
 
 type OllamaClient struct {
@@ -21,17 +23,31 @@ type OllamaClient struct {
 }
 
 type Service struct {
-	Ollama   *OllamaClient
-	Gemini   *GeminiClient
-	Provider string
-	Prompt   PromptBuilder
-	mu       sync.RWMutex
-	resolver func() (models.ProviderConfig, bool)
+	Ollama          *OllamaClient
+	Gemini          *GeminiClient
+	Provider        string
+	Prompt          PromptBuilder
+	mu              sync.RWMutex
+	resolver        func() (models.ProviderConfig, bool)
+	registryContext *generationcontext.Service
+	log             *zap.Logger
 }
 
 func (s *Service) SetProviderResolver(resolver func() (models.ProviderConfig, bool)) {
 	s.mu.Lock()
 	s.resolver = resolver
+	s.mu.Unlock()
+}
+
+func (s *Service) SetRegistryContext(contextService *generationcontext.Service) {
+	s.mu.Lock()
+	s.registryContext = contextService
+	s.mu.Unlock()
+}
+
+func (s *Service) SetLogger(log *zap.Logger) {
+	s.mu.Lock()
+	s.log = log
 	s.mu.Unlock()
 }
 
@@ -65,11 +81,16 @@ func NewServiceWithProvider(baseURL, ollamaModel string, ollamaEnabled bool, pro
 }
 
 func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string, context map[string]interface{}) (Result, error) {
-	prompt := s.Prompt.Build(userPrompt, mode, context)
+	registryContext, err := s.registryGenerationContext(contextDomains(context))
+	if err != nil {
+		return Result{}, err
+	}
+	prompt := s.Prompt.BuildWithRegistryContext(userPrompt, mode, context, registryContext)
 	yamlText, provider, selectedModel, usage, err := s.generateWithUsage(ctx, prompt, model)
 	if err != nil {
 		return Result{}, err
 	}
+	s.logPromptUsage("workflow_synthesis", provider, selectedModel, usage, len(prompt), registryContext != "")
 
 	return Result{
 		YAML:       yamlText,
@@ -83,6 +104,57 @@ func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string
 			"measured":     usage.Measured,
 		},
 	}, nil
+}
+
+func (s *Service) registryGenerationContext(domains []string) (string, error) {
+	s.mu.RLock()
+	contextService := s.registryContext
+	s.mu.RUnlock()
+	if contextService == nil {
+		return "", nil
+	}
+	return contextService.PromptContext(domains)
+}
+
+func (s *Service) logPromptUsage(operation, provider, model string, usage providerUsage, promptBytes int, contextIncluded bool) {
+	s.mu.RLock()
+	log := s.log
+	s.mu.RUnlock()
+	if log == nil {
+		return
+	}
+	log.Info("workflow generation provider usage",
+		zap.String("operation", operation),
+		zap.String("provider", provider),
+		zap.String("model", model),
+		zap.Int("prompt_tokens", usage.InputTokens),
+		zap.Int("output_tokens", usage.OutputTokens),
+		zap.Bool("measured", usage.Measured),
+		zap.Int("prompt_bytes", promptBytes),
+		zap.Bool("registry_context_included", contextIncluded),
+	)
+}
+
+func contextDomains(values map[string]interface{}) []string {
+	if values == nil {
+		return nil
+	}
+	out := []string{}
+	switch value := values["domain"].(type) {
+	case string:
+		out = append(out, value)
+	}
+	switch value := values["domains"].(type) {
+	case []string:
+		out = append(out, value...)
+	case []interface{}:
+		for _, item := range value {
+			if domain, ok := item.(string); ok {
+				out = append(out, domain)
+			}
+		}
+	}
+	return out
 }
 
 func (s *Service) generate(ctx context.Context, prompt, overrideModel string) (string, string, string, error) {

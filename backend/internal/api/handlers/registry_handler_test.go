@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/api/middlewares"
+	generationcontext "github.com/sanjeewa/agentic-orchestrator/internal/core/context"
 	coreregistry "github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/runner"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
@@ -44,7 +45,8 @@ func TestRegistryMutationPersistsSwapsHashRejectsOldTokenAndAudits(t *testing.T)
 	executableTools.Register(spy)
 	executor := runner.NewExecutor(executableTools, validator, zap.NewNop())
 	manager := coreregistry.NewManager(bundle, toolPath, rulePath)
-	handler := &Handler{Store: store, Dataset: bundle, RegistryManager: manager, RegistryValidator: validator, Runner: executor, Log: zap.NewNop()}
+	contextService := generationcontext.NewService(manager, zap.NewNop())
+	handler := &Handler{Store: store, Dataset: bundle, RegistryManager: manager, RegistryContext: contextService, RegistryValidator: validator, Runner: executor, Log: zap.NewNop()}
 
 	app := fiber.New()
 	app.Use(func(c *fiber.Ctx) error {
@@ -123,6 +125,50 @@ func TestRegistryMutationPersistsSwapsHashRejectsOldTokenAndAudits(t *testing.T)
 		t.Fatalf("client registry GET returned %d, want 403", forbidden.StatusCode)
 	}
 	forbidden.Body.Close()
+}
+
+func TestRegistryCRUDCannotWriteFrozenEvalRegistry(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "configs", "registries")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	toolPath := filepath.Join(dir, "all_tools_master_registry.json")
+	rulePath := filepath.Join(dir, "all_rules_master_registry.json")
+	writeRegistryFixture(t, toolPath, []coreregistry.Tool{})
+	writeRegistryFixture(t, rulePath, []coreregistry.Rule{})
+	bundle, err := coreregistry.LoadBundle(toolPath, rulePath, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := repository.NewStore()
+	store.Users["admin"] = &models.User{ID: "admin", Name: "Admin", RoleID: repository.RolePlatformAdminID}
+	handler := &Handler{
+		Store: store, Dataset: bundle,
+		RegistryManager: coreregistry.NewManager(bundle, toolPath, rulePath),
+		Log:             zap.NewNop(),
+	}
+	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals(middlewares.UserIDKey, "admin")
+		return c.Next()
+	})
+	app.Post("/registry/tools", handler.CreateRegistryTool)
+	before, err := os.ReadFile(toolPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := registryTestRequest(t, app, http.MethodPost, "/registry/tools", "admin", registryTestTool("TEST-FROZEN-001", "test.frozen.write"))
+	if response.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("frozen registry CRUD returned %d, want 403: %s", response.StatusCode, responseBody(t, response))
+	}
+	response.Body.Close()
+	after, err := os.ReadFile(toolPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("frozen evaluation registry changed after rejected CRUD request")
+	}
 }
 
 func registryTestTool(id, name string) coreregistry.Tool {
