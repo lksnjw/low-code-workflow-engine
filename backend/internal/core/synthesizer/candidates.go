@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,7 @@ type CandidateGenerationRequest struct {
 	GlobalRules        []registry.Rule
 	Templates          []registry.ProcessTemplate
 	Examples           []registry.FewShotExample
+	RegistryContext    string
 }
 
 type WorkflowCandidate struct {
@@ -42,11 +44,17 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 		req.CandidateCount = 5
 	}
 
+	registryContext, err := s.registryGenerationContext(toolDomains(req.Tools))
+	if err != nil {
+		return nil, err
+	}
+	req.RegistryContext = registryContext
 	prompt := s.Prompt.BuildCandidatePrompt(req)
 	raw, provider, model, usage, err := s.generateWithUsage(ctx, prompt, req.Model)
 	if err != nil {
 		return nil, err
 	}
+	s.logPromptUsage("workflow_candidate_generation", provider, model, usage, len(prompt), registryContext != "")
 	candidates := ParseCandidateResponse(raw, model, false)
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("gemini returned no parseable YAML candidates")
@@ -132,33 +140,6 @@ STRICT RULES:
 - If a required parameter is unknown, use a safe placeholder like "{{input.vendor_id}}" instead of inventing confidential data.
 - If EXECUTABLE TOOLS is empty, generate a capability-request workflow only when capability.create_capability_request is in EXECUTABLE TOOLS; otherwise generate no executable business workflow.
 
-USER ROLE:
-%s
-
-USER REQUEST:
-%s
-
-EXECUTABLE TOOLS:
-Only these tools may be used in steps.action.
-%s
-
-MISSING SCHEMA TOOLS:
-These tools have mock endpoints but no executable MCP schema. They are context only and must not be used in steps.action.
-%s
-
-FUTURE CAPABILITIES:
-These tools are planned/research capabilities. They are context only and must not be used in steps.action.
-%s
-
-RELEVANT GOVERNANCE RULES:
-%s
-
-RELEVANT PROCESS TEMPLATES:
-%s
-
-FEW-SHOT EXAMPLES:
-%s
-
 OUTPUT YAML SCHEMA FOR EACH CANDIDATE:
 name: string
 description: string
@@ -192,7 +173,55 @@ steps:
 
 --- candidate_2 ---
 ...
-`, req.CandidateCount, req.UserRole, redactPromptText(req.Prompt), string(executableJSON), string(missingSchemaJSON), string(futureJSON), string(rulesJSON), string(templateJSON), examples)
+
+REGISTRY GENERATION CONTEXT:
+%s
+
+RETRIEVED FOCUS:
+
+EXECUTABLE TOOLS:
+Only these tools may be used in steps.action.
+%s
+
+MISSING SCHEMA TOOLS:
+These tools have mock endpoints but no executable MCP schema. They are context only and must not be used in steps.action.
+%s
+
+FUTURE CAPABILITIES:
+These tools are planned/research capabilities. They are context only and must not be used in steps.action.
+%s
+
+RELEVANT GOVERNANCE RULES:
+%s
+
+RELEVANT PROCESS TEMPLATES:
+%s
+
+FEW-SHOT EXAMPLES:
+%s
+
+USER ROLE:
+%s
+
+USER REQUEST:
+%s
+`, req.CandidateCount, req.RegistryContext, string(executableJSON), string(missingSchemaJSON), string(futureJSON), string(rulesJSON), string(templateJSON), examples, req.UserRole, redactPromptText(req.Prompt))
+}
+
+func toolDomains(tools []registry.Tool) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, tool := range tools {
+		domain := strings.TrimSpace(tool.Module)
+		key := strings.ToLower(domain)
+		if domain == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, domain)
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	return out
 }
 
 func ParseCandidateResponse(raw, model string, fallback bool) []WorkflowCandidate {

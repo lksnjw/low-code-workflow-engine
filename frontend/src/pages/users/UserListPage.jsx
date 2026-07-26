@@ -109,6 +109,7 @@ function UserListPage({ view = "directory" }) {
           <UserTable
             users={data?.users}
             roles={assignableRoles}
+            departments={data?.departments}
             currentUserId={user?.id}
             canManage={canManage}
             busyUserId={busyUserId}
@@ -122,10 +123,15 @@ function UserListPage({ view = "directory" }) {
               () => userService.updateStatus(userId, status),
               status === "suspended" ? "User suspended." : "User reactivated."
             )}
+            onDepartmentChange={(userId, departmentId) => updateUser(
+              userId,
+              () => userService.updateDepartment(userId, departmentId),
+              "User department updated."
+            )}
           />
           <Card>
             <h2 className="section-title mb-5">Create User</h2>
-            <UserForm roles={assignableRoles} onCreated={reload} />
+            <UserForm roles={assignableRoles} departments={data?.departments} onCreated={reload} />
           </Card>
         </section>
       ) : null}

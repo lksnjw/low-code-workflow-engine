@@ -15,6 +15,14 @@ function WorkflowCard({ workflow, onOpen }) {
       <p className="mt-2 flex-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
         {workflow.description}
       </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(workflow.domainTags || []).map((domain) => (
+          <span key={domain} className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">{domain}</span>
+        ))}
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${workflow.canRun ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}>
+          {workflow.canRun ? "You can run this" : "View only"}
+        </span>
+      </div>
       <div className="mt-5 grid grid-cols-3 gap-3 rounded-xl bg-backgroundLight p-3 text-center dark:bg-darkBackgroundVery">
         <div>
           <p className="text-xs text-gray-500">Steps</p>

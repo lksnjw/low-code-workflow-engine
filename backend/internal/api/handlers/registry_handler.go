@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sanjeewa/agentic-orchestrator/internal/config"
+	coreregistry "github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
@@ -20,7 +23,10 @@ func (h *Handler) CreateRegistryTool(c *fiber.Ctx) error {
 	if err := h.requireRegistryWrite(c); err != nil {
 		return err
 	}
-	result, err := h.RegistryManager.AddTool(c.Body())
+	if h.RegistryContext == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry generation context is not configured")
+	}
+	result, err := h.RegistryContext.AddTool(c.Body())
 	if err != nil {
 		return registryMutationError(err)
 	}
@@ -32,7 +38,10 @@ func (h *Handler) UpdateRegistryTool(c *fiber.Ctx) error {
 	if err := h.requireRegistryWrite(c); err != nil {
 		return err
 	}
-	result, err := h.RegistryManager.UpdateTool(c.Params("id"), c.Body())
+	if h.RegistryContext == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry generation context is not configured")
+	}
+	result, err := h.RegistryContext.UpdateTool(c.Params("id"), c.Body())
 	if err != nil {
 		return registryMutationError(err)
 	}
@@ -48,11 +57,44 @@ func (h *Handler) AdminRulesRegistry(c *fiber.Ctx) error {
 	return c.JSON(models.OK(items, "Rule registry loaded", map[string]interface{}{"count": len(items), "registryHash": h.RegistryManager.Hash()}))
 }
 
+func (h *Handler) RegistryStatus(c *fiber.Ctx) error {
+	if h.RegistryManager == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry manager is not configured")
+	}
+	toolPath, rulePath := h.RegistryManager.RegistryPaths()
+	absoluteToolPath, toolPathErr := filepath.Abs(toolPath)
+	absoluteRulePath, rulePathErr := filepath.Abs(rulePath)
+	if toolPathErr != nil || rulePathErr != nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "active registry paths could not be resolved")
+	}
+	toolHash, err := config.RegistryFileSHA256(toolPath)
+	if err != nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "active tool registry could not be hashed")
+	}
+	ruleHash, err := config.RegistryFileSHA256(rulePath)
+	if err != nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "active rule registry could not be hashed")
+	}
+	writable := coreregistry.GuardRegistryWritePath(toolPath) == nil && coreregistry.GuardRegistryWritePath(rulePath) == nil
+	mode := "read-only"
+	if writable {
+		mode = "runtime"
+	}
+	return c.JSON(models.OK(map[string]interface{}{
+		"mode": mode, "writable": writable,
+		"tools": map[string]interface{}{"path": absoluteToolPath, "sha256": toolHash},
+		"rules": map[string]interface{}{"path": absoluteRulePath, "sha256": ruleHash},
+	}, "Active registry status loaded", nil))
+}
+
 func (h *Handler) CreateRegistryRule(c *fiber.Ctx) error {
 	if err := h.requireRegistryWrite(c); err != nil {
 		return err
 	}
-	result, err := h.RegistryManager.AddRule(c.Body())
+	if h.RegistryContext == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry generation context is not configured")
+	}
+	result, err := h.RegistryContext.AddRule(c.Body())
 	if err != nil {
 		return registryMutationError(err)
 	}
@@ -64,7 +106,10 @@ func (h *Handler) UpdateRegistryRule(c *fiber.Ctx) error {
 	if err := h.requireRegistryWrite(c); err != nil {
 		return err
 	}
-	result, err := h.RegistryManager.UpdateRule(c.Params("id"), c.Body())
+	if h.RegistryContext == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry generation context is not configured")
+	}
+	result, err := h.RegistryContext.UpdateRule(c.Params("id"), c.Body())
 	if err != nil {
 		return registryMutationError(err)
 	}
@@ -79,6 +124,15 @@ func (h *Handler) requireRegistryWrite(c *fiber.Ctx) error {
 	}
 	if user.AssignedRoleID() == repository.RoleSystemAdminID || !containsString(user.Permissions, "registry:write") {
 		return fiber.NewError(fiber.StatusForbidden, "Registry writes require Platform Admin authority")
+	}
+	if h.RegistryManager == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry manager is not configured")
+	}
+	toolPath, rulePath := h.RegistryManager.RegistryPaths()
+	for _, path := range []string{toolPath, rulePath} {
+		if err := coreregistry.GuardRegistryWritePath(path); err != nil {
+			return fiber.NewError(fiber.StatusForbidden, "The frozen evaluation registry is read-only; registry writes require the active runtime registry")
+		}
 	}
 	return nil
 }

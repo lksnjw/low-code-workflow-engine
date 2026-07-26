@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sanjeewa/agentic-orchestrator/internal/core/company"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/storage"
 )
@@ -141,6 +142,48 @@ func TestPersistentStoreEncryptedRestartRoundTrip(t *testing.T) {
 	}
 	if next := restored.NextID("workflow"); next != "workflow_2" {
 		t.Fatalf("counter not restored safely: got %q", next)
+	}
+}
+
+func TestCompanyProfileSurvivesRestart(t *testing.T) {
+	backend := &testStateStore{}
+	codec, err := storage.NewAESGCMCodec(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x52}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewPersistentStore(context.Background(), backend, codec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := company.Profile{
+		Name: "Durable Company", LegalName: "Durable Company Limited",
+		Timezone: "Asia/Colombo", Currency: "LKR",
+		Departments:   []company.Department{{ID: "dept-finance", Name: "Finance", Domains: []string{"finance"}}},
+		CostCentres:   []company.CostCentre{{Code: "FIN", Name: "Finance", OwnerUserID: "user-1", BudgetAmount: 5000, Currency: "LKR"}},
+		ApprovalTiers: []company.ApprovalTier{{Label: "Manager", MaxAmount: 1000, ApproverRoleID: RoleBuilderID}},
+	}
+	payload, err := company.Encode(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Mu.Lock()
+	store.CompanyProfile = payload
+	store.Mu.Unlock()
+
+	restored, err := NewPersistentStore(context.Background(), backend, codec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredProfile, err := company.Decode(restored.CompanyProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restoredProfile.Name != "Durable Company" ||
+		len(restoredProfile.Departments) != 1 ||
+		restoredProfile.Departments[0].Domains[0] != "finance" ||
+		len(restoredProfile.CostCentres) != 1 ||
+		len(restoredProfile.ApprovalTiers) != 1 {
+		t.Fatalf("company profile was not restored: %#v", restoredProfile)
 	}
 }
 

@@ -3,10 +3,10 @@ import UserBadge from "./UserBadge";
 import Button from "../shared/ui/Button";
 import Select from "../shared/ui/Select";
 
-function UserRow({ user, roles = [], isCurrentUser = false, canManage = false, busy = false, onRoleChange, onStatusChange }) {
+function UserRow({ user, roles = [], departments = [], isCurrentUser = false, canManage = false, busy = false, onRoleChange, onStatusChange, onDepartmentChange }) {
   const suspended = String(user.status).toLowerCase() === "suspended";
   return (
-    <div className="grid gap-3 border-b border-gray-100 p-4 last:border-0 dark:border-gray-800 lg:grid-cols-[1.2fr_0.8fr_0.7fr_1fr] lg:items-center">
+    <div className="grid gap-3 border-b border-gray-100 p-4 last:border-0 dark:border-gray-800 lg:grid-cols-[1.2fr_0.7fr_0.7fr_1.4fr] lg:items-center">
       <div className="flex items-center gap-3">
         <UserAvatar initials={user.initials} />
         <div>
@@ -27,6 +27,16 @@ function UserRow({ user, roles = [], isCurrentUser = false, canManage = false, b
               onChange={(event) => onRoleChange?.(user.id, event.target.value)}
             >
               {roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+            </Select>
+            <Select
+              aria-label={`Department for ${user.name}`}
+              className="max-w-48"
+              value={user.departmentId || ""}
+              disabled={busy}
+              onChange={(event) => onDepartmentChange?.(user.id, event.target.value)}
+            >
+              <option value="">No department</option>
+              {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
             </Select>
             <Button
               variant="secondary"

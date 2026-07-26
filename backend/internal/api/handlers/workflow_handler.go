@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sanjeewa/agentic-orchestrator/internal/core/relevance"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
@@ -17,12 +18,40 @@ import (
 func (h *Handler) ListWorkflows(c *fiber.Ctx) error {
 	page, limit := pageLimit(c)
 	user := h.currentUser(c)
+	relevanceMode := strings.ToLower(strings.TrimSpace(c.Query("relevance")))
+	if relevanceMode == "" {
+		if userHasPermission(user, "workflow_view_all") {
+			relevanceMode = "all"
+		} else {
+			relevanceMode = "relevant"
+		}
+	}
+	if relevanceMode != "relevant" && relevanceMode != "all" {
+		return fiber.NewError(fiber.StatusBadRequest, "relevance must be relevant or all")
+	}
+	if relevanceMode == "all" && !userHasPermission(user, "workflow:read") {
+		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Listing all workflows requires workflow:read", nil))
+	}
+	tools := h.activeRegistryTools()
 	h.Store.Mu.RLock()
+	profile, profileErr := h.companyProfileLocked()
+	if profileErr != nil {
+		h.Store.Mu.RUnlock()
+		return fiber.NewError(fiber.StatusInternalServerError, "Stored company profile could not be decoded")
+	}
 	items := make([]models.Workflow, 0, len(h.Store.Workflows))
 	for _, workflow := range h.Store.Workflows {
-		if canReadWorkflow(user, workflow) {
-			items = append(items, *workflow)
+		if !canReadWorkflow(user, workflow) {
+			continue
 		}
+		evaluation := relevance.Evaluate(user, workflow, profile, tools)
+		if relevanceMode == "relevant" && !evaluation.Relevant {
+			continue
+		}
+		item := *workflow
+		item.DomainTags = append([]string(nil), workflow.DomainTags...)
+		item.CanRun = evaluation.CanRun
+		items = append(items, item)
 	}
 	h.Store.Mu.RUnlock()
 
@@ -30,7 +59,10 @@ func (h *Handler) ListWorkflows(c *fiber.Ctx) error {
 	repository.SortWorkflows(items)
 	paged, meta := paginate(items, page, limit)
 	meta.Sort = c.Query("sort", "-updatedAt")
-	return c.JSON(models.OK(paged, "OK", meta))
+	return c.JSON(models.OK(paged, "OK", map[string]interface{}{
+		"page": meta.Page, "limit": meta.Limit, "total": meta.Total, "totalPages": meta.TotalPages,
+		"sort": meta.Sort, "relevance": relevanceMode,
+	}))
 }
 
 func (h *Handler) CreateWorkflow(c *fiber.Ctx) error {
@@ -49,10 +81,14 @@ func (h *Handler) CreateWorkflow(c *fiber.Ctx) error {
 	}
 	_, fullValidation, err := h.validateWithFullGate(c, "CreateWorkflow", req.YAML)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate workflow before creation", "The workflow could not be checked against the registry before creation. Try again.", err)
 	}
 	if !fullValidation.Passed {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
+	}
+	domainTags, err := relevance.DomainTagsFromBlueprint(blueprint, h.activeRegistryTools())
+	if err != nil {
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "derive workflow domains before creation", "The workflow domains could not be derived from the active registry. Try again.", err)
 	}
 
 	now := time.Now().UTC()
@@ -61,7 +97,7 @@ func (h *Handler) CreateWorkflow(c *fiber.Ctx) error {
 		ID: id, Name: req.Name, Description: req.Description,
 		Owner: actor, Status: models.StatusPending,
 		Trigger: req.Trigger, Steps: len(blueprint.Steps), SuccessRate: 0, PublishedVersion: 0, DraftVersion: 1,
-		Tags: req.Tags, YAML: req.YAML, Canvas: previewCanvas(id, blueprint), CreatedAt: now, UpdatedAt: now,
+		Tags: req.Tags, DomainTags: domainTags, YAML: req.YAML, Canvas: previewCanvas(id, blueprint), CreatedAt: now, UpdatedAt: now,
 	}
 	if workflow.Name == "" {
 		workflow.Name = blueprint.Name
@@ -102,7 +138,7 @@ func (h *Handler) UpdateWorkflow(c *fiber.Ctx) error {
 	}
 	token, fullValidation, err := h.validateWithFullGate(c, "UpdateWorkflow", stored.YAML)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate workflow before update", "The workflow could not be checked against the registry before updating. Try again.", err)
 	}
 	if !fullValidation.Passed {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
@@ -181,10 +217,14 @@ func (h *Handler) PublishWorkflow(c *fiber.Ctx) error {
 	}
 	token, fullValidation, err := h.validateWithFullGate(c, "PublishWorkflow", stored.YAML)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate workflow before publishing", "The workflow could not be checked against the registry before publishing. Try again.", err)
 	}
 	if !fullValidation.Passed {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
+	}
+	domainTags, err := relevance.DomainTagsFromYAML(stored.YAML, h.activeRegistryTools())
+	if err != nil {
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "derive workflow domains before publishing", "The workflow domains could not be derived from the active registry. Try again.", err)
 	}
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
@@ -198,6 +238,7 @@ func (h *Handler) PublishWorkflow(c *fiber.Ctx) error {
 	if workflow.Status == models.StatusDraftUnvalidated {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow canvas has unvalidated execution changes", map[string]interface{}{"status": workflow.Status}))
 	}
+	workflow.DomainTags = domainTags
 	workflow.PublishedVersion = workflow.DraftVersion
 	version := models.WorkflowVersion{
 		ID: "ver_" + randomHex(4), WorkflowID: workflow.ID, Version: workflow.PublishedVersion,
@@ -231,7 +272,7 @@ func (h *Handler) ValidateWorkflow(c *fiber.Ctx) error {
 	}
 	_, validation, err := h.validateWithFullGate(c, "ValidateWorkflow", yamlText)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate workflow", "The workflow could not be checked against the registry. Try validation again.", err)
 	}
 	return c.JSON(models.OK(validation, registryValidationMessage(validation), nil))
 }
@@ -255,10 +296,14 @@ func (h *Handler) PutWorkflowYAML(c *fiber.Ctx) error {
 	}
 	_, fullValidation, err := h.validateWithFullGate(c, "PutWorkflowYAML", req.YAML)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate workflow YAML before update", "The workflow YAML could not be checked against the registry before saving. Try again.", err)
 	}
 	if !fullValidation.Passed {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow failed full registry validation", fullValidation))
+	}
+	domainTags, err := relevance.DomainTagsFromBlueprint(blueprint, h.activeRegistryTools())
+	if err != nil {
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "derive workflow domains before YAML update", "The workflow domains could not be derived from the active registry. Try again.", err)
 	}
 
 	h.Store.Mu.Lock()
@@ -270,6 +315,7 @@ func (h *Handler) PutWorkflowYAML(c *fiber.Ctx) error {
 	workflow.YAML = req.YAML
 	workflow.DraftVersion++
 	workflow.Steps = len(blueprint.Steps)
+	workflow.DomainTags = domainTags
 	workflow.Canvas = previewCanvas(workflow.ID, blueprint)
 	if workflow.Status == models.StatusDraftUnvalidated {
 		workflow.Status = models.StatusPending
@@ -396,10 +442,14 @@ func (h *Handler) RestoreWorkflowVersion(c *fiber.Ctx) error {
 	}
 	token, fullValidation, err := h.validateWithFullGate(c, "RestoreWorkflowVersion", selected.YAML)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate workflow version before restore", "The workflow version could not be checked against the registry before restoring. Try again.", err)
 	}
 	if !fullValidation.Passed {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Workflow version failed full registry validation", fullValidation))
+	}
+	domainTags, err := relevance.DomainTagsFromYAML(selected.YAML, h.activeRegistryTools())
+	if err != nil {
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "derive workflow domains before restore", "The workflow domains could not be derived from the active registry. Try again.", err)
 	}
 
 	h.Store.Mu.Lock()
@@ -416,6 +466,7 @@ func (h *Handler) RestoreWorkflowVersion(c *fiber.Ctx) error {
 			workflow.YAML = version.YAML
 			workflow.DraftVersion++
 			workflow.Status = models.StatusPending
+			workflow.DomainTags = domainTags
 			if fullValidation.ParsedWorkflow != nil {
 				workflow.Steps = len(fullValidation.ParsedWorkflow.Steps)
 				workflow.Canvas = previewCanvas(workflow.ID, *fullValidation.ParsedWorkflow)
@@ -468,13 +519,17 @@ func (h *Handler) UseTemplate(c *fiber.Ctx) error {
 	}
 	_, fullValidation, err := h.validateWithFullGate(c, "UseTemplate", template.YAML)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate template before workflow creation", "The template could not be checked against the registry before creating a workflow. Try again.", err)
 	}
 	if !fullValidation.Passed {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Template failed full registry validation", fullValidation))
 	}
+	domainTags, err := relevance.DomainTagsFromBlueprint(blueprint, h.activeRegistryTools())
+	if err != nil {
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "derive template workflow domains", "The workflow domains could not be derived from the active registry. Try again.", err)
+	}
 	canvas := previewCanvas(id, blueprint)
-	workflow := &models.Workflow{ID: id, Name: req.Name, Description: req.Description, Owner: principalFromUser(h.currentUser(c)), Status: models.StatusPending, Trigger: map[string]interface{}{"type": "template.used", "displayName": template.Name}, Steps: template.Steps, SuccessRate: 0, DraftVersion: 1, Tags: req.Tags, YAML: req.YAML, Canvas: canvas, CreatedAt: now, UpdatedAt: now}
+	workflow := &models.Workflow{ID: id, Name: req.Name, Description: req.Description, Owner: principalFromUser(h.currentUser(c)), Status: models.StatusPending, Trigger: map[string]interface{}{"type": "template.used", "displayName": template.Name}, Steps: template.Steps, SuccessRate: 0, DraftVersion: 1, Tags: req.Tags, DomainTags: domainTags, YAML: req.YAML, Canvas: canvas, CreatedAt: now, UpdatedAt: now}
 	workflow.Canvas.WorkflowID = id
 	h.Store.Mu.Lock()
 	h.Store.Workflows[id] = workflow

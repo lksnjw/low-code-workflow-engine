@@ -5,6 +5,8 @@ const columns = [
   { key: "name", label: "Workflow" },
   { key: "owner", label: "Owner" },
   { key: "trigger", label: "Trigger" },
+  { key: "domainTags", label: "Domains" },
+  { key: "canRun", label: "Access" },
   { key: "successRate", label: "Success" },
   { key: "status", label: "Status" },
 ];
@@ -25,6 +27,12 @@ function WorkflowTable({ workflows, onOpen }) {
               <p className="mt-1 text-xs text-gray-500">{workflow.id}</p>
             </button>
           );
+        }
+        if (column.key === "domainTags") {
+          return (workflow.domainTags || []).join(", ") || "—";
+        }
+        if (column.key === "canRun") {
+          return workflow.canRun ? "You can run this" : "View only";
         }
         return workflow[column.key];
       }}

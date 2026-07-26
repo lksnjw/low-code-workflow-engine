@@ -43,6 +43,9 @@ type Config struct {
 	DatasetRoot                        string
 	ToolRegistryPath                   string
 	RuleRegistryPath                   string
+	FrozenToolRegistryPath             string
+	FrozenRuleRegistryPath             string
+	RuntimeRegistrySeed                string
 	SeedSampleData                     bool
 	SampleToolSeedPath                 string
 	SampleRuleSeedPath                 string
@@ -76,12 +79,16 @@ func Load() Config {
 	isProduction := strings.EqualFold(strings.TrimSpace(environment), "production")
 	backendRoot := detectBackendRoot()
 	datasetRoot := resolveAppPath(getEnv("DATASET_ROOT", "./dataset"), backendRoot)
-	toolRegistryPath := resolveAppPath(
-		getEnv("TOOL_REGISTRY_PATH", "./configs/registries/all_tools_master_registry.json"),
+	toolRegistryPath := resolveBackendConfigPath(
+		getEnv("TOOL_REGISTRY_PATH", "./configs/runtime/all_tools_master_registry.json"),
 		backendRoot,
 	)
-	ruleRegistryPath := resolveAppPath(
-		getEnv("RULE_REGISTRY_PATH", "./configs/registries/all_rules_master_registry.json"),
+	ruleRegistryPath := resolveBackendConfigPath(
+		getEnv("RULE_REGISTRY_PATH", "./configs/runtime/all_rules_master_registry.json"),
+		backendRoot,
+	)
+	frozenRegistryDir := resolveBackendConfigPath(
+		getEnv("FROZEN_EVAL_REGISTRY_DIR", "./configs/registries"),
 		backendRoot,
 	)
 	sampleToolSeedPath := resolveAppPath(
@@ -129,6 +136,9 @@ func Load() Config {
 		DatasetRoot:                        datasetRoot,
 		ToolRegistryPath:                   toolRegistryPath,
 		RuleRegistryPath:                   ruleRegistryPath,
+		FrozenToolRegistryPath:             filepath.Join(frozenRegistryDir, "all_tools_master_registry.json"),
+		FrozenRuleRegistryPath:             filepath.Join(frozenRegistryDir, "all_rules_master_registry.json"),
+		RuntimeRegistrySeed:                strings.ToLower(strings.TrimSpace(getEnv("RUNTIME_REGISTRY_SEED", "copy"))),
 		SeedSampleData:                     getEnvBool("SEED_SAMPLE_DATA", false),
 		SampleToolSeedPath:                 sampleToolSeedPath,
 		SampleRuleSeedPath:                 sampleRuleSeedPath,
@@ -152,6 +162,19 @@ func Load() Config {
 
 // Validate rejects unsafe or unknown experiment modes before the server starts.
 func (c Config) Validate() error {
+	for label, path := range map[string]string{
+		"TOOL_REGISTRY_PATH": c.ToolRegistryPath,
+		"RULE_REGISTRY_PATH": c.RuleRegistryPath,
+	} {
+		if strings.TrimSpace(path) != "" && !isRuntimeRegistryPath(path) {
+			return fmt.Errorf("%s must resolve inside configs/runtime", label)
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(c.RuntimeRegistrySeed)) {
+	case "", "copy", "empty":
+	default:
+		return fmt.Errorf("unsupported RUNTIME_REGISTRY_SEED %q (allowed values: copy or empty)", c.RuntimeRegistrySeed)
+	}
 	if c.SeedSampleData {
 		if strings.TrimSpace(c.SampleToolSeedPath) == "" || strings.TrimSpace(c.SampleRuleSeedPath) == "" {
 			return fmt.Errorf("SAMPLE_TOOL_SEED_PATH and SAMPLE_RULE_SEED_PATH are required when SEED_SAMPLE_DATA=true")
@@ -262,6 +285,31 @@ func resolveAppPath(value string, backendRoot string) string {
 	}
 
 	return value
+}
+
+func resolveBackendConfigPath(value string, backendRoot string) string {
+	if strings.TrimSpace(value) == "" || filepath.IsAbs(value) {
+		return value
+	}
+	normalised := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(value)), "./")
+	if normalised == "configs" || strings.HasPrefix(normalised, "configs/") {
+		return filepath.Join(backendRoot, filepath.FromSlash(normalised))
+	}
+	return value
+}
+
+func isRuntimeRegistryPath(path string) bool {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(strings.ToLower(filepath.ToSlash(filepath.Clean(absolute))), "/")
+	for index := 0; index+1 < len(parts); index++ {
+		if parts[index] == "configs" && parts[index+1] == "runtime" {
+			return true
+		}
+	}
+	return false
 }
 
 func getEnv(key, fallback string) string {

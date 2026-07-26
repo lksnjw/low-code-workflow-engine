@@ -164,7 +164,14 @@ Service documentation:
 
 ### Governance Registry
 
-The project uses explicit registries for tool and rule governance:
+The running application uses mutable registries for tool and rule governance:
+
+- `backend/configs/runtime/all_tools_master_registry.json`
+- `backend/configs/runtime/all_rules_master_registry.json`
+
+They are created on first boot according to `RUNTIME_REGISTRY_SEED` (`copy` by
+default, or `empty`) and are never overwritten once present. The corresponding
+files below are frozen research-evaluation inputs, not application storage:
 
 - [Tool registry](backend/configs/registries/all_tools_master_registry.json)
 - [Rule registry](backend/configs/registries/all_rules_master_registry.json)

@@ -5,12 +5,13 @@ const normalizeUser = (user) => ({ ...user, role: user.role?.name || user.role |
 
 export const userService = {
   async loadAdministration() {
-    const [users, roles, permissions, matrix, audit] = await Promise.all([
+    const [users, roles, permissions, matrix, audit, departments] = await Promise.all([
       apiClient.get("/users"),
       apiClient.get("/roles"),
       apiClient.get("/permissions"),
       apiClient.get("/permissions/matrix"),
       apiClient.get("/audit", { params: { limit: 10 } }).catch(() => null),
+      apiClient.get("/company/departments"),
     ]);
     return {
       users: (unwrap(users, []) || []).map(normalizeUser),
@@ -18,6 +19,7 @@ export const userService = {
       permissions: unwrap(permissions, []),
       matrix: unwrap(matrix, []),
       audit: unwrap(audit, []),
+      departments: unwrap(departments, []),
     };
   },
   async create(payload) {
@@ -28,6 +30,9 @@ export const userService = {
   },
   async updateStatus(userId, status) {
     return normalizeUser(unwrap(await apiClient.put(`/users/${userId}/status`, { status })));
+  },
+  async updateDepartment(userId, departmentId) {
+    return normalizeUser(unwrap(await apiClient.patch(`/users/${userId}`, { departmentId: departmentId || null })));
   },
   async updateRoleDefinition(roleId, payload) {
     return unwrap(await apiClient.put(`/roles/${roleId}`, payload));

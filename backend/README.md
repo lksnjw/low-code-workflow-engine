@@ -32,6 +32,24 @@ Health check:
 GET http://localhost:8080/healthz
 ```
 
+## Runtime and evaluation registries
+
+The server reads and writes only the runtime files:
+
+```text
+configs/runtime/all_tools_master_registry.json
+configs/runtime/all_rules_master_registry.json
+```
+
+On first boot, `RUNTIME_REGISTRY_SEED=copy` creates byte-identical runtime
+copies from the frozen evaluation registries. Set it to `empty` to create valid
+empty JSON arrays instead. Existing runtime files are never overwritten.
+Every startup logs both active absolute paths and their SHA-256 hashes.
+
+The research experiment remains pinned to the read-only files under
+`configs/registries`; neither server CRUD nor bulk import may write there.
+See `docs/EVAL_FROZEN.md` for the invariant and verification command.
+
 ## Chat Orchestration Pipeline
 
 `POST /api/chat/sessions/:id/messages` accepts a natural-language workflow request using either `content` or the older `message` field. The backend calls the embedding semantic search service, retrieves tools/rules/templates/examples, builds a controlled Gemini prompt, generates multiple YAML candidates, validates each candidate against the full registry, and returns the selected valid YAML only when `can_execute=true`.

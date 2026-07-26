@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import { useMemo, useState } from "react";
 import Button from "../../components/shared/ui/Button";
+import Tabs from "../../components/shared/ui/Tabs";
 import WorkflowCard from "../../components/workflows/WorkflowCard";
 import WorkflowFilters from "../../components/workflows/WorkflowFilters";
 import WorkflowTable from "../../components/workflows/WorkflowTable";
@@ -14,10 +15,12 @@ function WorkflowListPage() {
   const { openWorkflow, startWorkflow } = useRoute();
   const { has, roleId } = usePermissions();
 	const canWrite = has("workflow:write");
+  const canViewAll = has("workflow:read");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
+  const [relevance, setRelevance] = useState("relevant");
   const debouncedQuery = useDebounce(query);
-  const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined }), [debouncedQuery, status]);
+  const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined, relevance }), [debouncedQuery, status, relevance]);
   const { workflows, loading, error, reload } = useWorkflows(params);
 
   return (
@@ -31,6 +34,14 @@ function WorkflowListPage() {
         </div>
         {canWrite ? <Button onClick={startWorkflow}><Icon icon="mdi:plus" className="h-5 w-5" />New Workflow</Button> : null}
       </div>
+      <Tabs
+        tabs={[
+          { id: "relevant", label: "Relevant to me" },
+          ...(canViewAll ? [{ id: "all", label: "All" }] : []),
+        ]}
+        active={relevance}
+        onChange={setRelevance}
+      />
       <WorkflowFilters query={query} status={status} onQueryChange={setQuery} onStatusChange={setStatus} />
       {loading ? <LoadingState label="Loading workflows…" /> : null}
       {error ? <ErrorState error={error} onRetry={reload} /> : null}

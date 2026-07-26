@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -45,6 +46,7 @@ type Store struct {
 	Timelines               map[string][]models.ExecutionStep
 	Healing                 map[string]models.HealingReport
 	Chats                   map[string]*models.ChatSessionDetail
+	CompanyProfile          json.RawMessage
 	Settings                models.SettingsBundle
 	Providers               map[string]*models.ProviderConfig
 	Integrations            map[string]*models.Integration
@@ -63,6 +65,7 @@ func NewStore() *Store {
 		{Key: "workflow:read", Name: "Read workflows", Description: "View workflows, executions, analytics, and catalogs", Group: "Workflow"},
 		{Key: "workflow:write", Name: "Write workflows", Description: "Create, edit, publish, archive, and import workflows", Group: "Workflow"},
 		{Key: "workflow:run", Name: "Run workflows", Description: "Start, cancel, and retry workflow executions", Group: "Execution"},
+		{Key: "workflow_view_all", Name: "Default to all workflows", Description: "Use the all-workflows catalogue as the default workflow list", Group: "Workflow"},
 		{Key: "chat:use", Name: "Use chat", Description: "Use owned synthesis chat sessions", Group: "Workflow"},
 		{Key: "workflow:read_own", Name: "Read assigned workflows", Description: "View workflows owned by or assigned to the current user", Group: "Workflow"},
 		{Key: "workflow:run_own", Name: "Run assigned workflows", Description: "Run workflows owned by or assigned to the current user", Group: "Execution"},
@@ -90,6 +93,7 @@ func NewStore() *Store {
 		Timelines:       map[string][]models.ExecutionStep{},
 		Healing:         map[string]models.HealingReport{},
 		Chats:           map[string]*models.ChatSessionDetail{},
+		CompanyProfile:  nil,
 		Settings: models.SettingsBundle{
 			General: map[string]interface{}{},
 			LLM:     map[string]interface{}{},
@@ -117,7 +121,7 @@ func NewStore() *Store {
 	}
 	store.Roles[RoleBuilderID] = &models.Role{
 		ID: RoleBuilderID, Name: "Workflow Builder", Description: "Creates, validates, and runs workflows",
-		Permissions: []string{"workflow:read", "workflow:write", "workflow:run", "chat:use", "registry:read"}, CreatedAt: now,
+		Permissions: []string{"workflow:read", "workflow:write", "workflow:run", "workflow_view_all", "chat:use", "registry:read"}, CreatedAt: now,
 	}
 	store.Roles[RoleClientID] = &models.Role{
 		ID: RoleClientID, Name: "Client", Description: "Uses assigned workflows and views owned execution evidence",
@@ -149,6 +153,10 @@ func (s *Store) EffectiveUserLocked(userID string) (*models.User, bool) {
 	copyUser := *user
 	copyUser.RoleID = user.AssignedRoleID()
 	copyUser.PermissionOverrides = append([]string(nil), user.PermissionOverrides...)
+	if user.DepartmentID != nil {
+		departmentID := *user.DepartmentID
+		copyUser.DepartmentID = &departmentID
+	}
 	if role := s.Roles[copyUser.RoleID]; role != nil {
 		copyUser.Role = models.RoleRef{ID: role.ID, Name: role.Name}
 		copyUser.Permissions = permissionUnion(role.Permissions, copyUser.PermissionOverrides)

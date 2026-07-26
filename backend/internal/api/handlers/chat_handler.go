@@ -22,7 +22,7 @@ func (h *Handler) Synthesize(c *fiber.Ctx) error {
 
 	result, err := h.Synth.Synthesize(c.Context(), prompt, mode, model, contextMap)
 	if err != nil {
-		return fiber.NewError(fiber.StatusBadGateway, err.Error())
+		return h.tracedBusinessError(fiber.StatusBadGateway, "generate workflow draft", "The workflow draft could not be generated. Check the selected model and try again.", err)
 	}
 	validation, blueprint := h.Validator.ValidateYAML(result.YAML, h.permissions(c))
 
@@ -47,7 +47,7 @@ func (h *Handler) SynthesisValidate(c *fiber.Ctx) error {
 	yamlText, _ := body["yaml"].(string)
 	_, validation, err := h.validateWithFullGate(c, "SynthesisValidate", yamlText)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return h.tracedBusinessError(fiber.StatusInternalServerError, "validate synthesized workflow", "The generated workflow could not be checked against the registry. Try validation again.", err)
 	}
 	return c.JSON(models.OK(validation, registryValidationMessage(validation), nil))
 }
