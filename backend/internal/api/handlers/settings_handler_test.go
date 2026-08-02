@@ -2,13 +2,18 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestSecretClassificationCoversCredentialsWithoutHidingUsageMetrics(t *testing.T) {
@@ -180,6 +185,91 @@ func TestIntegrationResponsesDoNotEchoSecretConfig(t *testing.T) {
 		t.Fatalf("UpdateIntegration returned %d: %s", updated.StatusCode, updatedBody)
 	}
 	assertIntegrationSecretRedacted(t, updatedBody)
+}
+
+func TestSettingsConnectionFailuresDoNotLeakInternalErrors(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer upstream.Close()
+
+	core, observed := observer.New(zapcore.ErrorLevel)
+	store := repository.NewStore()
+	store.Webhooks["wh_failure"] = &models.Webhook{ID: "wh_failure", Name: "Failure", URL: upstream.URL}
+	store.Integrations["int_failure"] = &models.Integration{
+		ID: "int_failure", Name: "Failure", Type: "http", Config: map[string]interface{}{"baseUrl": upstream.URL},
+	}
+	handler := &Handler{Store: store, Log: zap.New(core)}
+	app := fiber.New()
+	app.Post("/settings/webhooks/:id/test", handler.TestWebhook)
+	app.Post("/integrations/:id/test", handler.TestIntegration)
+	app.Post("/integrations/:id/connect", handler.ConnectIntegration)
+
+	for _, testCase := range []struct {
+		path       string
+		publicText string
+	}{
+		{"/settings/webhooks/wh_failure/test", "Webhook connection test failed"},
+		{"/integrations/int_failure/test", "Integration connection test failed"},
+		{"/integrations/int_failure/connect", "Integration connection failed"},
+	} {
+		response := registryTestRequest(t, app, http.MethodPost, testCase.path, "", nil)
+		body := responseBody(t, response)
+		response.Body.Close()
+		if response.StatusCode != fiber.StatusBadGateway {
+			t.Fatalf("POST %s status = %d, want 502: %s", testCase.path, response.StatusCode, body)
+		}
+		if !strings.Contains(body, testCase.publicText) {
+			t.Fatalf("POST %s omitted stable public message %q: %s", testCase.path, testCase.publicText, body)
+		}
+		for _, forbidden := range []string{"endpoint returned HTTP 502", upstream.URL, `"error"`} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("POST %s leaked internal detail %q: %s", testCase.path, forbidden, body)
+			}
+		}
+	}
+
+	entries := observed.All()
+	if len(entries) != 3 {
+		t.Fatalf("detailed settings failures logged = %d, want 3", len(entries))
+	}
+	for _, entry := range entries {
+		if !strings.Contains(fmt.Sprint(entry.ContextMap()["error"]), "endpoint returned HTTP 502") {
+			t.Fatalf("backend log omitted the underlying error: %+v", entry.ContextMap())
+		}
+	}
+}
+
+func TestWebhookURLValidationDoesNotLeakInternalErrors(t *testing.T) {
+	core, observed := observer.New(zapcore.ErrorLevel)
+	store := repository.NewStore()
+	store.Webhooks["wh_update"] = &models.Webhook{ID: "wh_update", Name: "Update", URL: "https://example.invalid"}
+	handler := &Handler{Store: store, Log: zap.New(core)}
+	app := fiber.New()
+	app.Post("/settings/webhooks", handler.CreateWebhook)
+	app.Patch("/settings/webhooks/:id", handler.UpdateWebhook)
+
+	for _, testCase := range []struct {
+		method string
+		path   string
+		body   map[string]interface{}
+	}{
+		{http.MethodPost, "/settings/webhooks", map[string]interface{}{"name": "Invalid", "url": "mailto:invalid"}},
+		{http.MethodPatch, "/settings/webhooks/wh_update", map[string]interface{}{"url": "mailto:invalid"}},
+	} {
+		response := registryTestRequest(t, app, testCase.method, testCase.path, "", testCase.body)
+		body := responseBody(t, response)
+		response.Body.Close()
+		if response.StatusCode != fiber.StatusBadRequest || !strings.Contains(body, "Webhook URL is invalid") {
+			t.Fatalf("%s %s did not return the stable URL message: status=%d body=%s", testCase.method, testCase.path, response.StatusCode, body)
+		}
+		if strings.Contains(body, "a valid http or https URL is required") || strings.Contains(body, "mailto:invalid") {
+			t.Fatalf("%s %s leaked URL validation detail: %s", testCase.method, testCase.path, body)
+		}
+	}
+	if observed.Len() != 2 {
+		t.Fatalf("URL validation failures logged = %d, want 2", observed.Len())
+	}
 }
 
 func assertIntegrationSecretRedacted(t *testing.T, body string) {

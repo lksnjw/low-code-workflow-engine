@@ -25,6 +25,17 @@ type MCPClient struct {
 	mode    MCPMode
 }
 
+// MCPHTTPError preserves only the downstream HTTP status. Response bodies are
+// deliberately discarded below because they may contain credentials or
+// internal diagnostics.
+type MCPHTTPError struct {
+	StatusCode int
+}
+
+func (e *MCPHTTPError) Error() string {
+	return fmt.Sprintf("mcp middleware returned HTTP %d", e.StatusCode)
+}
+
 func NewMCPClient(baseURL string, timeout time.Duration) *MCPClient {
 	return &MCPClient{
 		BaseURL: baseURL,
@@ -79,7 +90,7 @@ func (c *MCPClient) Execute(ctx context.Context, action string, params map[strin
 		// Downstream error bodies are untrusted and may contain credentials,
 		// request parameters, or internal diagnostics. Never propagate them
 		// into runner errors or logs.
-		return nil, fmt.Errorf("mcp middleware returned HTTP %d", resp.StatusCode)
+		return nil, &MCPHTTPError{StatusCode: resp.StatusCode}
 	}
 
 	var payload map[string]interface{}
