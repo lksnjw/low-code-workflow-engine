@@ -12,6 +12,24 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 )
 
+const (
+	maxPromptTools            = 10
+	maxPromptRules            = 15
+	maxPromptGlobalRules      = 8
+	maxPromptTemplates        = 5
+	maxPromptExamples         = 3
+	maxPromptDescriptionRunes = 600
+	maxPromptInstructionRunes = 600
+	maxRepairErrors           = 12
+	maxRepairErrorRunes       = 500
+	maxRejectedYAMLRunes      = 8000
+)
+
+type CandidateRepairFeedback struct {
+	RejectedYAML     string
+	ValidationErrors []string
+}
+
 type CandidateGenerationRequest struct {
 	Prompt             string
 	UserRole           string
@@ -26,6 +44,7 @@ type CandidateGenerationRequest struct {
 	Templates          []registry.ProcessTemplate
 	Examples           []registry.FewShotExample
 	RegistryContext    string
+	Repair             *CandidateRepairFeedback
 }
 
 type WorkflowCandidate struct {
@@ -43,18 +62,17 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 	if req.CandidateCount > 5 {
 		req.CandidateCount = 5
 	}
-
-	registryContext, err := s.registryGenerationContext(toolDomains(req.Tools))
-	if err != nil {
-		return nil, err
+	if req.Repair != nil {
+		req.CandidateCount = 1
 	}
-	req.RegistryContext = registryContext
+	req = boundCandidateRequest(req)
 	prompt := s.Prompt.BuildCandidatePrompt(req)
 	raw, provider, model, usage, err := s.generateWithUsage(ctx, prompt, req.Model)
 	if err != nil {
 		return nil, err
 	}
-	s.logPromptUsage("workflow_candidate_generation", provider, model, usage, len(prompt), registryContext != "")
+	toolCount, ruleCount := promptContextCounts(req)
+	s.logPromptUsage("workflow_candidate_generation", provider, model, usage, len(prompt), toolCount, ruleCount)
 	candidates := ParseCandidateResponse(raw, model, false)
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("gemini returned no parseable YAML candidates")
@@ -70,6 +88,9 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 		candidates[index].GenerationMetadata["measured"] = usage.Measured
 		candidates[index].GenerationMetadata["provider"] = provider
 		candidates[index].GenerationMetadata["model"] = model
+		candidates[index].GenerationMetadata["promptToolCount"] = toolCount
+		candidates[index].GenerationMetadata["promptRuleCount"] = ruleCount
+		candidates[index].GenerationMetadata["generationAttempt"] = generationAttempt(req)
 	}
 	return candidates, nil
 }
@@ -95,23 +116,20 @@ func (b PromptBuilder) BuildCandidatePrompt(req CandidateGenerationRequest) stri
 
 	ruleSummaries := make([]map[string]interface{}, 0, len(req.Rules)+len(req.GlobalRules))
 	for _, rule := range append(req.Rules, req.GlobalRules...) {
-		ruleSummaries = append(ruleSummaries, map[string]interface{}{
-			"rule_id":                rule.RuleID,
-			"rule_name":              rule.RuleName,
-			"description":            rule.Description,
-			"applies_to_tools":       rule.AppliesToTools,
-			"enforcement_action":     rule.EnforcementAction,
-			"severity":               rule.Severity,
-			"llm_prompt_instruction": rule.LLMPromptInstruction,
-		})
+		ruleSummaries = append(ruleSummaries, promptRuleSummary(rule))
+	}
+	templateSummaries := make([]map[string]interface{}, 0, len(req.Templates))
+	for _, template := range req.Templates {
+		templateSummaries = append(templateSummaries, promptTemplateSummary(template))
 	}
 
 	executableJSON, _ := json.MarshalIndent(executableSummaries, "", "  ")
 	missingSchemaJSON, _ := json.MarshalIndent(missingSchemaSummaries, "", "  ")
 	futureJSON, _ := json.MarshalIndent(futureSummaries, "", "  ")
 	rulesJSON, _ := json.MarshalIndent(ruleSummaries, "", "  ")
-	templateJSON, _ := json.MarshalIndent(limitTemplates(req.Templates, 5), "", "  ")
-	examples := buildFewShotExamples(req.Examples, executableTools, 5)
+	templateJSON, _ := json.MarshalIndent(templateSummaries, "", "  ")
+	examples := buildFewShotExamples(req.Examples, executableTools, maxPromptExamples)
+	repairSection := buildRepairSection(req.Repair)
 
 	return fmt.Sprintf(`SYSTEM:
 You are an enterprise YAML workflow blueprint generator for a legacy ERP orchestration system.
@@ -125,6 +143,7 @@ The Go backend validator is the only authority for validation and execution elig
 
 STRICT RULES:
 - Only tools listed under EXECUTABLE TOOLS may appear in steps.action.
+- use only these tool names; do not invent tools; include every required parameter.
 - Tools listed under MISSING SCHEMA TOOLS must not appear in steps.action.
 - Tools listed under FUTURE CAPABILITIES must not appear in steps.action.
 - Do not invent actions, tool names, parameters, approvals, or audit tools.
@@ -140,20 +159,7 @@ STRICT RULES:
 - If a required parameter is unknown, use a safe placeholder like "{{input.vendor_id}}" instead of inventing confidential data.
 - If EXECUTABLE TOOLS is empty, generate a capability-request workflow only when capability.create_capability_request is in EXECUTABLE TOOLS; otherwise generate no executable business workflow.
 
-OUTPUT YAML SCHEMA FOR EACH CANDIDATE:
-name: string
-description: string
-trigger:
-  type: string
-  displayName: string
-  config: object
-steps:
-  - id: string
-    action: string
-    parameters: object
-    retryCount: number
-    onError: string
-    description: string
+%s
 
 RETURN FORMAT:
 --- candidate_1 ---
@@ -165,17 +171,16 @@ trigger:
   config: {}
 steps:
   - id: step_1
+    type: tool
     action: exact.registered.tool
     description: ...
     parameters: {}
+    condition: ""
     retryCount: 1
     onError: stop
 
 --- candidate_2 ---
 ...
-
-REGISTRY GENERATION CONTEXT:
-%s
 
 RETRIEVED FOCUS:
 
@@ -200,12 +205,14 @@ RELEVANT PROCESS TEMPLATES:
 FEW-SHOT EXAMPLES:
 %s
 
+%s
+
 USER ROLE:
 %s
 
 USER REQUEST:
 %s
-`, req.CandidateCount, req.RegistryContext, string(executableJSON), string(missingSchemaJSON), string(futureJSON), string(rulesJSON), string(templateJSON), examples, req.UserRole, redactPromptText(req.Prompt))
+`, req.CandidateCount, workflowSchemaAndExamples, string(executableJSON), string(missingSchemaJSON), string(futureJSON), string(rulesJSON), string(templateJSON), examples, repairSection, req.UserRole, redactPromptText(req.Prompt))
 }
 
 func toolDomains(tools []registry.Tool) []string {
@@ -302,16 +309,162 @@ func limitTemplates(templates []registry.ProcessTemplate, max int) []registry.Pr
 	return templates[:max]
 }
 
+func boundCandidateRequest(req CandidateGenerationRequest) CandidateGenerationRequest {
+	remainingTools := maxPromptTools
+	req.Tools = limitTools(uniqueTools(req.Tools), remainingTools)
+	remainingTools -= len(req.Tools)
+	req.MissingSchemaTools = limitTools(uniqueTools(req.MissingSchemaTools), remainingTools)
+	remainingTools -= len(req.MissingSchemaTools)
+	req.FutureCapabilities = limitTools(uniqueTools(req.FutureCapabilities), remainingTools)
+	req.GlobalRules = limitRules(uniqueRules(req.GlobalRules), maxPromptGlobalRules)
+	req.Rules = limitRules(uniqueRules(req.Rules), maxPromptRules-len(req.GlobalRules))
+	req.Templates = limitTemplates(req.Templates, maxPromptTemplates)
+	if len(req.Examples) > maxPromptExamples {
+		req.Examples = req.Examples[:maxPromptExamples]
+	}
+	// The generated Markdown contains the full registry when no domain is
+	// selected. Candidate generation uses only the bounded retrieved objects.
+	req.RegistryContext = ""
+	if req.Repair != nil {
+		repair := &CandidateRepairFeedback{
+			RejectedYAML: truncateRunes(redactPromptText(req.Repair.RejectedYAML), maxRejectedYAMLRunes),
+		}
+		seen := map[string]bool{}
+		for _, item := range req.Repair.ValidationErrors {
+			item = truncateRunes(redactPromptText(strings.TrimSpace(item)), maxRepairErrorRunes)
+			if item == "" || seen[item] {
+				continue
+			}
+			seen[item] = true
+			repair.ValidationErrors = append(repair.ValidationErrors, item)
+			if len(repair.ValidationErrors) == maxRepairErrors {
+				break
+			}
+		}
+		req.Repair = repair
+	}
+	return req
+}
+
+func promptContextCounts(req CandidateGenerationRequest) (int, int) {
+	executable, missing, future := splitPromptTools(req)
+	return len(executable) + len(missing) + len(future), len(req.Rules) + len(req.GlobalRules)
+}
+
+func generationAttempt(req CandidateGenerationRequest) string {
+	if req.Repair != nil {
+		return "repair"
+	}
+	return "initial"
+}
+
+func buildRepairSection(repair *CandidateRepairFeedback) string {
+	if repair == nil {
+		return "GENERATION ATTEMPT:\nInitial generation."
+	}
+	var b strings.Builder
+	b.WriteString("GENERATION ATTEMPT:\nThis is the single bounded repair attempt. Correct the rejected candidate using every specific validator error below. Do not repeat an invalid field or tool.\n\nREJECTED CANDIDATE YAML:\n")
+	b.WriteString(repair.RejectedYAML)
+	b.WriteString("\n\nVALIDATOR ERRORS:\n")
+	if len(repair.ValidationErrors) == 0 {
+		b.WriteString("- The candidate did not pass the full registry gate.\n")
+	} else {
+		for _, item := range repair.ValidationErrors {
+			fmt.Fprintf(&b, "- %s\n", item)
+		}
+	}
+	b.WriteString("\nReturn exactly one corrected candidate and no explanation.")
+	return b.String()
+}
+
+func limitTools(items []registry.Tool, max int) []registry.Tool {
+	if max <= 0 {
+		return nil
+	}
+	if len(items) <= max {
+		return items
+	}
+	return items[:max]
+}
+
+func uniqueRules(items []registry.Rule) []registry.Rule {
+	seen := map[string]bool{}
+	out := make([]registry.Rule, 0, len(items))
+	for _, item := range items {
+		key := strings.ToLower(strings.TrimSpace(item.RuleID))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, item)
+	}
+	return out
+}
+
+func limitRules(items []registry.Rule, max int) []registry.Rule {
+	if max <= 0 {
+		return nil
+	}
+	if len(items) <= max {
+		return items
+	}
+	return items[:max]
+}
+
+func limitStrings(items []string, max int) []string {
+	if max <= 0 {
+		return nil
+	}
+	if len(items) <= max {
+		return append([]string(nil), items...)
+	}
+	return append([]string(nil), items[:max]...)
+}
+
+func truncateRunes(value string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max])
+}
+
 func promptToolSummary(tool registry.Tool) map[string]interface{} {
 	return map[string]interface{}{
 		"name":                tool.Name,
-		"description":         tool.Description,
-		"required_parameters": tool.RequiredParameters,
-		"optional_parameters": tool.OptionalParameters,
-		"allowed_roles":       tool.AllowedRoles,
+		"description":         truncateRunes(tool.Description, maxPromptDescriptionRunes),
+		"required_parameters": append([]string(nil), tool.RequiredParameters...),
+		"optional_parameters": limitStrings(tool.OptionalParameters, 20),
+		"allowed_roles":       limitStrings(tool.AllowedRoles, 20),
 		"risk_level":          tool.RiskLevel,
 		"status":              tool.Status,
-		"current_gaps":        tool.CurrentGaps,
+		"current_gaps":        limitStrings(tool.CurrentGaps, 10),
+	}
+}
+
+func promptRuleSummary(rule registry.Rule) map[string]interface{} {
+	return map[string]interface{}{
+		"rule_id":                rule.RuleID,
+		"rule_name":              truncateRunes(rule.RuleName, maxPromptDescriptionRunes),
+		"description":            truncateRunes(rule.Description, maxPromptDescriptionRunes),
+		"applies_to_tools":       limitStrings(rule.AppliesToTools, maxPromptTools),
+		"enforcement_action":     rule.EnforcementAction,
+		"severity":               rule.Severity,
+		"llm_prompt_instruction": truncateRunes(rule.LLMPromptInstruction, maxPromptInstructionRunes),
+	}
+}
+
+func promptTemplateSummary(template registry.ProcessTemplate) map[string]interface{} {
+	return map[string]interface{}{
+		"template_id":      template.TemplateID,
+		"template_name":    truncateRunes(template.TemplateName, maxPromptDescriptionRunes),
+		"description":      truncateRunes(template.Description, maxPromptDescriptionRunes),
+		"required_tools":   limitStrings(template.RequiredTools, maxPromptTools),
+		"required_rules":   limitStrings(template.RequiredRules, maxPromptRules),
+		"validation_focus": limitStrings(template.ValidationFocus, 10),
 	}
 }
 
@@ -368,14 +521,14 @@ func buildFewShotExamples(examples []registry.FewShotExample, tools []registry.T
 	var b strings.Builder
 	for index, example := range selected {
 		fmt.Fprintf(&b, "Example %d - Valid executable workflow:\n", index+1)
-		fmt.Fprintf(&b, "User request:\n%s\n\n", redactPromptText(example.UserRequest))
+		fmt.Fprintf(&b, "User request:\n%s\n\n", truncateRunes(redactPromptText(example.UserRequest), maxPromptDescriptionRunes))
 		fmt.Fprintf(&b, "User role:\n%s\n\n", firstNonEmpty(example.UserRole, "authenticated_user"))
 		fmt.Fprintf(&b, "Available executable tools:\n")
-		for _, tool := range example.ExpectedTools {
+		for _, tool := range limitStrings(example.ExpectedTools, maxPromptTools) {
 			fmt.Fprintf(&b, "- %s\n", tool)
 		}
 		fmt.Fprintf(&b, "\nRelevant rules:\n")
-		for _, rule := range example.ExpectedRules {
+		for _, rule := range limitStrings(example.ExpectedRules, maxPromptRules) {
 			fmt.Fprintf(&b, "- %s\n", rule)
 		}
 		fmt.Fprintf(&b, "\nExpected YAML shape:\n")
@@ -385,17 +538,19 @@ func buildFewShotExamples(examples []registry.FewShotExample, tools []registry.T
 		for stepIndex, toolName := range example.ExpectedTools {
 			tool := toolLookup[strings.ToLower(toolName)]
 			fmt.Fprintf(&b, "  - id: step_%d\n", stepIndex+1)
+			fmt.Fprintf(&b, "    type: tool\n")
 			fmt.Fprintf(&b, "    action: %s\n", toolName)
 			fmt.Fprintf(&b, "    description: %q\n", "Execute "+toolName)
-			fmt.Fprintf(&b, "    parameters:\n")
+			fmt.Fprintf(&b, "    parameters:")
 			if len(tool.RequiredParameters) == 0 {
-				fmt.Fprintf(&b, "      request: %q\n", example.UserRequest)
+				fmt.Fprintf(&b, " {}\n")
 			} else {
+				fmt.Fprintf(&b, "\n")
 				for _, param := range tool.RequiredParameters {
 					fmt.Fprintf(&b, "      %s: %s\n", param, yamlScalar(exampleValueForParam(example.UserRequest, param)))
 				}
 			}
-			fmt.Fprintf(&b, "    retryCount: 1\n    onError: stop\n")
+			fmt.Fprintf(&b, "    condition: \"\"\n    retryCount: 1\n    onError: stop\n")
 		}
 		fmt.Fprintf(&b, "\nWhy it is valid:\nAll steps use executable tools from the provided allowlist, required parameters are present, and relevant rules are represented without inventing unavailable capabilities.\n\n")
 	}

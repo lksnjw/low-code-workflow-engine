@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestRealProviderRegistryContextPromptTokenDelta(t *testing.T) {
+func TestRealProviderRegistryMarkdownDoesNotChangePromptTokens(t *testing.T) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY is not set; real provider telemetry test is opt-in")
@@ -38,7 +38,13 @@ func TestRealProviderRegistryContextPromptTokenDelta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("REAL_USAGE baseline_prompt_tokens=%v context_prompt_tokens=%v delta=%d baseline_measured=%v context_measured=%v",
+	if baseline.Usage["measured"] != true || withContext.Usage["measured"] != true {
+		t.Fatal("provider did not report measured token usage")
+	}
+	if baseline.Usage["inputTokens"] != withContext.Usage["inputTokens"] {
+		t.Fatalf("registry Markdown changed prompt tokens: without=%v with=%v", baseline.Usage["inputTokens"], withContext.Usage["inputTokens"])
+	}
+	t.Logf("REAL_USAGE without_registry_markdown_tokens=%v configured_context_tokens=%v delta=%d without_measured=%v configured_measured=%v",
 		baseline.Usage["inputTokens"],
 		withContext.Usage["inputTokens"],
 		withContext.Usage["inputTokens"].(int)-baseline.Usage["inputTokens"].(int),

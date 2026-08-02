@@ -99,7 +99,7 @@ func (o *ChatOrchestrator) HandleChatMessage(ctx context.Context, req ChatReques
 		}, nil
 	}
 
-	candidates, err := o.Generator.GenerateCandidates(ctx, synthesizer.CandidateGenerationRequest{
+	generationRequest := synthesizer.CandidateGenerationRequest{
 		Prompt:             req.UserText,
 		UserRole:           req.UserRole,
 		Mode:               req.Mode,
@@ -112,23 +112,34 @@ func (o *ChatOrchestrator) HandleChatMessage(ctx context.Context, req ChatReques
 		GlobalRules:        filteredGlobalRules,
 		Templates:          templatesFromResults(retrieval.Templates),
 		Examples:           examplesFromResults(retrieval.Examples),
-	})
+	}
+	candidates, err := o.Generator.GenerateCandidates(ctx, generationRequest)
 	if err != nil {
 		return ChatResponse{}, err
 	}
 
-	reports := make([]CandidateReport, 0, len(candidates))
-	for _, candidate := range candidates {
-		validation := o.Validator.ValidateCandidate(candidate.CandidateID, candidate.RawYAML, req.UserRole)
-		reports = append(reports, CandidateReport{
-			CandidateID: candidate.CandidateID,
-			YAML:        candidate.RawYAML,
-			Generation:  candidate.GenerationMetadata,
-			Validation:  validation,
-		})
+	reports := o.validateCandidates(candidates, req.UserRole, "")
+	selected, ok := o.Selector.Select(reports)
+	repairFailed := false
+	if !ok {
+		if rejected, found := bestRejectedCandidate(reports); found {
+			repairRequest := generationRequest
+			repairRequest.CandidateCount = 1
+			repairRequest.Repair = &synthesizer.CandidateRepairFeedback{
+				RejectedYAML:     rejected.YAML,
+				ValidationErrors: candidateValidationFeedback(rejected),
+			}
+			repairedCandidates, repairErr := o.Generator.GenerateCandidates(ctx, repairRequest)
+			if repairErr != nil {
+				repairFailed = true
+			} else {
+				candidates = append(candidates, repairedCandidates...)
+				reports = append(reports, o.validateCandidates(repairedCandidates, req.UserRole, "repair_")...)
+				selected, ok = o.Selector.Select(reports)
+			}
+		}
 	}
 
-	selected, ok := o.Selector.Select(reports)
 	response := ChatResponse{
 		SessionID:     req.SessionID,
 		Retrieval:     retrieval,
@@ -152,7 +163,12 @@ func (o *ChatOrchestrator) HandleChatMessage(ctx context.Context, req ChatReques
 		response.SelectedCandidateID = selected.CandidateID
 		response.SelectedWorkflowYAML = selected.YAML
 		response.CanExecute = true
-		response.AssistantMessage = "I generated and validated workflow candidates. The best valid workflow is ready for review."
+		response.BlockingErrors = nil
+		if selected.Generation["generationAttempt"] == "repair" {
+			response.AssistantMessage = "The first candidate was rejected, and one validator-guided repair produced a valid workflow ready for review."
+		} else {
+			response.AssistantMessage = "I generated and validated workflow candidates. The best valid workflow is ready for review."
+		}
 		return response, nil
 	}
 
@@ -162,8 +178,52 @@ func (o *ChatOrchestrator) HandleChatMessage(ctx context.Context, req ChatReques
 	if len(response.BlockingErrors) == 0 {
 		response.BlockingErrors = []string{"No candidate passed full semantic validation."}
 	}
+	if repairFailed {
+		response.BlockingErrors = append(response.BlockingErrors, "The single bounded repair attempt could not be generated.")
+	}
 	response.BlockingErrors = uniqueStrings(response.BlockingErrors)
 	return response, nil
+}
+
+func (o *ChatOrchestrator) validateCandidates(candidates []synthesizer.WorkflowCandidate, userRole, idPrefix string) []CandidateReport {
+	reports := make([]CandidateReport, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidateID := idPrefix + candidate.CandidateID
+		validation := o.Validator.ValidateCandidate(candidateID, candidate.RawYAML, userRole)
+		reports = append(reports, CandidateReport{
+			CandidateID: candidateID,
+			YAML:        candidate.RawYAML,
+			Generation:  candidate.GenerationMetadata,
+			Validation:  validation,
+		})
+	}
+	return reports
+}
+
+func bestRejectedCandidate(reports []CandidateReport) (CandidateReport, bool) {
+	var selected CandidateReport
+	found := false
+	for _, report := range reports {
+		if report.Validation.Passed {
+			continue
+		}
+		if !found || better(report.Validation, selected.Validation) {
+			selected = report
+			found = true
+		}
+	}
+	return selected, found
+}
+
+func candidateValidationFeedback(report CandidateReport) []string {
+	feedback := append([]string(nil), report.Validation.Errors...)
+	for _, ruleID := range report.Validation.FailedRules {
+		feedback = append(feedback, "FAILED_RULE: "+ruleID)
+	}
+	if len(feedback) == 0 {
+		feedback = []string{"Candidate did not pass the full registry validation gate."}
+	}
+	return uniqueStrings(feedback)
 }
 
 func destructiveIdentityRequestErrors(query string) (bool, []string) {

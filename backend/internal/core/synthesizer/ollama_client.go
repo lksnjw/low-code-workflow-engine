@@ -81,16 +81,12 @@ func NewServiceWithProvider(baseURL, ollamaModel string, ollamaEnabled bool, pro
 }
 
 func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string, context map[string]interface{}) (Result, error) {
-	registryContext, err := s.registryGenerationContext(contextDomains(context))
-	if err != nil {
-		return Result{}, err
-	}
-	prompt := s.Prompt.BuildWithRegistryContext(userPrompt, mode, context, registryContext)
+	prompt := s.Prompt.Build(userPrompt, mode, context)
 	yamlText, provider, selectedModel, usage, err := s.generateWithUsage(ctx, prompt, model)
 	if err != nil {
 		return Result{}, err
 	}
-	s.logPromptUsage("workflow_synthesis", provider, selectedModel, usage, len(prompt), registryContext != "")
+	s.logPromptUsage("workflow_synthesis", provider, selectedModel, usage, len(prompt), contextItemCount(context, "tools"), contextItemCount(context, "rules"))
 
 	return Result{
 		YAML:       yamlText,
@@ -116,7 +112,7 @@ func (s *Service) registryGenerationContext(domains []string) (string, error) {
 	return contextService.PromptContext(domains)
 }
 
-func (s *Service) logPromptUsage(operation, provider, model string, usage providerUsage, promptBytes int, contextIncluded bool) {
+func (s *Service) logPromptUsage(operation, provider, model string, usage providerUsage, promptBytes, toolCount, ruleCount int) {
 	s.mu.RLock()
 	log := s.log
 	s.mu.RUnlock()
@@ -131,8 +127,23 @@ func (s *Service) logPromptUsage(operation, provider, model string, usage provid
 		zap.Int("output_tokens", usage.OutputTokens),
 		zap.Bool("measured", usage.Measured),
 		zap.Int("prompt_bytes", promptBytes),
-		zap.Bool("registry_context_included", contextIncluded),
+		zap.Int("retrieved_tool_count", toolCount),
+		zap.Int("retrieved_rule_count", ruleCount),
 	)
+}
+
+func contextItemCount(context map[string]interface{}, key string) int {
+	if context == nil {
+		return 0
+	}
+	switch items := context[key].(type) {
+	case []interface{}:
+		return len(items)
+	case []string:
+		return len(items)
+	default:
+		return 0
+	}
 }
 
 func contextDomains(values map[string]interface{}) []string {
