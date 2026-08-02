@@ -27,6 +27,9 @@ export const registryService = {
   async update(kind, id, value) {
     return unwrap(await apiClient.put(`/registry/${kind}/${encodeURIComponent(id)}`, value), {});
   },
+  async bulkImport(kind, values, allowUpdates = false) {
+    return unwrap(await apiClient.post(`/registry/${kind}/import`, values, { params: { allowUpdates } }), {});
+  },
   async analyseImport({ file, kind, prefix, allowUpdates }) {
     const body = new FormData();
     body.append("file", file);

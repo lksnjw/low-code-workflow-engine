@@ -2,6 +2,8 @@ import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import RegistryBulkImportPanel from "../../components/registry/RegistryBulkImportPanel";
+import RegistryGenerationContextViewer from "../../components/registry/RegistryGenerationContextViewer";
 import RegistryStatusBanner from "../../components/registry/RegistryStatusBanner";
 import { ErrorState, EmptyState, LoadingState } from "../../components/shared/ResourceState";
 import DataTable from "../../components/shared/tables/DataTable";
@@ -177,6 +179,8 @@ function RegistryPage({ initialKind = "tools" }) {
         }}
       />
 
+      <RegistryBulkImportPanel kind={kind} />
+
       {editor ? (
         <section className="surface-panel rounded-2xl p-5">
           <div className="flex items-center justify-between gap-3">
@@ -228,6 +232,8 @@ function RegistryPage({ initialKind = "tools" }) {
           )}
         </aside>
       </section>
+
+      <RegistryGenerationContextViewer />
     </div>
   );
 }

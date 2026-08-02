@@ -73,6 +73,7 @@ func Render(input RenderInput) (Document, error) {
 	domainIndex := renderDomainIndex(domains)
 	bodyFor := func(fullDomains map[string]bool) string {
 		var body strings.Builder
+		fmt.Fprintf(&body, "<!-- registry_sha256: %s -->\n\n", input.RegistryHash)
 		body.WriteString("# Runtime Registry Generation Context\n\n")
 		body.WriteString("## 1. DOMAIN INDEX\n\n")
 		body.WriteString(domainIndex)

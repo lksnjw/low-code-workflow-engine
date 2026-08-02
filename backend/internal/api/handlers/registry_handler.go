@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -47,6 +48,34 @@ func (h *Handler) UpdateRegistryTool(c *fiber.Ctx) error {
 	}
 	h.auditRegistryMutation(c, "registry.tool.updated", result.Item.ToolID, result.OldHash, result.NewHash)
 	return c.JSON(models.OK(result, "Tool schema updated", nil))
+}
+
+func (h *Handler) ImportRegistryTools(c *fiber.Ctx) error {
+	if err := h.requireRegistryWrite(c); err != nil {
+		return err
+	}
+	if h.RegistryContext == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry generation context is not configured")
+	}
+	allowUpdates, _ := strconv.ParseBool(c.Query("allowUpdates", "false"))
+	result, entryErrors, err := h.RegistryContext.ImportTools(c.Body(), allowUpdates)
+	if err != nil {
+		return registryMutationError(err)
+	}
+	if len(entryErrors) > 0 {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.APIResponse{
+			Success: false,
+			Data: map[string]interface{}{
+				"applied": false, "count": 0, "errors": entryErrors,
+			},
+			Message: "Tool import rejected; no registry entries were applied",
+		})
+	}
+	h.auditRegistryBatchMutation(c, "registry.tools.imported", "tools", result.Count, result.IDs, result.OldHash, result.NewHash)
+	return c.Status(fiber.StatusCreated).JSON(models.OK(map[string]interface{}{
+		"applied": true, "count": result.Count, "ids": result.IDs, "errors": []coreregistry.BulkImportError{},
+		"oldHash": result.OldHash, "newHash": result.NewHash, "semanticRebuildSuggested": result.SemanticRebuildSuggested,
+	}, "Tool import applied atomically", nil))
 }
 
 func (h *Handler) AdminRulesRegistry(c *fiber.Ctx) error {
@@ -117,6 +146,34 @@ func (h *Handler) UpdateRegistryRule(c *fiber.Ctx) error {
 	return c.JSON(models.OK(result, "Rule updated", nil))
 }
 
+func (h *Handler) ImportRegistryRules(c *fiber.Ctx) error {
+	if err := h.requireRegistryWrite(c); err != nil {
+		return err
+	}
+	if h.RegistryContext == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "registry generation context is not configured")
+	}
+	allowUpdates, _ := strconv.ParseBool(c.Query("allowUpdates", "false"))
+	result, entryErrors, err := h.RegistryContext.ImportRules(c.Body(), allowUpdates)
+	if err != nil {
+		return registryMutationError(err)
+	}
+	if len(entryErrors) > 0 {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.APIResponse{
+			Success: false,
+			Data: map[string]interface{}{
+				"applied": false, "count": 0, "errors": entryErrors,
+			},
+			Message: "Rule import rejected; no registry entries were applied",
+		})
+	}
+	h.auditRegistryBatchMutation(c, "registry.rules.imported", "rules", result.Count, result.IDs, result.OldHash, result.NewHash)
+	return c.Status(fiber.StatusCreated).JSON(models.OK(map[string]interface{}{
+		"applied": true, "count": result.Count, "ids": result.IDs, "errors": []coreregistry.BulkImportError{},
+		"oldHash": result.OldHash, "newHash": result.NewHash, "semanticRebuildSuggested": result.SemanticRebuildSuggested,
+	}, "Rule import applied atomically", nil))
+}
+
 func (h *Handler) requireRegistryWrite(c *fiber.Ctx) error {
 	user := h.currentUser(c)
 	if user == nil {
@@ -147,6 +204,24 @@ func (h *Handler) auditRegistryMutation(c *fiber.Ctx, action, id, oldHash, newHa
 		models.ResourceRef{Type: "registry", ID: id},
 		map[string]interface{}{"registryHash": oldHash},
 		map[string]interface{}{"registryHash": newHash, "semanticRebuildSuggested": true},
+		c.IP(),
+		c.Get("User-Agent"),
+	)
+}
+
+func (h *Handler) auditRegistryBatchMutation(c *fiber.Ctx, action, kind string, count int, ids []string, oldHash, newHash string) {
+	user := h.currentUser(c)
+	h.Store.Mu.Lock()
+	defer h.Store.Mu.Unlock()
+	h.Store.Audit(
+		principalFromUser(user),
+		action,
+		models.ResourceRef{Type: "registry", ID: kind},
+		map[string]interface{}{"registryHash": oldHash},
+		map[string]interface{}{
+			"registryHash": newHash, "count": count, "ids": append([]string{}, ids...),
+			"semanticRebuildSuggested": true,
+		},
 		c.IP(),
 		c.Get("User-Agent"),
 	)

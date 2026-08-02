@@ -146,6 +146,61 @@ func (s *Service) UpdateRule(id string, raw []byte) (registry.MutationResult[reg
 	})
 }
 
+// ImportTools applies a validated tool batch and regenerates the generation
+// context as one rollback-protected operation.
+func (s *Service) ImportTools(raw []byte, allowUpdates bool) (registry.BulkMutationResult[registry.Tool], []registry.BulkImportError, error) {
+	if s == nil || s.manager == nil {
+		return registry.BulkMutationResult[registry.Tool]{}, nil, errors.New("registry context service is not configured")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.ensureCurrentLocked(); err != nil {
+		return registry.BulkMutationResult[registry.Tool]{}, nil, err
+	}
+	snapshots, err := s.registrySnapshotsLocked()
+	if err != nil {
+		return registry.BulkMutationResult[registry.Tool]{}, nil, err
+	}
+	callback := s.manager.SuspendToolUpsertCallback()
+	defer callback.Restore()
+	result, validationErrors, err := s.manager.ImportTools(raw, allowUpdates)
+	if err != nil || len(validationErrors) > 0 {
+		return result, validationErrors, err
+	}
+	if _, err := s.regenerateLocked(); err != nil {
+		restoreErr := s.restoreRegistryLocked(snapshots)
+		return registry.BulkMutationResult[registry.Tool]{}, nil, mutationContextError(err, restoreErr)
+	}
+	callback.RestoreAndNotify(result.Items)
+	return result, nil, nil
+}
+
+// ImportRules applies a validated rule batch and regenerates the generation
+// context as one rollback-protected operation.
+func (s *Service) ImportRules(raw []byte, allowUpdates bool) (registry.BulkMutationResult[registry.Rule], []registry.BulkImportError, error) {
+	if s == nil || s.manager == nil {
+		return registry.BulkMutationResult[registry.Rule]{}, nil, errors.New("registry context service is not configured")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.ensureCurrentLocked(); err != nil {
+		return registry.BulkMutationResult[registry.Rule]{}, nil, err
+	}
+	snapshots, err := s.registrySnapshotsLocked()
+	if err != nil {
+		return registry.BulkMutationResult[registry.Rule]{}, nil, err
+	}
+	result, validationErrors, err := s.manager.ImportRules(raw, allowUpdates)
+	if err != nil || len(validationErrors) > 0 {
+		return result, validationErrors, err
+	}
+	if _, err := s.regenerateLocked(); err != nil {
+		restoreErr := s.restoreRegistryLocked(snapshots)
+		return registry.BulkMutationResult[registry.Rule]{}, nil, mutationContextError(err, restoreErr)
+	}
+	return result, nil, nil
+}
+
 func (s *Service) mutateTool(operation func() (registry.MutationResult[registry.Tool], error)) (registry.MutationResult[registry.Tool], error) {
 	if s == nil || s.manager == nil {
 		return registry.MutationResult[registry.Tool]{}, errors.New("registry context service is not configured")
@@ -306,7 +361,7 @@ func (s *Service) pathsLocked(registryHash string) (string, string, error) {
 	if len(hash) < 8 {
 		return "", "", fmt.Errorf("registry hash %q does not contain eight hexadecimal characters", registryHash)
 	}
-	dir := filepath.Join(filepath.Dir(toolPath), "generated")
+	dir := filepath.Dir(toolPath)
 	currentPath := filepath.Join(dir, "registry_context.md")
 	archivePath := filepath.Join(dir, "registry_context_"+hash[:8]+".md")
 	return currentPath, archivePath, nil
