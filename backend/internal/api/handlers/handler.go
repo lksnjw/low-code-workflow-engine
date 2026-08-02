@@ -55,6 +55,9 @@ func New(cfg config.Config, store *repository.Store, synth *synthesizer.Service,
 	if synth != nil && store != nil {
 		synth.SetProviderResolver(store.ActiveProvider)
 	}
+	if synth != nil && exec != nil {
+		exec.SetAnalysisProvider(synth)
+	}
 	if synth != nil && strings.TrimSpace(cfg.ToolRegistryPath) != "" && strings.TrimSpace(cfg.RuleRegistryPath) != "" {
 		synth.SetRegistryContext(contextService)
 		synth.SetLogger(log)

@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	StatusPending          = "PENDING"
@@ -9,6 +12,8 @@ const (
 	StatusFailed           = "FAILED"
 	StatusHealing          = "HEALING"
 	StatusDraftUnvalidated = "draft-unvalidated"
+	StepKindTool           = "tool"
+	StepKindAnalysis       = "analysis"
 )
 
 type WorkflowBlueprint struct {
@@ -26,14 +31,28 @@ type BlueprintTrigger struct {
 }
 
 type WorkflowStepBlueprint struct {
-	ID          string                 `json:"id" yaml:"id" validate:"required"`
-	Type        string                 `json:"type,omitempty" yaml:"type,omitempty"`
-	Action      string                 `json:"action" yaml:"action" validate:"required"`
-	Parameters  map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	Condition   string                 `json:"condition,omitempty" yaml:"condition,omitempty"`
-	OnError     string                 `json:"onError,omitempty" yaml:"onError,omitempty"`
-	RetryCount  int                    `json:"retryCount,omitempty" yaml:"retryCount,omitempty"`
-	Description string                 `json:"description,omitempty" yaml:"description,omitempty"`
+	ID            string                 `json:"id" yaml:"id" validate:"required"`
+	Kind          string                 `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Type          string                 `json:"type,omitempty" yaml:"type,omitempty"`
+	Action        string                 `json:"action,omitempty" yaml:"action,omitempty" validate:"required_unless=Kind analysis"`
+	Parameters    map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Instruction   string                 `json:"instruction,omitempty" yaml:"instruction,omitempty"`
+	Input         string                 `json:"input,omitempty" yaml:"input,omitempty"`
+	OutputSchema  map[string]interface{} `json:"output_schema,omitempty" yaml:"output_schema,omitempty"`
+	MaxInputItems int                    `json:"max_input_items,omitempty" yaml:"max_input_items,omitempty"`
+	MaxInputChars int                    `json:"max_input_chars,omitempty" yaml:"max_input_chars,omitempty"`
+	Condition     string                 `json:"condition,omitempty" yaml:"condition,omitempty"`
+	OnError       string                 `json:"onError,omitempty" yaml:"onError,omitempty"`
+	RetryCount    int                    `json:"retryCount,omitempty" yaml:"retryCount,omitempty"`
+	Description   string                 `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
+func (s WorkflowStepBlueprint) EffectiveKind() string {
+	kind := strings.ToLower(strings.TrimSpace(s.Kind))
+	if kind == "" {
+		return StepKindTool
+	}
+	return kind
 }
 
 type Workflow struct {
