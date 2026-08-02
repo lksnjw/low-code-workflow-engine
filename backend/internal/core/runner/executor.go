@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sanjeewa/agentic-orchestrator/internal/core/analysisprovider"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/tools"
@@ -13,10 +14,11 @@ import (
 )
 
 type Executor struct {
-	Registry  *tools.Registry
-	Validator *workflowvalidator.RegistryValidator
-	Log       *zap.Logger
-	baselineB bool
+	Registry         *tools.Registry
+	Validator        *workflowvalidator.RegistryValidator
+	AnalysisProvider analysisprovider.Provider
+	Log              *zap.Logger
+	baselineB        bool
 }
 
 // ErrDispatchPolicyViolation is returned before a tool call when a resolved
@@ -37,6 +39,7 @@ type Result struct {
 	Logs     []models.ExecutionLog  `json:"logs"`
 	Timeline []models.ExecutionStep `json:"timeline"`
 	State    map[string]interface{} `json:"state"`
+	Tokens   models.Tokens          `json:"tokens"`
 }
 
 func NewExecutor(registry *tools.Registry, validator *workflowvalidator.RegistryValidator, log *zap.Logger) *Executor {
@@ -50,6 +53,10 @@ func NewExecutor(registry *tools.Registry, validator *workflowvalidator.Registry
 // config validation, which restricts this mode to APP_ENV=experiment.
 func (e *Executor) SetBaselineB(enabled bool) {
 	e.baselineB = enabled
+}
+
+func (e *Executor) SetAnalysisProvider(provider analysisprovider.Provider) {
+	e.AnalysisProvider = provider
 }
 
 func (e *Executor) Run(ctx context.Context, executionID string, workflow models.Workflow, input map[string]interface{}, token *models.ValidationToken) (Result, error) {
@@ -83,6 +90,7 @@ func (e *Executor) Run(ctx context.Context, executionID string, workflow models.
 		Timeline: []models.ExecutionStep{},
 		State:    manager.Snapshot(),
 	}
+	analysisCache := map[string]analysisCacheEntry{}
 
 	for index, step := range blueprint.Steps {
 		stepStart := time.Now().UTC()
@@ -93,6 +101,35 @@ func (e *Executor) Run(ctx context.Context, executionID string, workflow models.
 			Label:     labelForStep(step),
 			Status:    models.StatusRunning,
 			StartedAt: stepStart,
+		}
+		if step.EffectiveKind() == models.StepKindAnalysis {
+			sideEffect := false
+			timelineStep.SideEffect = &sideEffect
+			outcome, analysisErr := e.executeAnalysisStep(ctx, executionID, blueprint, index, manager, token, analysisCache)
+			completed := time.Now().UTC()
+			duration := completed.Sub(stepStart).Milliseconds()
+			timelineStep.CompletedAt = &completed
+			timelineStep.DurationMS = &duration
+			if analysisErr != nil {
+				timelineStep.Status = models.StatusFailed
+				result.Timeline = append(result.Timeline, timelineStep)
+				result.Logs = append(result.Logs, models.ExecutionLog{
+					ID: executionID + fmt.Sprintf("_log_%03d", index+1), ExecutionID: executionID, Timestamp: completed,
+					Level: "error", NodeID: nodeID, Message: analysisErr.Error(), Metadata: map[string]interface{}{"kind": models.StepKindAnalysis, "sideEffect": false},
+				})
+				return result, analysisErr
+			}
+			manager.Save(step.ID, map[string]interface{}{"output": outcome.output})
+			result.Tokens.Input += outcome.inputTokens
+			result.Tokens.Output += outcome.outputTokens
+			result.Tokens.Total = result.Tokens.Input + result.Tokens.Output
+			timelineStep.Status = models.StatusDone
+			result.Timeline = append(result.Timeline, timelineStep)
+			result.Logs = append(result.Logs, models.ExecutionLog{
+				ID: executionID + fmt.Sprintf("_log_%03d", index+1), ExecutionID: executionID, Timestamp: completed,
+				Level: "info", NodeID: nodeID, Message: "analysis completed with structured output", Metadata: map[string]interface{}{"kind": models.StepKindAnalysis, "sideEffect": false, "cached": outcome.cached, "inputTokens": outcome.inputTokens, "outputTokens": outcome.outputTokens},
+			})
+			continue
 		}
 
 		params := manager.Resolve(step.Parameters)
@@ -195,6 +232,9 @@ func labelForStep(step models.WorkflowStepBlueprint) string {
 	}
 	if step.Type != "" {
 		return step.Type + ": " + step.Action
+	}
+	if step.EffectiveKind() == models.StepKindAnalysis {
+		return "analysis: " + step.ID
 	}
 	return step.Action
 }

@@ -68,6 +68,7 @@ type ExecutionStep struct {
 	CompletedAt *time.Time        `json:"completedAt"`
 	DurationMS  *int64            `json:"durationMs"`
 	Failure     *ExecutionFailure `json:"failure,omitempty"`
+	SideEffect  *bool             `json:"sideEffect,omitempty"`
 }
 
 type HealingReport struct {

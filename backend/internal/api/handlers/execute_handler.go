@@ -84,12 +84,14 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	completed := time.Now().UTC()
 	execution.CompletedAt = &completed
 	execution.DurationMS = completed.Sub(now).Milliseconds()
+	execution.Tokens = runResult.Tokens
 	failedStep, failedTool, failureReason := "", "", ""
 
 	if err != nil {
 		failedStep, failedTool, failureReason = executionFailureDetails(blueprint, runResult, err)
 		execution.Status = models.StatusFailed
 		var policyViolation *runner.ErrDispatchPolicyViolation
+		var dataEgressViolation *runner.ErrDataEgressViolation
 		// Classify the failure so the UI can show a governance block as a
 		// governance block rather than as a crashed tool. The runner decides a
 		// policy violation immediately before dispatch, so on that path the
@@ -125,7 +127,7 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 				h.Store.Mu.Unlock()
 			}
 			execution.Status = models.StatusFailed
-		} else if !errors.As(err, &policyViolation) {
+		} else if !errors.As(err, &policyViolation) && !errors.As(err, &dataEgressViolation) {
 			h.Store.Mu.Lock()
 			h.Store.Healing[executionID] = models.HealingReport{ExecutionID: executionID, WorkflowID: workflow.ID, Status: "HEALING_NOT_ATTEMPTED", Summary: "Execution failed and self-healing was not available.", Events: []map[string]interface{}{}, Metrics: map[string]interface{}{}}
 			h.Store.Mu.Unlock()
@@ -192,6 +194,20 @@ func (h *Handler) classifyExecutionFailure(blueprint models.WorkflowBlueprint, r
 			step := blueprint.Steps[policyViolation.StepIndex]
 			failure.FailedStepID = step.ID
 			failure.FailedToolName = step.Action
+		}
+		return failure
+	}
+	var dataEgressViolation *runner.ErrDataEgressViolation
+	if errors.As(runErr, &dataEgressViolation) {
+		failure.FailureCategory = models.FailureCategoryPolicyViolation
+		failure.RuleID = dataEgressViolation.RuleID
+		failure.BlockedParameter = dataEgressViolation.ParamKey
+		failure.ToolWasCalled = false
+		failure.RuleMessage = h.validatorMessageForRule(dataEgressViolation.RuleID)
+		if dataEgressViolation.StepIndex >= 0 && dataEgressViolation.StepIndex < len(blueprint.Steps) {
+			step := blueprint.Steps[dataEgressViolation.StepIndex]
+			failure.FailedStepID = step.ID
+			failure.FailedToolName = models.StepKindAnalysis
 		}
 		return failure
 	}
@@ -288,6 +304,9 @@ func executionFailureDetails(blueprint models.WorkflowBlueprint, result runner.R
 		return "unknown", "unknown", runErr.Error()
 	}
 	step := blueprint.Steps[index]
+	if step.EffectiveKind() == models.StepKindAnalysis {
+		return step.ID, models.StepKindAnalysis, runErr.Error()
+	}
 	return step.ID, step.Action, runErr.Error()
 }
 

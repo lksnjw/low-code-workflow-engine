@@ -166,6 +166,15 @@ func (v *RegistryValidator) validateCandidate(candidateID, rawYAML, userRole str
 	stepsByAction := map[string][]int{}
 	usedTools := []registry.Tool{}
 	for index, step := range blueprint.Steps {
+		if step.EffectiveKind() == models.StepKindAnalysis {
+			v.validateAnalysisStep(blueprint, index, &result)
+			continue
+		}
+		if step.EffectiveKind() != models.StepKindTool {
+			result.SchemaOK = false
+			result.addError("STEP_KIND_INVALID", fmt.Sprintf("Step %s has unsupported kind %q", step.ID, step.Kind))
+			continue
+		}
 		action := strings.TrimSpace(step.Action)
 		stepsByAction[strings.ToLower(action)] = append(stepsByAction[strings.ToLower(action)], index)
 		tool, ok := v.Tools.FindToolByName(action)
