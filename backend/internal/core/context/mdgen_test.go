@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
+	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 	"go.uber.org/zap"
 )
 
@@ -104,6 +106,43 @@ func TestRegenerationFailureRollsBackRegistryMutation(t *testing.T) {
 	}
 }
 
+func TestBulkImportContextFailureRollsBackAllEntries(t *testing.T) {
+	service, manager, toolPath, _ := contextTestService(t, []registry.Tool{contextTestTool("TOOL-001", "finance.invoice.create", "finance")}, nil)
+	beforeDocument, err := service.Regenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRegistry := readContextTestFile(t, toolPath)
+	beforeHash := manager.Hash()
+	realWriter := service.writeFile
+	service.writeFile = func(path string, raw []byte) error {
+		if filepath.Base(path) == "registry_context.md" {
+			return errors.New("injected bulk context write failure")
+		}
+		return realWriter(path, raw)
+	}
+	batch, err := json.Marshal([]registry.Tool{
+		contextTestTool("TOOL-002", "finance.invoice.cancel", "finance"),
+		contextTestTool("TOOL-003", "finance.invoice.notify", "finance"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.ImportTools(batch, false); err == nil || !strings.Contains(err.Error(), "rolled back") {
+		t.Fatalf("bulk import did not fail with rollback evidence: %v", err)
+	}
+	if manager.Hash() != beforeHash || len(manager.Tools()) != 1 || !bytes.Equal(beforeRegistry, readContextTestFile(t, toolPath)) {
+		t.Fatal("bulk context failure left a partial file, snapshot, or hash change")
+	}
+	afterDocument, err := service.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterDocument.FrontMatter.RegistryHash != beforeDocument.FrontMatter.RegistryHash || afterDocument.Stale {
+		t.Fatal("context and restored registry no longer match after bulk rollback")
+	}
+}
+
 func TestRegistryCRUDRegeneratesContext(t *testing.T) {
 	service, manager, _, _ := contextTestService(t, []registry.Tool{contextTestTool("TOOL-001", "finance.invoice.create", "finance")}, nil)
 	before, err := service.Regenerate()
@@ -121,6 +160,42 @@ func TestRegistryCRUDRegeneratesContext(t *testing.T) {
 	}
 	if after.FrontMatter.RegistryHash == before.FrontMatter.RegistryHash || after.FrontMatter.RegistryHash != manager.Hash() {
 		t.Fatalf("CRUD context hash was not regenerated: before=%s after=%s active=%s", before.FrontMatter.RegistryHash, after.FrontMatter.RegistryHash, manager.Hash())
+	}
+}
+
+func TestGateDoesNotConsultRegistryContextMarkdown(t *testing.T) {
+	service, manager, _, _ := contextTestService(t, []registry.Tool{contextTestTool("TOOL-001", "finance.invoice.create", "finance")}, nil)
+	document, err := service.Regenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(document.Path); err != nil {
+		t.Fatalf("remove generated Markdown: %v", err)
+	}
+	toolPath, rulePath := manager.RegistryPaths()
+	bundle, err := registry.LoadBundle(toolPath, rulePath, zap.NewNop())
+	if err != nil {
+		t.Fatalf("reload typed JSON registry: %v", err)
+	}
+	validator := workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules, repository.NewStore())
+	yamlText := `name: create_invoice
+description: Create an invoice from a supplied amount.
+trigger:
+  type: manual
+  displayName: Manual Trigger
+  config: {}
+steps:
+  - id: create_invoice
+    type: tool
+    action: finance.invoice.create
+    parameters:
+      amount: 25
+    onError: stop
+    retryCount: 1
+`
+	token, result, err := validator.ValidateAndIssueToken("context-file-absent", yamlText, "Platform Admin")
+	if err != nil || token == nil || !result.Passed {
+		t.Fatalf("typed JSON validation changed after generated Markdown was removed: token=%v result=%+v err=%v", token != nil, result, err)
 	}
 }
 
