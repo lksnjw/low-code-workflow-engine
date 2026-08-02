@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
+	"go.uber.org/zap"
 )
 
 func (h *Handler) GetSettings(c *fiber.Ctx) error {
@@ -171,7 +172,8 @@ func (h *Handler) CreateWebhook(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Webhook name is required")
 	}
 	if _, err := outboundURL(endpoint); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		h.logSettingsFailure("webhook.create.validate_url", "", err)
+		return fiber.NewError(fiber.StatusBadRequest, "Webhook URL is invalid")
 	}
 	webhook := &models.Webhook{ID: "wh_" + randomHex(4), Name: name, URL: endpoint, Events: parseStringSlice(body["events"]), Enabled: true, SecretPreview: "whsec_...." + randomHex(2), CreatedAt: time.Now().UTC()}
 	h.Store.Mu.Lock()
@@ -193,7 +195,8 @@ func (h *Handler) UpdateWebhook(c *fiber.Ctx) error {
 	}
 	if url := fmt.Sprint(body["url"]); url != "" && url != "<nil>" {
 		if _, err := outboundURL(url); err != nil {
-			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+			h.logSettingsFailure("webhook.update.validate_url", webhook.ID, err)
+			return fiber.NewError(fiber.StatusBadRequest, "Webhook URL is invalid")
 		}
 		webhook.URL = url
 	}
@@ -226,7 +229,8 @@ func (h *Handler) TestWebhook(c *fiber.Ctx) error {
 	}
 	result, err := probeEndpoint(http.MethodPost, webhook.URL, payload)
 	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Webhook delivery failed", map[string]interface{}{"error": err.Error()}))
+		h.logSettingsFailure("webhook.test", webhook.ID, err)
+		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Webhook connection test failed", nil))
 	}
 	return c.JSON(models.OK(result, "Webhook test delivered", nil))
 }
@@ -305,7 +309,8 @@ func (h *Handler) TestIntegration(c *fiber.Ctx) error {
 	endpoint := integrationEndpoint(integration.Config)
 	result, err := probeEndpoint(http.MethodGet, endpoint, nil)
 	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Integration test failed", map[string]interface{}{"error": err.Error(), "checkedAt": now}))
+		h.logSettingsFailure("integration.test", integration.ID, err)
+		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Integration connection test failed", map[string]interface{}{"checkedAt": now}))
 	}
 	h.Store.Mu.Lock()
 	integration.LastTestedAt = &now
@@ -322,7 +327,8 @@ func (h *Handler) ConnectIntegration(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Integration not found")
 	}
 	if _, err := probeEndpoint(http.MethodGet, integrationEndpoint(integration.Config), nil); err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Integration could not be connected", map[string]interface{}{"error": err.Error()}))
+		h.logSettingsFailure("integration.connect", integration.ID, err)
+		return c.Status(fiber.StatusBadGateway).JSON(models.Fail("Integration connection failed", nil))
 	}
 	return h.setIntegrationStatus(c, "Connected")
 }
@@ -354,6 +360,18 @@ func integrationEndpoint(config map[string]interface{}) string {
 		}
 	}
 	return ""
+}
+
+func (h *Handler) logSettingsFailure(operation, resourceID string, err error) {
+	if h.Log == nil || err == nil {
+		return
+	}
+	h.Log.Error(
+		"settings operation failed",
+		zap.String("operation", operation),
+		zap.String("resource_id", resourceID),
+		zap.Error(err),
+	)
 }
 
 func outboundURL(raw string) (*url.URL, error) {

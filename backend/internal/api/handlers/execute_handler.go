@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +16,7 @@ import (
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
+	"github.com/sanjeewa/agentic-orchestrator/internal/tools"
 )
 
 func (h *Handler) RunWorkflow(c *fiber.Ctx) error {
@@ -85,7 +90,13 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 		failedStep, failedTool, failureReason = executionFailureDetails(blueprint, runResult, err)
 		execution.Status = models.StatusFailed
 		var policyViolation *runner.ErrDispatchPolicyViolation
-		if !errors.As(err, &policyViolation) && h.Healer != nil {
+		// Classify the failure so the UI can show a governance block as a
+		// governance block rather than as a crashed tool. The runner decides a
+		// policy violation immediately before dispatch, so on that path the
+		// tool was never invoked.
+		execution.Failure = h.classifyExecutionFailure(blueprint, runResult, err, failedStep, failedTool)
+		attachStepFailure(runResult.Timeline, execution.Failure)
+		if execution.Failure != nil && execution.Failure.FailureCategory == models.FailureCategoryTransient && h.Healer != nil {
 			execution.Status = models.StatusHealing
 			repairedYAML, event, healErr := h.Healer.Repair(c.Context(), workflow.Name, workflow.YAML, err)
 			if healErr == nil {
@@ -129,14 +140,140 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	h.Store.ExecutionLogs[executionID] = append(h.Store.ExecutionLogs[executionID], runResult.Logs...)
 	h.Store.Timelines[executionID] = append(h.Store.Timelines[executionID], runResult.Timeline...)
 	h.updateWorkflowExecutionMetricsLocked(workflow.ID, completed)
+	if execution.Failure != nil {
+		h.Store.Audit(
+			execution.StartedBy,
+			"execution.failure.classified",
+			models.ResourceRef{Type: "execution", ID: execution.ID},
+			nil,
+			map[string]interface{}{
+				"stepId":   execution.Failure.FailedStepID,
+				"toolName": execution.Failure.FailedToolName,
+				"category": execution.Failure.FailureCategory,
+			},
+			c.IP(),
+			c.Get("User-Agent"),
+		)
+	}
 	h.Store.Mu.Unlock()
 
 	if execution.Status == models.StatusFailed {
 		message := "Workflow " + workflow.Name + " failed at step " + failedStep + " using tool " + failedTool + ": " + failureReason
+		if execution.Failure != nil && execution.Failure.FailureCategory == models.FailureCategoryAuthDenied {
+			message = fmt.Sprintf("Step %s (`%s`): not authorised to call this tool.", failedStep, failedTool)
+		}
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail(message, map[string]interface{}{"executionId": execution.ID, "status": execution.Status}))
 	}
 	message := "Workflow " + workflow.Name + " completed successfully in " + strconv.Itoa(len(runResult.Timeline)) + " steps"
 	return c.JSON(models.OK(execution, message, nil))
+}
+
+// classifyExecutionFailure turns a runner error into the additive failure
+// record the UI needs to tell a governance block apart from a crashed tool.
+// It never changes the execution status: both remain StatusFailed.
+func (h *Handler) classifyExecutionFailure(blueprint models.WorkflowBlueprint, result runner.Result, runErr error, failedStep, failedTool string) *models.ExecutionFailure {
+	failure := &models.ExecutionFailure{
+		FailureCategory: models.FailureCategoryToolFailure,
+		FailedStepID:    failedStep,
+		FailedToolName:  failedTool,
+		ToolWasCalled:   true,
+	}
+
+	var policyViolation *runner.ErrDispatchPolicyViolation
+	if errors.As(runErr, &policyViolation) {
+		failure.FailureCategory = models.FailureCategoryPolicyViolation
+		failure.RuleID = policyViolation.RuleID
+		failure.BlockedParameter = policyViolation.ParamKey
+		// The gate refuses the step immediately before dispatch, so the tool
+		// implementation was never reached.
+		failure.ToolWasCalled = false
+		failure.RuleMessage = h.validatorMessageForRule(policyViolation.RuleID)
+		if policyViolation.StepIndex >= 0 && policyViolation.StepIndex < len(blueprint.Steps) {
+			step := blueprint.Steps[policyViolation.StepIndex]
+			failure.FailedStepID = step.ID
+			failure.FailedToolName = step.Action
+		}
+		return failure
+	}
+
+	// The runner records a FAILED timeline entry only once a step has actually
+	// been dispatched. No FAILED entry means execution stopped before any tool
+	// was reached, e.g. an unregistered tool or a rejected validation token.
+	if !hasFailedStep(result.Timeline) {
+		failure.FailureCategory = models.FailureCategoryValidation
+		failure.ToolWasCalled = false
+		return failure
+	}
+
+	var downstream *tools.MCPHTTPError
+	if errors.As(runErr, &downstream) {
+		switch {
+		case downstream.StatusCode == 400:
+			failure.FailureCategory = models.FailureCategoryInvalidRequest
+		case downstream.StatusCode == 401 || downstream.StatusCode == 403:
+			failure.FailureCategory = models.FailureCategoryAuthDenied
+		case downstream.StatusCode == 404:
+			failure.FailureCategory = models.FailureCategoryNotFound
+		case downstream.StatusCode >= 500 && downstream.StatusCode <= 599:
+			failure.FailureCategory = models.FailureCategoryTransient
+		default:
+			// Unknown downstream statuses are terminal and retain TOOL_FAILURE.
+		}
+		return failure
+	}
+
+	if isTransientTransportFailure(runErr) {
+		failure.FailureCategory = models.FailureCategoryTransient
+	}
+	return failure
+}
+
+func isTransientTransportFailure(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr)
+}
+
+func hasFailedStep(timeline []models.ExecutionStep) bool {
+	for _, step := range timeline {
+		if step.Status == models.StatusFailed {
+			return true
+		}
+	}
+	return false
+}
+
+// validatorMessageForRule returns the rule's own validator_message so the UI
+// can explain the block in the registry's words rather than paraphrasing.
+func (h *Handler) validatorMessageForRule(ruleID string) string {
+	if strings.TrimSpace(ruleID) == "" {
+		return ""
+	}
+	for _, rule := range h.activeRegistryRules() {
+		if strings.EqualFold(rule.RuleID, ruleID) {
+			return rule.ValidatorMessage
+		}
+	}
+	return ""
+}
+
+// attachStepFailure copies the classification onto the failing timeline step so
+// the step chip can render without consulting the parent execution.
+func attachStepFailure(timeline []models.ExecutionStep, failure *models.ExecutionFailure) {
+	if failure == nil {
+		return
+	}
+	for index := range timeline {
+		if timeline[index].Status == models.StatusFailed {
+			timeline[index].Failure = failure
+		}
+	}
 }
 
 func executionFailureDetails(blueprint models.WorkflowBlueprint, result runner.Result, runErr error) (string, string, string) {

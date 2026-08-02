@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import FormField from "../../components/shared/forms/FormField";
 import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import Button from "../../components/shared/ui/Button";
@@ -26,12 +26,9 @@ function CompanyPage() {
   const { roleId } = usePermissions();
   const canEdit = roleId === "role_admin" || roleId === "role_system_admin";
   const [activeTab, setActiveTab] = useState("general");
+  const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["company"], queryFn: companyService.get });
-  const [profile, setProfile] = useState(null);
-
-  useEffect(() => {
-    if (query.data) setProfile(query.data);
-  }, [query.data]);
+  const profile = query.data;
 
   if (query.isLoading) return <LoadingState label="Loading company profile…" />;
   if (query.error) return <ErrorState onRetry={query.refetch} />;
@@ -48,16 +45,16 @@ function CompanyPage() {
       </div>
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
       {activeTab === "general" ? (
-        <GeneralTab profile={profile} canEdit={canEdit} onSaved={(saved) => setProfile(saved)} />
+        <GeneralTab profile={profile} canEdit={canEdit} onSaved={(saved) => queryClient.setQueryData(["company"], saved)} />
       ) : null}
       {activeTab === "departments" ? (
-        <DepartmentsTab profile={profile} canEdit={canEdit} onChanged={async () => setProfile(await query.refetch().then((result) => result.data))} />
+        <DepartmentsTab profile={profile} canEdit={canEdit} onChanged={query.refetch} />
       ) : null}
       {activeTab === "cost-centres" ? (
-        <CostCentresTab profile={profile} canEdit={canEdit} onChanged={async () => setProfile(await query.refetch().then((result) => result.data))} />
+        <CostCentresTab profile={profile} canEdit={canEdit} onChanged={query.refetch} />
       ) : null}
       {activeTab === "approval-tiers" ? (
-        <ApprovalTiersTab profile={profile} canEdit={canEdit} onChanged={async () => setProfile(await query.refetch().then((result) => result.data))} />
+        <ApprovalTiersTab profile={profile} canEdit={canEdit} onChanged={query.refetch} />
       ) : null}
     </div>
   );
@@ -69,7 +66,6 @@ function GeneralTab({ profile, canEdit, onSaved }) {
   const [fieldErrors, setFieldErrors] = useState({});
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
-  useEffect(() => setForm(profile), [profile]);
   const change = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
   const submit = async (event) => {
@@ -80,6 +76,7 @@ function GeneralTab({ profile, canEdit, onSaved }) {
     setFailed(false);
     try {
       const saved = await companyService.update(form);
+      setForm(saved);
       onSaved(saved);
       setMessage("Company profile saved.");
     } catch (error) {
