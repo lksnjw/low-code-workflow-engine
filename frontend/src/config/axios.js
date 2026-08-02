@@ -62,14 +62,17 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem("workflow.refreshToken");
         const refreshResponse = await apiClient.post("/auth/refresh", { refreshToken });
-        const newToken = refreshResponse.data?.data?.accessToken;
-        if (newToken) {
-          localStorage.setItem("workflow.authToken", newToken);
-          apiClient.defaults.headers.common.Authorization = `Bearer ${newToken}`;
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
-          processQueue(null, newToken);
-          return apiClient(originalRequest);
+        const newAccessToken = refreshResponse.data?.data?.accessToken;
+        const newRefreshToken = refreshResponse.data?.data?.refreshToken;
+        if (!newAccessToken || !newRefreshToken) {
+          throw new Error("refresh response did not include both rotated tokens");
         }
+        localStorage.setItem("workflow.authToken", newAccessToken);
+        localStorage.setItem("workflow.refreshToken", newRefreshToken);
+        apiClient.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        processQueue(null, newAccessToken);
+        return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
         // Refresh failed — clear session and redirect to login
