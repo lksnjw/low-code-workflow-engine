@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import ExecutionStatus from "../../components/executions/ExecutionStatus";
+import ExecutionOutputPanel from "../../components/executions/ExecutionOutputPanel";
 import ExecutionTimeline from "../../components/executions/ExecutionTimeline";
 import GovernanceBlockPanel from "../../components/executions/GovernanceBlockPanel";
 import HealingReport from "../../components/executions/HealingReport";
@@ -37,6 +38,7 @@ function ExecutionDetailPage() {
           <Metric label="Cost" value={execution.cost} />
         </dl>
       </Card>
+      <ExecutionOutputPanel execution={execution} />
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <LiveLogStream logs={logs} executionId={execution.id} />
         <div className="space-y-4">

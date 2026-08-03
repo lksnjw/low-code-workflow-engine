@@ -23,15 +23,19 @@ import (
 )
 
 type handlerSpyTool struct {
-	calls   int
-	failure error
+	calls int
+	// failure, when set, is returned instead of a result. failAfter lets a
+	// multi-step run succeed for the first N calls and fail afterwards, which
+	// is how a partial-output run is produced.
+	failure   error
+	failAfter int
 }
 
 func (s *handlerSpyTool) Name() string        { return "test.transfer" }
 func (s *handlerSpyTool) Description() string { return "handler gate spy" }
 func (s *handlerSpyTool) Execute(_ context.Context, _ map[string]interface{}) (map[string]interface{}, error) {
 	s.calls++
-	if s.failure != nil {
+	if s.failure != nil && s.calls > s.failAfter {
 		return nil, s.failure
 	}
 	return map[string]interface{}{"ok": true}, nil
