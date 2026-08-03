@@ -18,7 +18,7 @@ function ExecutionTable({ executions }) {
       rows={executions}
       renderCell={(run, column) => {
         if (column.key === "status") {
-          return <ExecutionStatus status={run.status} />;
+          return <ExecutionStatus status={run.status} failure={run.failure} />;
         }
         if (column.key === "id") {
           return <Link className="font-bold text-primary hover:underline" to={`/executions/${encodeURIComponent(run.id)}`}>{run.id}</Link>;

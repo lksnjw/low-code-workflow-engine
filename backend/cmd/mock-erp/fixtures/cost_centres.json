@@ -1,0 +1,8 @@
+[
+  {"code":"CC-FIN-100","name":"Finance Operations","allocated":250000,"spent":142500,"remaining":107500,"ownerId":"EMP-002"},
+  {"code":"CC-PRC-200","name":"Procurement Operations","allocated":320000,"spent":187250,"remaining":132750,"ownerId":"EMP-003"},
+  {"code":"CC-OPS-300","name":"Operations","allocated":500000,"spent":318400,"remaining":181600,"ownerId":"EMP-004"},
+  {"code":"CC-HR-400","name":"Human Resources","allocated":180000,"spent":96500,"remaining":83500,"ownerId":"EMP-005"},
+  {"code":"CC-IT-500","name":"Information Technology","allocated":420000,"spent":279900,"remaining":140100,"ownerId":"EMP-018"},
+  {"code":"CC-FAC-600","name":"Facilities","allocated":210000,"spent":128750,"remaining":81250,"ownerId":"EMP-021"}
+]

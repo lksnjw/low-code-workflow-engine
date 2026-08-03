@@ -7,7 +7,7 @@ function ExecutionRow({ run }) {
         <p className="font-semibold text-gray-950 dark:text-white">{run.workflow}</p>
         <p className="text-xs text-gray-500">{run.id}</p>
       </div>
-      <ExecutionStatus status={run.status} />
+      <ExecutionStatus status={run.status} failure={run.failure} />
     </div>
   );
 }

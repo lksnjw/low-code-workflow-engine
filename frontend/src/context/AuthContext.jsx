@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { AUTH_STORAGE, getRefreshInFlight, isServerUnavailable } from "../config/axios";
 import { authService } from "../services/auth.service";
 
 const AuthContext = createContext(null);
@@ -12,43 +13,70 @@ function loadStoredUser() {
   }
 }
 
+async function loadCurrentUser() {
+  const refreshInFlight = getRefreshInFlight();
+  if (refreshInFlight) {
+    await refreshInFlight;
+  }
+  return authService.me();
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(loadStoredUser);
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [serverUnreachable, setServerUnreachable] = useState(false);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
 
-  // On mount, validate the stored token via /auth/me
+  // On mount, validate the stored token via /auth/me.
+  //
+  // /auth/me now goes through the same serialised refresh queue as every other
+  // request, so a 401 here has already been refreshed and retried once by the
+  // interceptor. Reaching the catch means either the refresh itself failed
+  // (a real expiry) or the server is unreachable (not an auth problem at all).
   useEffect(() => {
-    const token = localStorage.getItem("workflow.authToken");
-    if (!token) return;
+    const token = localStorage.getItem(AUTH_STORAGE.token);
+    if (!token) return undefined;
     let cancelled = false;
-    authService
-      .me()
+    loadCurrentUser()
       .then((me) => {
-        if (!cancelled) {
-          setUser(me);
-          localStorage.setItem("workflow.user", JSON.stringify(me));
-        }
+        if (cancelled) return;
+        setUser(me);
+        setServerUnreachable(false);
+        localStorage.setItem(AUTH_STORAGE.user, JSON.stringify(me));
       })
-      .catch(() => {
-        if (!cancelled) {
-          localStorage.removeItem("workflow.authToken");
-          localStorage.removeItem("workflow.user");
-          setUser(null);
+      .catch((error) => {
+        if (cancelled) return;
+        if (isServerUnavailable(error)) {
+          // Keep the session and the screen. The server is simply down.
+          setServerUnreachable(true);
+          return;
         }
+        // A /auth/me failure never ends the session. Its 401 has already gone
+        // through the shared refresh queue; only refreshSession itself may
+        // clear storage and dispatch auth:expired.
       });
     return () => {
       cancelled = true;
     };
+  }, [reconnectNonce]);
+
+  // Listen for session events from the axios interceptor
+  useEffect(() => {
+    const handleExpired = () => setUser(null);
+    const handleUnreachable = () => setServerUnreachable(true);
+    window.addEventListener("auth:expired", handleExpired);
+    window.addEventListener("auth:unreachable", handleUnreachable);
+    return () => {
+      window.removeEventListener("auth:expired", handleExpired);
+      window.removeEventListener("auth:unreachable", handleUnreachable);
+    };
   }, []);
 
-  // Listen for token expiry events from the axios interceptor
-  useEffect(() => {
-    const handleExpired = () => {
-      setUser(null);
-    };
-    window.addEventListener("auth:expired", handleExpired);
-    return () => window.removeEventListener("auth:expired", handleExpired);
+  // Re-runs the /auth/me probe. On success the banner clears and the user is
+  // back where they were, with no re-authentication.
+  const retryConnection = useCallback(() => {
+    setReconnectNonce((value) => value + 1);
   }, []);
 
   const login = useCallback(async (credentials) => {
@@ -104,13 +132,15 @@ export function AuthProvider({ children }) {
       isAuthenticated: Boolean(user),
       loading,
       authError,
+      serverUnreachable,
+      retryConnection,
       login,
       register,
       logout,
       refreshUser,
       clearError,
     }),
-    [user, loading, authError, login, register, logout, refreshUser, clearError]
+    [user, loading, authError, serverUnreachable, retryConnection, login, register, logout, refreshUser, clearError]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

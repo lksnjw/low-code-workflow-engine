@@ -398,9 +398,11 @@ func (h *Handler) CancelExecution(c *fiber.Ctx) error {
 }
 
 func (h *Handler) RetryExecution(c *fiber.Ctx) error {
-	h.Store.Mu.RLock()
-	previous, ok := h.Store.Executions[c.Params("id")]
-	h.Store.Mu.RUnlock()
+	// A workflow:run_own caller may retry only an execution it is allowed to
+	// read, i.e. one it started. executionForRead applies the same S4 scoping
+	// as the execution detail endpoints; runWorkflowByID then re-applies
+	// canRunWorkflow to the underlying workflow, so neither check is weakened.
+	previous, ok := h.executionForRead(c, c.Params("id"))
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Execution not found")
 	}

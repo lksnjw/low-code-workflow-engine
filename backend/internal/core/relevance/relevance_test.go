@@ -40,6 +40,43 @@ func TestDomainTagBackfillIsIdempotent(t *testing.T) {
 	}
 }
 
+// Tools such as classify_invoice and policy_check carry no dotted namespace.
+// company.ToolNamespace already resolves Module first, so those tools still
+// yield a usable domain tag and relevance Rule 3 can match them. This test
+// locks that in.
+func TestDomainTagFallsBackToModuleForUnnamespacedTools(t *testing.T) {
+	tools := []registry.Tool{
+		{ToolID: "CLS", Name: "classify_invoice", Module: "finance", Status: "active_mcp_schema_present"},
+		{ToolID: "POL", Name: "policy_check", Module: "governance", Status: "active_mcp_schema_present"},
+	}
+	yaml := "name: undotted\ntrigger:\n  type: manual\nsteps:\n" +
+		"  - id: classify\n    action: classify_invoice\n" +
+		"  - id: policy\n    action: policy_check\n"
+
+	tags, err := DomainTagsFromYAML(yaml, tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(tags, []string{"finance", "governance"}) {
+		t.Fatalf("domain tags = %#v, want [finance governance]", tags)
+	}
+	for _, tag := range tags {
+		if tag == "" {
+			t.Fatal("an unnamespaced tool produced an empty domain tag")
+		}
+	}
+
+	// Rule 3 must match a department whose domain is the module-derived tag.
+	departmentID := "dept-finance"
+	user := effectiveUser("reviewer", "Execution Reviewer", []string{"workflow:read"}, &departmentID)
+	profile := company.DefaultProfile()
+	profile.Departments = []company.Department{{ID: departmentID, Name: "Finance", Domains: []string{"finance"}}}
+	workflow := workflowForAction("undotted-workflow", "classify_invoice", tags)
+	if result := Evaluate(user, workflow, profile, tools); !result.Rule3 || !result.Relevant {
+		t.Fatalf("unnamespaced tool relevance evaluation = %#v", result)
+	}
+}
+
 func TestRelevanceRule2ExcludesUnrunnableWorkflows(t *testing.T) {
 	builder := effectiveUser("builder", "Workflow Builder", []string{"workflow:read", "workflow:run"}, nil)
 	runnable := workflowForAction("runnable", "finance.read", []string{"finance"})

@@ -1,0 +1,22 @@
+[
+  {"id":"SUP-001","name":"Apex Office Supplies","category":"office","paymentTerms":"NET30","active":true,"taxId":"TAX-1001","contactEmail":"accounts@apex.example"},
+  {"id":"SUP-002","name":"BluePeak Components","category":"electronics","paymentTerms":"NET45","active":true,"taxId":"TAX-1002","contactEmail":"finance@bluepeak.example"},
+  {"id":"SUP-003","name":"Cedar Industrial","category":"industrial","paymentTerms":"NET30","active":true,"taxId":"TAX-1003","contactEmail":"billing@cedar.example"},
+  {"id":"SUP-004","name":"Delta Safety Gear","category":"safety","paymentTerms":"NET15","active":true,"taxId":"TAX-1004","contactEmail":"orders@delta.example"},
+  {"id":"SUP-005","name":"Evergreen Packaging","category":"packaging","paymentTerms":"NET30","active":true,"taxId":"TAX-1005","contactEmail":"accounts@evergreen.example"},
+  {"id":"SUP-006","name":"Fusion IT Services","category":"technology","paymentTerms":"NET30","active":true,"taxId":"TAX-1006","contactEmail":"billing@fusion.example"},
+  {"id":"SUP-007","name":"Granite Facility Care","category":"facilities","paymentTerms":"NET45","active":true,"taxId":"TAX-1007","contactEmail":"finance@granite.example"},
+  {"id":"SUP-008","name":"Harbor Logistics","category":"logistics","paymentTerms":"NET30","active":true,"taxId":"TAX-1008","contactEmail":"accounts@harbor.example"},
+  {"id":"SUP-009","name":"Ion Laboratory Systems","category":"laboratory","paymentTerms":"NET60","active":true,"taxId":"TAX-1009","contactEmail":"billing@ion.example"},
+  {"id":"SUP-010","name":"Juniper Consulting","category":"professional_services","paymentTerms":"NET30","active":true,"taxId":"TAX-1010","contactEmail":"finance@juniper.example"},
+  {"id":"SUP-011","name":"Keystone Furniture","category":"furniture","paymentTerms":"NET45","active":true,"taxId":"TAX-1011","contactEmail":"accounts@keystone.example"},
+  {"id":"SUP-012","name":"Lumen Energy","category":"utilities","paymentTerms":"NET30","active":true,"taxId":"TAX-1012","contactEmail":"billing@lumen.example"},
+  {"id":"SUP-013","name":"Meridian Textiles","category":"textiles","paymentTerms":"NET30","active":true,"taxId":"TAX-1013","contactEmail":"orders@meridian.example"},
+  {"id":"SUP-014","name":"Northstar Medical","category":"medical","paymentTerms":"NET15","active":true,"taxId":"TAX-1014","contactEmail":"finance@northstar.example"},
+  {"id":"SUP-015","name":"Orchid Catering","category":"catering","paymentTerms":"NET15","active":true,"taxId":"TAX-1015","contactEmail":"accounts@orchid.example"},
+  {"id":"SUP-016","name":"Pioneer Engineering","category":"engineering","paymentTerms":"NET45","active":true,"taxId":"TAX-1016","contactEmail":"billing@pioneer.example"},
+  {"id":"SUP-017","name":"Quartz Security","category":"security","paymentTerms":"NET30","active":true,"taxId":"TAX-1017","contactEmail":"finance@quartz.example"},
+  {"id":"SUP-018","name":"Redwood Printworks","category":"printing","paymentTerms":"NET30","active":true,"taxId":"TAX-1018","contactEmail":"accounts@redwood.example"},
+  {"id":"SUP-019","name":"Summit Training","category":"training","paymentTerms":"NET45","active":true,"taxId":"TAX-1019","contactEmail":"billing@summit.example"},
+  {"id":"SUP-020","name":"Titan Legacy Systems","category":"technology","paymentTerms":"PREPAID","active":false,"taxId":"TAX-1020","contactEmail":"accounts@titan.example"}
+]

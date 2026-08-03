@@ -9,84 +9,132 @@ export const apiClient = axios.create({
   },
 });
 
+export const AUTH_STORAGE = {
+  token: "workflow.authToken",
+  refresh: "workflow.refreshToken",
+  user: "workflow.user",
+};
+
+export function clearStoredSession() {
+  localStorage.removeItem(AUTH_STORAGE.token);
+  localStorage.removeItem(AUTH_STORAGE.refresh);
+  localStorage.removeItem(AUTH_STORAGE.user);
+}
+
+/**
+ * A transport failure — no HTTP response at all (server down, DNS, timeout,
+ * connection refused). This is never an authentication failure and must never
+ * clear the session.
+ */
+export function isNetworkError(error) {
+  if (!error) return false;
+  if (error.response) return false;
+  return Boolean(error.request) || error.code === "ECONNABORTED" || error.message === "Network Error";
+}
+
+/**
+ * The server could not answer: either no response at all, or an upstream error
+ * from whatever sits in front of it. A dev proxy answers 500 when the API is
+ * down and nginx answers 502/504, so a 5xx is a health problem, never a reason
+ * to end the session.
+ */
+export function isServerUnavailable(error) {
+  if (isNetworkError(error)) return true;
+  const status = error?.response?.status;
+  return typeof status === "number" && status >= 500;
+}
+
 // Attach Bearer token to every request
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("workflow.authToken");
+  const token = localStorage.getItem(AUTH_STORAGE.token);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
-// Track whether a token refresh is already in flight
-let isRefreshing = false;
-let failedQueue = [];
+// ---------------------------------------------------------------------------
+// One shared source of truth for "a refresh is in flight".
+//
+// Every caller — the response interceptor and AuthContext alike — awaits this
+// same promise, so concurrent 401s produce exactly one refresh call and all of
+// them are retried with the resulting token.
+// ---------------------------------------------------------------------------
+let refreshPromise = null;
 
-function processQueue(error, token = null) {
-  failedQueue.forEach((promise) => {
-    if (error) {
-      promise.reject(error);
-    } else {
-      promise.resolve(token);
-    }
-  });
-  failedQueue = [];
+export function getRefreshInFlight() {
+  return refreshPromise;
 }
 
-// 401 interceptor — attempt silent token refresh, then replay request
+export function refreshSession() {
+  if (refreshPromise) return refreshPromise;
+
+  const refreshToken = localStorage.getItem(AUTH_STORAGE.refresh);
+  if (!refreshToken) return Promise.reject(new Error("no refresh token stored"));
+
+  // Bare axios, not apiClient: the request interceptor would otherwise attach
+  // the expired access token, and a failure here must not re-enter this logic.
+  refreshPromise = axios
+    .post(`${appConfig.apiBaseUrl}/auth/refresh`, { refreshToken })
+    .then((response) => {
+      const session = response.data?.data ?? {};
+      if (!session.accessToken) throw new Error("refresh returned no access token");
+      localStorage.setItem(AUTH_STORAGE.token, session.accessToken);
+      // The server rotates the refresh token and invalidates the old digest.
+      // Persisting the new one is what makes a SECOND rotation possible.
+      if (session.refreshToken) localStorage.setItem(AUTH_STORAGE.refresh, session.refreshToken);
+      apiClient.defaults.headers.common.Authorization = `Bearer ${session.accessToken}`;
+      return session.accessToken;
+    })
+    .finally(() => {
+      refreshPromise = null;
+    });
+
+  return refreshPromise;
+}
+
+// Endpoints that must never trigger a refresh, because refreshing them is
+// either meaningless or recursive. /auth/me is deliberately NOT in this list:
+// it is an ordinary authenticated request and must be refreshed and retried
+// like any other.
+const NON_REFRESHABLE = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"];
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config || {};
 
-    if (
-      error?.response?.status === 401 &&
-      !originalRequest._retry &&
-      !originalRequest.url?.startsWith("/auth/") &&
-      localStorage.getItem("workflow.refreshToken")
-    ) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            return apiClient(originalRequest);
-          })
-          .catch((err) => Promise.reject(err));
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      try {
-        const refreshToken = localStorage.getItem("workflow.refreshToken");
-        const refreshResponse = await apiClient.post("/auth/refresh", { refreshToken });
-        const newAccessToken = refreshResponse.data?.data?.accessToken;
-        const newRefreshToken = refreshResponse.data?.data?.refreshToken;
-        if (!newAccessToken || !newRefreshToken) {
-          throw new Error("refresh response did not include both rotated tokens");
-        }
-        localStorage.setItem("workflow.authToken", newAccessToken);
-        localStorage.setItem("workflow.refreshToken", newRefreshToken);
-        apiClient.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-        processQueue(null, newAccessToken);
-        return apiClient(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
-        // Refresh failed — clear session and redirect to login
-        localStorage.removeItem("workflow.authToken");
-        localStorage.removeItem("workflow.refreshToken");
-        localStorage.removeItem("workflow.user");
-        // Dispatch a custom event so the AuthProvider can react
-        window.dispatchEvent(new CustomEvent("auth:expired"));
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
-      }
+    // The server could not answer (no response, or a 5xx from a proxy in
+    // front of it). Keep the session, tell the app.
+    if (isServerUnavailable(error)) {
+      window.dispatchEvent(new CustomEvent("auth:unreachable"));
+      return Promise.reject(error);
     }
 
-    return Promise.reject(error);
-  }
+    const url = originalRequest.url || "";
+    const canRefresh =
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !NON_REFRESHABLE.some((prefix) => url.startsWith(prefix)) &&
+      localStorage.getItem(AUTH_STORAGE.refresh);
+
+    if (!canRefresh) return Promise.reject(error);
+
+    originalRequest._retry = true;
+    try {
+      const token = await refreshSession();
+      originalRequest.headers = originalRequest.headers || {};
+      originalRequest.headers.Authorization = `Bearer ${token}`;
+      return apiClient(originalRequest);
+    } catch (refreshError) {
+      // The refresh itself failed. That, and only that, ends the session.
+      if (isServerUnavailable(refreshError)) {
+        window.dispatchEvent(new CustomEvent("auth:unreachable"));
+        return Promise.reject(refreshError);
+      }
+      clearStoredSession();
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+      return Promise.reject(refreshError);
+    }
+  },
 );

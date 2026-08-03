@@ -63,13 +63,18 @@ func TestUnsupportedOperatorRejected(t *testing.T) {
 	assertRejectedField(t, analysis, "condition.operator", "not implemented")
 }
 
-func TestOperatorValueTypeMismatchRejected(t *testing.T) {
+// The registry loader does not type-check condition.value, and this check is
+// not on the agreed list of importer-only checks, so it no longer rejects.
+// See the report note: restoring it is a one-line change in validateRule.
+func TestOperatorValueTypeMismatchAccepted(t *testing.T) {
 	tool := importerTestTool("TOOL-IMPORT-001", "finance.invoice.create")
 	service, _, _, _ := importerTestService(t, []registry.Tool{tool}, nil)
 	rule := thresholdRule("RULE-TYPE-001", tool.Name)
 	rule.Condition.Value = "one hundred"
 	analysis := analyseValue(t, service, SourceRules, []registry.Rule{rule}, false)
-	assertRejectedField(t, analysis, "condition.value", "must be numeric")
+	if len(analysis.Preview.Rejected) != 0 {
+		t.Fatalf("rejected=%+v", analysis.Preview.Rejected)
+	}
 }
 
 func TestRuleMatchingZeroToolsRejected(t *testing.T) {
@@ -80,19 +85,40 @@ func TestRuleMatchingZeroToolsRejected(t *testing.T) {
 	assertRejectedField(t, analysis, "applies_to_tools", "matches zero tools")
 }
 
-func TestToolWithoutNamespaceRejected(t *testing.T) {
-	service, _, _, _ := importerTestService(t, nil, nil)
-	tool := importerTestTool("TOOL-NAMESPACE-001", "finance.create")
-	analysis := analyseValue(t, service, SourceTools, []registry.Tool{tool}, false)
-	assertRejectedField(t, analysis, "name", "domain.entity.action")
+// The registry loader accepts any non-empty name, and the shipped registry
+// holds two-segment (demo.echo) and undotted (classify_invoice) names. The
+// importer must accept every shape the registry accepts.
+func TestToolNameShapesAcceptedByRegistryAreAccepted(t *testing.T) {
+	for _, name := range []string{"finance.create", "demo.echo", "classify_invoice", "finance.invoice.create"} {
+		service, _, _, _ := importerTestService(t, nil, nil)
+		tool := importerTestTool("TOOL-NAMESPACE-001", name)
+		analysis := analyseValue(t, service, SourceTools, []registry.Tool{tool}, false)
+		if len(analysis.Preview.Rejected) != 0 {
+			t.Fatalf("name %q rejected=%+v", name, analysis.Preview.Rejected)
+		}
+		if len(analysis.Preview.Added) != 1 {
+			t.Fatalf("name %q added=%d, want 1", name, len(analysis.Preview.Added))
+		}
+	}
 }
 
-func TestToolWithUntypedParameterRejected(t *testing.T) {
+func TestToolNameWithWhitespaceRejected(t *testing.T) {
+	service, _, _, _ := importerTestService(t, nil, nil)
+	tool := importerTestTool("TOOL-NAMESPACE-002", "finance create")
+	analysis := analyseValue(t, service, SourceTools, []registry.Tool{tool}, false)
+	assertRejectedField(t, analysis, "name", "whitespace")
+}
+
+// decodeToolStrict requires only that input_schema is present, so the importer
+// no longer rejects an untyped declared parameter.
+func TestToolWithUntypedParameterAccepted(t *testing.T) {
 	service, _, _, _ := importerTestService(t, nil, nil)
 	tool := importerTestTool("TOOL-TYPE-001", "finance.invoice.create")
 	tool.InputSchema["properties"] = map[string]interface{}{"amount": map[string]interface{}{}}
 	analysis := analyseValue(t, service, SourceTools, []registry.Tool{tool}, false)
-	assertRejectedField(t, analysis, "input_schema.properties.amount.type", "concrete type")
+	if len(analysis.Preview.Rejected) != 0 {
+		t.Fatalf("rejected=%+v", analysis.Preview.Rejected)
+	}
 }
 
 func TestOpenAPIRequiresPerToolConfirmation(t *testing.T) {
@@ -311,6 +337,76 @@ func TestImportCommitRegeneratesContext(t *testing.T) {
 	if !strings.Contains(after.Markdown, tool.Name) {
 		t.Fatalf("imported tool is absent from regenerated context: %s", tool.Name)
 	}
+}
+
+// TestExistingRegistryReimportsWithoutRejection enforces the governing
+// principle: the importer must never reject a record the registry loader
+// accepts. It replays the live registry files back through analyse as if they
+// were an upload and requires a zero-rejection, all-Unchanged diff.
+func TestExistingRegistryReimportsWithoutRejection(t *testing.T) {
+	toolRaw, ruleRaw := currentRegistryBytes(t)
+
+	dir := t.TempDir()
+	toolPath := filepath.Join(dir, "runtime-tools.json")
+	rulePath := filepath.Join(dir, "runtime-rules.json")
+	if err := os.WriteFile(toolPath, toolRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rulePath, ruleRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := registry.LoadBundle(toolPath, rulePath, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := registry.NewManager(bundle, toolPath, rulePath)
+	service := NewService(manager, zap.NewNop())
+
+	for _, item := range []struct {
+		label   string
+		kind    SourceKind
+		content []byte
+		total   int
+	}{
+		{"tools", SourceTools, toolRaw, len(manager.Tools())},
+		{"rules", SourceRules, ruleRaw, len(manager.Rules())},
+	} {
+		analysis, analyseErr := service.Analyse(AnalyseInput{Filename: item.label + ".json", Content: item.content, Kind: item.kind})
+		if analyseErr != nil {
+			t.Fatalf("%s: analyse: %v", item.label, analyseErr)
+		}
+		if len(analysis.Preview.Rejected) != 0 {
+			t.Fatalf("%s: importer is still stricter than the registry, rejected %d record(s): %+v",
+				item.label, len(analysis.Preview.Rejected), analysis.Preview.Rejected)
+		}
+		if len(analysis.Preview.Added) != 0 || len(analysis.Preview.Updated) != 0 {
+			t.Fatalf("%s: added=%d updated=%d, want 0 and 0", item.label, len(analysis.Preview.Added), len(analysis.Preview.Updated))
+		}
+		if item.total == 0 {
+			t.Fatalf("%s: registry fixture is empty", item.label)
+		}
+		if len(analysis.Preview.Unchanged) != item.total {
+			t.Fatalf("%s: unchanged=%d, want %d", item.label, len(analysis.Preview.Unchanged), item.total)
+		}
+	}
+}
+
+// currentRegistryBytes prefers the generated runtime registry and falls back to
+// the committed frozen registry so the test also runs on a fresh clone.
+func currentRegistryBytes(t *testing.T) ([]byte, []byte) {
+	t.Helper()
+	for _, dir := range []string{
+		filepath.Join("..", "..", "..", "configs", "runtime"),
+		filepath.Join("..", "..", "..", "configs", "registries"),
+	} {
+		toolRaw, toolErr := os.ReadFile(filepath.Join(dir, "all_tools_master_registry.json"))
+		ruleRaw, ruleErr := os.ReadFile(filepath.Join(dir, "all_rules_master_registry.json"))
+		if toolErr == nil && ruleErr == nil {
+			return toolRaw, ruleRaw
+		}
+	}
+	t.Fatal("neither configs/runtime nor configs/registries holds a readable registry pair")
+	return nil, nil
 }
 
 func importerTestService(t *testing.T, tools []registry.Tool, rules []registry.Rule) (*Service, *registry.Manager, string, string) {

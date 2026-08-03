@@ -9,6 +9,7 @@ import { useNotifications } from "../../context/NotificationContext";
 import { useAuthContext } from "../../context/AuthContext";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { notificationService } from "../../services/notification.service";
+import { apiClient } from "../../config/axios";
 
 function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
@@ -98,7 +99,15 @@ function Topbar() {
     queryFn: () => notificationService.list({ unreadOnly: true, limit: 100 }),
     refetchInterval: 30_000,
   });
+  const environmentQuery = useQuery({
+    queryKey: ["runtime-environment"],
+    queryFn: async () => (await apiClient.get("/health")).data?.data ?? {},
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
   const unreadCount = notificationQuery.data?.length || 0;
+  const environment = environmentQuery.data?.environment;
+  const mockERP = environmentQuery.data?.mcpBackend === "mock-erp";
 
   return (
     <header className="flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 dark:border-darkBackgroundVery dark:bg-darkBackground sm:px-6">
@@ -115,6 +124,18 @@ function Topbar() {
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-darkBackgroundVery dark:bg-darkBackgroundVery dark:text-gray-300">
                 v{appConfig.version}
               </span>
+              {environment ? (
+                <span
+                  data-testid="environment-badge"
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                    mockERP
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                      : "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
+                  }`}
+                >
+                  {environment}{mockERP ? " · Mock ERP" : ""}
+                </span>
+              ) : null}
             </div>
             <Breadcrumb />
           </div>

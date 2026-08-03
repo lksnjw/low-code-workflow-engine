@@ -39,3 +39,31 @@ export const STATUS_META = {
     color: "bg-gray-100 text-gray-700 dark:bg-gray-500/15 dark:text-gray-300",
   },
 };
+
+export const FAILURE_CATEGORY = {
+  POLICY_VIOLATION: "POLICY_VIOLATION",
+  TOOL_FAILURE: "TOOL_FAILURE",
+  VALIDATION_FAILURE: "VALIDATION_FAILURE",
+  INVALID_REQUEST: "INVALID_REQUEST",
+  AUTH_DENIED: "AUTH_DENIED",
+  NOT_FOUND: "NOT_FOUND",
+  TRANSIENT: "TRANSIENT",
+};
+
+// A governance block and a tool failure are both status FAILED. The failure
+// classification is what decides how the run is presented, so a policy block
+// never wears the tool-failure red.
+export const BLOCKED_META = {
+  label: "Blocked",
+  tone: "amber",
+  color: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+};
+
+export function isGovernanceBlock(failure) {
+  return failure?.failureCategory === FAILURE_CATEGORY.POLICY_VIOLATION;
+}
+
+export function statusMetaFor(status, failure) {
+  if (status === WORKFLOW_STATUS.FAILED && isGovernanceBlock(failure)) return BLOCKED_META;
+  return STATUS_META[status] ?? STATUS_META.PENDING;
+}

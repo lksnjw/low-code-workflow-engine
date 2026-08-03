@@ -86,7 +86,9 @@ func (h *Handler) Health(c *fiber.Ctx) error {
 			"durable": durable,
 			"status":  storageStatus,
 		},
-		"time": time.Now().UTC(),
+		"mcpMode":    h.Cfg.MCPMode,
+		"mcpBackend": h.Cfg.MCPBackend,
+		"time":       time.Now().UTC(),
 	}
 	if !storageHealthy {
 		return c.Status(statusCode).JSON(models.APIResponse{Success: false, Data: data, Message: "Storage persistence is degraded", Meta: nil})

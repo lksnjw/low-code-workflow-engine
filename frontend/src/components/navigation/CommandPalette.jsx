@@ -1,10 +1,14 @@
 import { Icon } from "@iconify/react";
-import { NAVIGATION_GROUPS } from "../../constants/navigation";
+import { NAVIGATION_GROUPS, filterNavigationGroups } from "../../constants/navigation";
 import { useRoute } from "../../context/RouteContext";
+import usePermissions from "../../hooks/usePermissions";
 
 function CommandPalette() {
   const { navigateTo } = useRoute();
-  const quickTargets = NAVIGATION_GROUPS.slice(0, 4);
+  const { hasAny, roleId } = usePermissions();
+  // Quick targets are navigation, so they obey exactly the same permission
+  // filter as the sidebar. Unfiltered shortcuts sent every role to Access denied.
+  const quickTargets = filterNavigationGroups(NAVIGATION_GROUPS, hasAny, roleId).slice(0, 4);
 
   return (
     <div className="hidden min-w-[360px] max-w-xl flex-1 items-center justify-center lg:flex">

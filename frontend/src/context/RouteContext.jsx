@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { generatePath, matchPath, useLocation, useNavigate } from "react-router-dom";
-import { DEFAULT_ROUTE, NAVIGATION_GROUPS, getNavigationGroup } from "../constants/navigation";
+import { DEFAULT_ROUTE, NAVIGATION_GROUPS, filterNavigationGroups, getNavigationGroup } from "../constants/navigation";
+import usePermissions from "../hooks/usePermissions";
 
 const RouteContext = createContext(null);
 
@@ -35,6 +36,20 @@ export function RouteProvider({ children }) {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(
     () => pathWorkflowID || localStorage.getItem("workflow.selectedWorkflowId") || ""
   );
+
+  const { hasAny, roleId } = usePermissions();
+
+  // The landing path "/" is the dashboard, which not every role may open. Send
+  // those roles to their first permitted destination instead of showing them
+  // Access denied the moment they sign in. Only the landing is redirected: a
+  // directly-typed forbidden URL must still be denied explicitly.
+  useEffect(() => {
+    if (location.pathname !== "/") return;
+    const dashboard = NAVIGATION_GROUPS.find((group) => group.id === DEFAULT_ROUTE.main);
+    if (!dashboard?.requiredAny?.length || hasAny(dashboard.requiredAny)) return;
+    const permitted = filterNavigationGroups(NAVIGATION_GROUPS, hasAny, roleId)[0]?.subMenu?.[0]?.path;
+    if (permitted && permitted !== "/") navigate(permitted, { replace: true });
+  }, [location.pathname, hasAny, roleId, navigate]);
 
   useEffect(() => {
     localStorage.setItem("workflow.activeMain", route.main);
