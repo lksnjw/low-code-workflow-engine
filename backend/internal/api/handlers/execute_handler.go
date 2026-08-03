@@ -85,6 +85,11 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	execution.CompletedAt = &completed
 	execution.DurationMS = completed.Sub(now).Milliseconds()
 	execution.Tokens = runResult.Tokens
+	// The runner accumulates every step's output in its state snapshot. Carry
+	// it onto the execution record so the detail endpoint can return it; this
+	// runs for a failed run too, so partial results survive.
+	attachStepOutputs(runResult.Timeline, runResult.State)
+	execution.StepOutputs, execution.FinalOutput = executionOutputs(runResult.Timeline, runResult.State)
 	failedStep, failedTool, failureReason := "", "", ""
 
 	if err != nil {
@@ -168,6 +173,58 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 	}
 	message := "Workflow " + workflow.Name + " completed successfully in " + strconv.Itoa(len(runResult.Timeline)) + " steps"
 	return c.JSON(models.OK(execution, message, nil))
+}
+
+// stepOutputValue normalises what the runner stored for a step. An analysis
+// step is saved wrapped as {"output": ...}; a tool step stores the tool result
+// map as-is.
+func stepOutputValue(raw interface{}) interface{} {
+	wrapper, ok := raw.(map[string]interface{})
+	if !ok {
+		return raw
+	}
+	if len(wrapper) == 1 {
+		if inner, exists := wrapper["output"]; exists {
+			return inner
+		}
+	}
+	return wrapper
+}
+
+// executionOutputs derives the per-step outputs and the workflow's final output
+// from the runner state. The final output is the output of the last step that
+// completed, so a run that failed part way still reports what it produced.
+// Credential-shaped fields are stripped before anything is stored.
+func executionOutputs(timeline []models.ExecutionStep, state map[string]interface{}) (map[string]interface{}, interface{}) {
+	outputs := map[string]interface{}{}
+	var final interface{}
+	for _, step := range timeline {
+		raw, ok := state[step.NodeID]
+		if !ok {
+			continue
+		}
+		value := withoutNestedSecretFields(stepOutputValue(raw))
+		outputs[step.NodeID] = value
+		if step.Status == models.StatusDone {
+			final = value
+		}
+	}
+	if len(outputs) == 0 {
+		return nil, nil
+	}
+	return outputs, final
+}
+
+// attachStepOutputs copies each step's output onto its timeline entry so the
+// timeline endpoint can show per-step results.
+func attachStepOutputs(timeline []models.ExecutionStep, state map[string]interface{}) {
+	for index := range timeline {
+		raw, ok := state[timeline[index].NodeID]
+		if !ok {
+			continue
+		}
+		timeline[index].Output = withoutNestedSecretFields(stepOutputValue(raw))
+	}
 }
 
 // classifyExecutionFailure turns a runner error into the additive failure

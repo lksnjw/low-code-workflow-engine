@@ -47,6 +47,12 @@ type Execution struct {
 	CostUSD      float64           `json:"costUsd"`
 	StartedBy    Principal         `json:"startedBy"`
 	Failure      *ExecutionFailure `json:"failure,omitempty"`
+	// StepOutputs holds what each step produced, keyed by step id. FinalOutput
+	// is the output of the last step that completed, so a failed run still
+	// reports the partial results it managed to produce. Both are additive and
+	// carry no gate meaning.
+	StepOutputs map[string]interface{} `json:"stepOutputs,omitempty"`
+	FinalOutput interface{}            `json:"finalOutput,omitempty"`
 }
 
 type ExecutionLog struct {
@@ -69,6 +75,7 @@ type ExecutionStep struct {
 	DurationMS  *int64            `json:"durationMs"`
 	Failure     *ExecutionFailure `json:"failure,omitempty"`
 	SideEffect  *bool             `json:"sideEffect,omitempty"`
+	Output      interface{}       `json:"output,omitempty"`
 }
 
 type HealingReport struct {
