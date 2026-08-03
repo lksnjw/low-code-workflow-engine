@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import ExecutionStatus from "../../components/executions/ExecutionStatus";
 import ExecutionTimeline from "../../components/executions/ExecutionTimeline";
+import GovernanceBlockPanel from "../../components/executions/GovernanceBlockPanel";
 import HealingReport from "../../components/executions/HealingReport";
 import LiveLogStream from "../../components/executions/LiveLogStream";
 import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
@@ -25,8 +26,9 @@ function ExecutionDetailPage() {
           <h1 className="page-heading mt-3 text-gray-950 dark:text-white">{execution.workflowName || execution.workflow}</h1>
           <p className="mt-2 font-mono text-xs text-gray-500">{execution.id}</p>
         </div>
-        <ExecutionStatus status={execution.status} />
+        <ExecutionStatus status={execution.status} failure={execution.failure} />
       </section>
+      {execution.failure ? <GovernanceBlockPanel failure={execution.failure} /> : null}
       <Card>
         <dl className="grid gap-4 md:grid-cols-4">
           <Metric label="Started" value={execution.started} />

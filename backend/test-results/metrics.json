@@ -23,7 +23,7 @@
         "self_approval": 0,
         "unknown_tool": 0
       },
-      "mean_latency_ms": 0.3045183333333332
+      "mean_latency_ms": 0.3442133333333333
     },
     "gate_on": {
       "tp": 54,
@@ -43,7 +43,7 @@
         "self_approval": 0,
         "unknown_tool": 1
       },
-      "mean_latency_ms": 0.3098641666666668
+      "mean_latency_ms": 0.24668000000000004
     }
   }
 }

@@ -11,12 +11,77 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
+// redactedCompanyDepartment hides department domains, which describe the
+// internal tool namespaces a department owns.
+type redactedCompanyDepartment struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// redactedCompanyProfile is what a non-administrator receives. Contact email,
+// ERP system details, notes, cost centres (budget amounts) and approval tiers
+// (spend thresholds) are absent from the type, so they cannot leak.
+type redactedCompanyProfile struct {
+	Name            string                      `json:"name"`
+	LegalName       string                      `json:"legalName"`
+	Industry        string                      `json:"industry"`
+	Timezone        string                      `json:"timezone"`
+	Currency        string                      `json:"currency"`
+	FiscalYearStart string                      `json:"fiscalYearStart"`
+	Departments     []redactedCompanyDepartment `json:"departments"`
+}
+
+// isCompanyAdministrator reports whether the caller may see unrestricted
+// company data. It is the single source of truth for company read scope.
+func isCompanyAdministrator(user *models.User) bool {
+	if user == nil {
+		return false
+	}
+	switch user.AssignedRoleID() {
+	case repository.RolePlatformAdminID, repository.RoleSystemAdminID:
+		return true
+	default:
+		return false
+	}
+}
+
+func redactCompanyProfile(profile company.Profile) redactedCompanyProfile {
+	departments := make([]redactedCompanyDepartment, 0, len(profile.Departments))
+	for _, department := range profile.Departments {
+		departments = append(departments, redactedCompanyDepartment{ID: department.ID, Name: department.Name})
+	}
+	return redactedCompanyProfile{
+		Name:            profile.Name,
+		LegalName:       profile.LegalName,
+		Industry:        profile.Industry,
+		Timezone:        profile.Timezone,
+		Currency:        profile.Currency,
+		FiscalYearStart: profile.FiscalYearStart,
+		Departments:     departments,
+	}
+}
+
+// requireCompanyReader restricts a company sub-resource to administrators.
+func (h *Handler) requireCompanyReader(c *fiber.Ctx) error {
+	user := h.currentUser(c)
+	if user == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Authenticated user no longer exists")
+	}
+	if !isCompanyAdministrator(user) {
+		return fiber.NewError(fiber.StatusForbidden, "Only Platform Admin and System Admin roles can read this company data")
+	}
+	return nil
+}
+
 func (h *Handler) GetCompany(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
 	profile, err := h.companyProfileLocked()
 	h.Store.Mu.RUnlock()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Stored company profile could not be decoded")
+	}
+	if !isCompanyAdministrator(h.currentUser(c)) {
+		return c.JSON(models.OK(redactCompanyProfile(profile), "Company profile loaded", nil))
 	}
 	return c.JSON(models.OK(profile, "Company profile loaded", nil))
 }
@@ -56,6 +121,12 @@ func (h *Handler) ListCompanyDepartments(c *fiber.Ctx) error {
 	h.Store.Mu.RUnlock()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Stored company profile could not be decoded")
+	}
+	// Domains are withheld from non-administrators here for the same reason
+	// they are withheld from GET /company.
+	if !isCompanyAdministrator(h.currentUser(c)) {
+		redacted := redactCompanyProfile(profile).Departments
+		return c.JSON(models.OK(redacted, "Company departments loaded", map[string]interface{}{"count": len(redacted)}))
 	}
 	departments := profile.Departments
 	return c.JSON(models.OK(departments, "Company departments loaded", map[string]interface{}{"count": len(departments)}))
@@ -170,6 +241,9 @@ func (h *Handler) DeleteCompanyDepartment(c *fiber.Ctx) error {
 }
 
 func (h *Handler) ListCompanyCostCentres(c *fiber.Ctx) error {
+	if err := h.requireCompanyReader(c); err != nil {
+		return err
+	}
 	h.Store.Mu.RLock()
 	profile, err := h.companyProfileLocked()
 	h.Store.Mu.RUnlock()
@@ -270,6 +344,9 @@ func (h *Handler) DeleteCompanyCostCentre(c *fiber.Ctx) error {
 }
 
 func (h *Handler) ListCompanyApprovalTiers(c *fiber.Ctx) error {
+	if err := h.requireCompanyReader(c); err != nil {
+		return err
+	}
 	h.Store.Mu.RLock()
 	profile, err := h.companyProfileLocked()
 	h.Store.Mu.RUnlock()
@@ -373,12 +450,20 @@ func (h *Handler) requireCompanyAdministrator(c *fiber.Ctx) (*models.User, error
 	if user == nil {
 		return nil, fiber.NewError(fiber.StatusUnauthorized, "Authenticated user no longer exists")
 	}
-	switch user.AssignedRoleID() {
-	case repository.RolePlatformAdminID, repository.RoleSystemAdminID:
-		return user, nil
-	default:
+	if !isCompanyAdministrator(user) {
 		return nil, fiber.NewError(fiber.StatusForbidden, "Only Platform Admin and System Admin roles can edit the company profile")
 	}
+	return user, nil
+}
+
+func (h *Handler) activeRegistryRules() []registry.Rule {
+	if h.RegistryManager != nil {
+		return h.RegistryManager.Rules()
+	}
+	if h.Dataset != nil && h.Dataset.Rules != nil {
+		return h.Dataset.Rules.GetAllRules()
+	}
+	return []registry.Rule{}
 }
 
 func (h *Handler) activeRegistryTools() []registry.Tool {

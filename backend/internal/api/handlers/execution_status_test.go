@@ -13,6 +13,7 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/healing"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
+	"github.com/sanjeewa/agentic-orchestrator/internal/tools"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
@@ -21,7 +22,7 @@ import (
 func TestHealingResolvesToTerminalStatus(t *testing.T) {
 	handler, store, app, spy := newGateTestHandler()
 	handler.Healer = &healing.Healer{MaxAttempts: 0}
-	spy.failure = errors.New("connector unavailable")
+	spy.failure = &tools.MCPHTTPError{StatusCode: http.StatusServiceUnavailable}
 	store.Workflows["wf-healing"] = &models.Workflow{
 		ID: "wf-healing", Name: "healing workflow", YAML: validWorkflowYAML("25"), Status: models.StatusPending,
 	}

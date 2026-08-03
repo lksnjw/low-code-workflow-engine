@@ -133,7 +133,7 @@ func Register(app *fiber.App, h *handlers.Handler) {
 	protected.Get("/executions/:id/timeline", executionReadAny, h.ExecutionTimeline)
 	protected.Get("/executions/:id/healing-report", executionReadAny, h.ExecutionHealingReport)
 	protected.Post("/executions/:id/cancel", workflowRun, h.CancelExecution)
-	protected.Post("/executions/:id/retry", workflowRun, h.RetryExecution)
+	protected.Post("/executions/:id/retry", workflowRunAny, h.RetryExecution)
 
 	protected.Get("/analytics/summary", workflowRead, h.AnalyticsSummary)
 	protected.Get("/analytics/performance", workflowRead, h.AnalyticsPerformance)

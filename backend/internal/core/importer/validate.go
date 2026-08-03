@@ -4,14 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 )
-
-var toolNamePattern = regexp.MustCompile(`^[a-z0-9]+(?:_[a-z0-9]+)*(?:\.[a-z0-9]+(?:_[a-z0-9]+)*){2,}$`)
 
 type ruleContract struct {
 	Operators          map[string]bool
@@ -67,43 +65,20 @@ func validateTool(tool registry.Tool, line, index int) []RecordError {
 	add := func(field, reason string) {
 		errorsFound = append(errorsFound, RecordError{RecordID: tool.ToolID, Line: line, Index: index, Field: field, Reason: reason})
 	}
-	if !toolNamePattern.MatchString(strings.TrimSpace(tool.Name)) {
-		add("name", "must use the namespace domain.entity.action with at least three lowercase segments")
-	}
-	properties, ok := tool.InputSchema["properties"].(map[string]interface{})
-	if !ok {
-		add("input_schema.properties", "must be an object")
-		return errorsFound
-	}
-	for name, raw := range properties {
-		schema, ok := raw.(map[string]interface{})
-		if !ok {
-			add("input_schema.properties."+name, "must be a schema object with a concrete type")
-			continue
-		}
-		parameterType, ok := schema["type"].(string)
-		if !ok || strings.TrimSpace(parameterType) == "" {
-			add("input_schema.properties."+name+".type", "declared parameters must have a concrete type")
-		}
-		if enum, exists := schema["enum"]; exists {
-			values, ok := enum.([]interface{})
-			if !ok {
-				if stringsValue, stringsOK := enum.([]string); stringsOK {
-					if len(stringsValue) == 0 {
-						add("input_schema.properties."+name+".enum", "declared enums must contain at least one value")
-					}
-				} else {
-					add("input_schema.properties."+name+".enum", "must be an array")
-				}
-			} else if len(values) == 0 {
-				add("input_schema.properties."+name+".enum", "declared enums must contain at least one value")
-			}
-		}
-	}
-	for _, name := range append(append([]string{}, tool.RequiredParameters...), tool.OptionalParameters...) {
-		if _, exists := properties[name]; !exists {
-			add("input_schema.properties."+name, "declared parameter is not defined in input_schema.properties")
-		}
+	// The registry loader is the ceiling on strictness. decodeToolStrict
+	// enforces only that name is non-empty after trimming, so the importer
+	// must not demand a dotted namespace: the shipped registry itself holds
+	// two-segment names (demo.echo) and undotted names (classify_invoice).
+	// Whitespace is the one addition, because a name containing spaces cannot
+	// be referenced from workflow YAML or from a rule's applies_to_tools list.
+	// Name uniqueness against active tools is enforced in validateAndDiff,
+	// mirroring Manager.mutateTool.
+	name := strings.TrimSpace(tool.Name)
+	switch {
+	case name == "":
+		add("name", "is required")
+	case strings.ContainsFunc(name, unicode.IsSpace):
+		add("name", "must not contain whitespace")
 	}
 	return errorsFound
 }
@@ -121,12 +96,10 @@ func validateRule(rule registry.Rule, tools []registry.Tool, line, index int) []
 	if !contract.Operators[rule.Condition.Operator] {
 		add("condition.operator", fmt.Sprintf("%q is not implemented for rule type %s", rule.Condition.Operator, rule.RuleType))
 	}
-	if reason := validateConditionValue(contract.ValueKind, rule.Condition.Value); reason != "" {
-		add("condition.value", reason)
-	}
-	if !contract.EnforcementActions[rule.EnforcementAction] {
-		add("enforcement_action", fmt.Sprintf("%q is not honoured for rule type %s", rule.EnforcementAction, rule.RuleType))
-	}
+	// condition.value kind and enforcement_action are deliberately no longer
+	// rejected here: the registry loader does not enforce either, and neither
+	// is on the agreed list of importer-only checks. implementedRuleContracts
+	// still carries the transcribed data so restoring them is a one-line change.
 	if !ruleMatchesAnyTool(rule, tools) {
 		add("applies_to_tools", "matches zero tools in the prospective registry")
 	}

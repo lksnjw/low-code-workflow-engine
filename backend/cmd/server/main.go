@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -36,6 +37,25 @@ func main() {
 	defer zapLogger.Sync()
 	if err := cfg.Validate(); err != nil {
 		zapLogger.Fatal("invalid server configuration", zap.Error(err))
+	}
+	if strings.TrimSpace(cfg.MCPBaseURL) != "" {
+		inspectContext, cancelInspect := context.WithTimeout(context.Background(), 750*time.Millisecond)
+		mcpBackend, inspectErr := config.InspectMCPBackend(inspectContext, cfg.MCPBaseURL)
+		cancelInspect()
+		if inspectErr != nil {
+			zapLogger.Info("MCP backend identity was not available at startup", zap.Error(inspectErr))
+		} else {
+			cfg.MCPBackend = mcpBackend.Kind
+			if mcpBackend.Kind == config.MCPBackendMockERP {
+				if strings.EqualFold(strings.TrimSpace(cfg.Environment), "production") {
+					zapLogger.Fatal("production refuses the standalone mock ERP", zap.String("mcp_base_url", cfg.MCPBaseURL))
+				}
+				zapLogger.Warn("DEMO MODE: executions are connected to the standalone mock ERP",
+					zap.String("mcp_base_url", cfg.MCPBaseURL),
+					zap.Int("tool_count", mcpBackend.ToolCount),
+				)
+			}
+		}
 	}
 	runtimeRegistry, err := config.EnsureRuntimeRegistries(cfg)
 	if err != nil {

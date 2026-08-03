@@ -39,6 +39,7 @@ type Config struct {
 	MCPBaseURL string
 	MCPTimeout time.Duration
 	MCPMode    string
+	MCPBackend string
 
 	DatasetRoot                        string
 	ToolRegistryPath                   string

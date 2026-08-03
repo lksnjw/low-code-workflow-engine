@@ -1,6 +1,6 @@
 # Governed End-to-End Demo
 
-This runbook proves the complete local path: real registration and RBAC, a Gemini 2.5 Flash provider, registry-backed workflow construction, assignment to a Client, deterministic mock MCP execution, and a policy block before an unsafe tool dispatch.
+This runbook proves the complete local path: environment-provisioned bootstrap administrator and RBAC, a Gemini 2.5 Flash provider, registry-backed workflow construction, assignment to a Client, deterministic execution against the standalone mock ERP, and a policy block before an unsafe tool dispatch.
 
 The demo intentionally does not require Ollama. Gemini generates workflows; it is not the embedding service. The optional research setup at the end runs the Python semantic service with a local Sentence Transformers model.
 
@@ -8,9 +8,11 @@ The demo intentionally does not require Ollama. Gemini generates workflows; it i
 
 | Setting | Default | Demo value | Meaning |
 |---|---|---|---|
-| `MCP_MODE` | `remote` | `mock` | Mock execution is opt-in and accepts only `demo.echo`. Every other action is refused. |
+| `MCP_MODE` | `remote` | `remote` | The runner uses the normal remote MCP transport for both the standalone mock ERP and a real bridge. |
+| `MCP_BASE_URL` | unset | `http://127.0.0.1:9000` | Selects the standalone mock ERP for this demo. Changing only this URL switches to Nimendra's real bridge. |
 | `SEMANTIC_FALLBACK` | `off` | `lexical` | Lexical retrieval is opt-in when the external semantic service is unavailable. |
 | `EXPERIMENT_BASELINE` | unset | unset | The deterministic validation gate remains enabled. Do not use Baseline B for this demo. |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | unset | set | Required whenever the user store is empty. The server exits with `empty user store requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD` if either is missing. The password must be at least 8 characters. |
 
 Neither demo switch weakens schema validation, RBAC, registry validation, policy validation, validation-token checks, or dispatch-time revalidation.
 
@@ -23,17 +25,45 @@ Neither demo switch weakens schema validation, RBAC, registry validation, policy
 
 Never paste a real key into source files, JSON registries, workflow YAML, screenshots, or commits. Enter it only in the write-only provider field.
 
-## 1. Start the demo backend
+## 1. Start the standalone mock ERP
 
 Open PowerShell in the repository root, then run:
 
 ```powershell
 cd backend
 
-$demoRegistry = Join-Path $env:TEMP "low-code-workflow-engine-demo-registry"
-New-Item -ItemType Directory -Force -Path $demoRegistry | Out-Null
-Copy-Item ".\configs\registries\all_tools_master_registry.json" (Join-Path $demoRegistry "tools.json") -Force
-Copy-Item ".\configs\registries\all_rules_master_registry.json" (Join-Path $demoRegistry "rules.json") -Force
+$env:APP_ENV="development"
+$env:MOCK_ERP_PORT="9000"
+$env:MOCK_ERP_MIN_LATENCY_MS="80"
+$env:MOCK_ERP_MAX_LATENCY_MS="250"
+$env:MOCK_ERP_FAIL_TOOL=""
+$env:MOCK_ERP_FAIL_MODE=""
+
+go run -buildvcs=false ./cmd/mock-erp
+```
+
+The startup line lists every active runtime-registry tool. Verify the service
+from another terminal:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:9000/healthz
+```
+
+`POST http://127.0.0.1:9000/reset` restores the deterministic fixture state
+and clears the service's in-memory request log. For an injected failure, restart
+the service after setting one registry tool name and one supported mode:
+
+```powershell
+$env:MOCK_ERP_FAIL_TOOL="finance.clear_invoice"
+$env:MOCK_ERP_FAIL_MODE="transient" # transient | auth | notfound | invalid
+```
+
+## 2. Start the demo backend
+
+Open PowerShell in the repository root, then run:
+
+```powershell
+cd backend
 
 $env:APP_ENV="development"
 $env:APP_HOST="127.0.0.1"
@@ -41,10 +71,10 @@ $env:APP_PORT="8080"
 $env:FRONTEND_URL="http://127.0.0.1:5173"
 $env:JWT_SECRET="replace-this-local-demo-secret"
 $env:ALLOW_PUBLIC_REGISTRATION="true"
-$env:TOOL_REGISTRY_PATH=(Join-Path $demoRegistry "tools.json")
-$env:RULE_REGISTRY_PATH=(Join-Path $demoRegistry "rules.json")
-$env:MCP_MODE="mock"
-$env:MCP_BASE_URL=""
+$env:BOOTSTRAP_ADMIN_EMAIL="admin@demo.local"
+$env:BOOTSTRAP_ADMIN_PASSWORD="replace-this-demo-password"
+$env:MCP_MODE="remote"
+$env:MCP_BASE_URL="http://127.0.0.1:9000"
 $env:SEMANTIC_SEARCH_MODE="external_embedding"
 $env:SEMANTIC_SEARCH_URL="http://127.0.0.1:8090/search"
 $env:SEMANTIC_FALLBACK="lexical"
@@ -61,9 +91,17 @@ Expected health check from a second terminal:
 Invoke-RestMethod http://127.0.0.1:8080/healthz
 ```
 
-The response should report `status` as `healthy`. The copied registries keep UI edits out of the Git working tree. `SEMANTIC_FALLBACK=lexical` also makes the demo usable while port `8090` is not running.
+The response should report `status` as `healthy`.
 
-## 2. Start the frontend
+Do not set `TOOL_REGISTRY_PATH` or `RULE_REGISTRY_PATH` for the demo. The server
+requires both to resolve inside `backend/configs/runtime` and refuses to start
+otherwise. On first run it seeds that directory from the frozen
+`backend/configs/registries` copies, so registry edits made in the UI land in
+`configs/runtime` and never touch the frozen evaluation registries.
+
+`SEMANTIC_FALLBACK=lexical` also makes the demo usable while port `8090` is not running.
+
+## 3. Start the frontend
 
 Open another PowerShell terminal in the repository root:
 
@@ -75,7 +113,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api` to the backend on port `8080`.
 
-## 3. Sign in as the bootstrap administrator
+## 4. Sign in as the bootstrap administrator
 
 Before starting an empty installation, set `BOOTSTRAP_ADMIN_EMAIL` and
 `BOOTSTRAP_ADMIN_PASSWORD`. The backend creates exactly one Platform Admin and
@@ -89,7 +127,7 @@ refuses to start if either value is missing.
 If the backend uses the memory store, restarting it creates a new empty
 installation, so the environment-provided bootstrap runs again.
 
-## 4. Configure Gemini 2.5 Flash
+## 5. Configure Gemini 2.5 Flash
 
 1. Open **Models** > **Provider Configs**.
 2. Click **Add provider**.
@@ -104,7 +142,7 @@ installation, so the environment-provided bootstrap runs again.
 
 The API returns only a short credential preview. It never returns the stored key.
 
-## 5. Verify the demo tool and add the policy rule
+## 6. Verify the demo tool and add the policy rule
 
 1. Open **Registry** > **Tools & Rules**.
 2. On the **Tools** tab, find **Demo Echo** (`TOOL-DEMO-001`) and click **View**.
@@ -140,7 +178,7 @@ The API returns only a short credential preview. It never returns the stored key
 
 The registry hash changes when the rule is saved. Previously issued validation tokens are therefore invalidated automatically.
 
-## 6. Create Builder and Client accounts
+## 7. Create Builder and Client accounts
 
 1. Open **Users** > **Directory**.
 2. In **Create User**, create `Demo Builder` with the **Workflow Builder** role and a password of at least eight characters.
@@ -148,7 +186,7 @@ The registry hash changes when the rule is saved. Previously issued validation t
 
 The Client role can read and run only workflows that it owns or that a Builder assigns to it.
 
-## 7. Build and assign the workflow
+## 8. Build and assign the workflow
 
 1. Sign out of the administrator account and sign in as `Demo Builder`.
 2. Open **Workflows** > **Flow Builder**.
@@ -166,7 +204,7 @@ parameters:
 
 The threshold cannot be decided while the YAML contains `{{input.amount}}`, so the validator records a deferred check in the signed validation token. The runner evaluates that same rule after resolving the Client's runtime input and before calling MCP.
 
-## 8. Run the safe and unsafe cases as Client
+## 9. Run the safe and unsafe cases as Client
 
 Sign out and sign in as `Demo Client`, then open **My Workflows** and select the assigned workflow.
 
@@ -203,7 +241,19 @@ For the policy-unsafe case:
 
 This is a dispatch-time policy block. The unsafe MCP call is not made.
 
-## 9. Automated proof
+## 10. Start all three processes with one command
+
+After configuring `backend/.env`, run:
+
+```powershell
+.\scripts\start-mock-demo.ps1
+```
+
+The script starts the mock ERP first, waits for its health endpoint, then
+starts the backend and frontend. Process output is written under
+`.demo-logs/`; the script prints the three process IDs and URLs.
+
+## 11. Automated proof
 
 The integration smoke test performs the same lifecycle through the real Fiber routes using a temporary registry and memory store: administrator registration, provider creation, Builder and Client creation, policy mutation, workflow creation, assignment, Client login, safe mock execution, and unsafe dispatch blocking.
 
@@ -289,4 +339,6 @@ $env:MCP_BASE_URL="https://your-mcp-service.example"
 $env:SEMANTIC_FALLBACK="off"
 ```
 
-`MCP_MODE=mock` is not a general simulator. It always refuses actions other than `demo.echo`.
+The standalone mock ERP is a downstream demo integration, not a validation
+engine. In production the server refuses a detected `mock-erp` backend, and
+the mock ERP binary itself refuses to start with `APP_ENV=production`.
