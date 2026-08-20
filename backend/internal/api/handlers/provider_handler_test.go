@@ -47,7 +47,7 @@ func TestProviderSecretsAreWriteOnlyAndActivationAffectsNextSynthesis(t *testing
 	secretA := "aaaa-secret-one"
 	secretB := "bbbb-secret-two"
 	createA := registryTestRequest(t, app, http.MethodPost, "/providers", "admin", map[string]interface{}{
-		"name": "Provider A", "type": "openai_compatible", "baseUrl": providerA.URL, "model": "model-a", "apiKey": secretA,
+		"name": "Provider A", "type": "openai_compatible", "baseUrl": providerA.URL, "model": "model-a", "temperature": 0.25, "apiKey": secretA,
 	})
 	if createA.StatusCode != fiber.StatusCreated {
 		t.Fatalf("create provider A returned %d: %s", createA.StatusCode, responseBody(t, createA))
@@ -80,6 +80,9 @@ func TestProviderSecretsAreWriteOnlyAndActivationAffectsNextSynthesis(t *testing
 	if err != nil || !strings.Contains(first.YAML, "provider_a") {
 		t.Fatalf("first active provider was not used: result=%+v err=%v", first, err)
 	}
+	if first.Usage["temperature"] != 0.25 {
+		t.Fatalf("first provider temperature=%v, want 0.25", first.Usage["temperature"])
+	}
 
 	var providerBID string
 	store.Mu.RLock()
@@ -101,6 +104,9 @@ func TestProviderSecretsAreWriteOnlyAndActivationAffectsNextSynthesis(t *testing
 	second, err := synth.Synthesize(context.Background(), "generate", "test", "", nil)
 	if err != nil || !strings.Contains(second.YAML, "provider_b") {
 		t.Fatalf("newly active provider was not used by next call: result=%+v err=%v", second, err)
+	}
+	if second.Usage["temperature"] != float64(0) {
+		t.Fatalf("second provider default temperature=%v, want 0", second.Usage["temperature"])
 	}
 
 	testResponse := registryTestRequest(t, app, http.MethodPost, "/providers/"+providerBID+"/test", "admin", nil)

@@ -241,6 +241,11 @@ func (v *RegistryValidator) validateRole(tool registry.Tool, userRole string, st
 
 func (v *RegistryValidator) evaluateRules(blueprint models.WorkflowBlueprint, stepsByAction map[string][]int, usedTools []registry.Tool, userRole string, result *CandidateValidationResult) {
 	for _, rule := range v.Rules.GetEnabledRules() {
+		if ClassifyRuleFamily(rule.RuleType) == RuleFamilyNoEvaluator {
+			result.PolicyOK = false
+			result.addRuleError(rule.RuleID, fmt.Sprintf("NO_EVALUATOR: enabled rule %s in family %s has no deterministic evaluator", rule.RuleID, rule.RuleType))
+			continue
+		}
 		if !ruleAppliesToCandidate(rule, usedTools, userRole, result.EstimatedRisk) {
 			continue
 		}
@@ -259,10 +264,12 @@ func (v *RegistryValidator) evaluateRules(blueprint models.WorkflowBlueprint, st
 			v.evalRiskRule(rule, blueprint, usedTools, result)
 		case "audit":
 			v.evalAuditRule(rule, blueprint, usedTools, result)
-		case "data_confidentiality", "execution_safety", "capability_gap", "cache_safety":
-			// These are enforced by dedicated checks or documented for prompt grounding.
+		case "data_confidentiality":
+			// Sensitive literal and resolved parameters are checked by the shared
+			// credential-key scans and deferred sensitive-template checks.
 		default:
-			result.Warnings = append(result.Warnings, "Unsupported governance rule type "+rule.RuleType+" for rule "+rule.RuleID)
+			result.PolicyOK = false
+			result.addRuleError(rule.RuleID, fmt.Sprintf("NO_EVALUATOR: enabled rule %s in family %s has no deterministic evaluator", rule.RuleID, rule.RuleType))
 		}
 	}
 }
@@ -400,12 +407,31 @@ type ResolvedPolicyViolation struct {
 }
 
 // EvaluateResolvedStep runs the shared deterministic rule evaluators against
-// values after state resolution and records the dispatch gate decision.
-func (v *RegistryValidator) EvaluateResolvedStep(action string, blueprint models.WorkflowBlueprint, stepIndex int, params map[string]interface{}, token *models.ValidationToken) *ResolvedPolicyViolation {
+// values after state resolution and records the dispatch gate decision. A
+// usable capability is returned only when every check passes.
+func (v *RegistryValidator) EvaluateResolvedStep(action, rawWorkflowYAML string, stepIndex int, params map[string]interface{}, token *models.ValidationToken) (DispatchCapability, *ResolvedPolicyViolation) {
 	checkedRuleIDs := []string{}
 	var violation *ResolvedPolicyViolation
+	capability := DispatchCapability{}
+	workflowContentHash := WorkflowContentHash(rawWorkflowYAML)
+	blueprint, blueprintErr := ParseWorkflowYAMLStrict(rawWorkflowYAML)
 
-	if key, value, found := firstSensitiveEntry(params, ""); found {
+	switch {
+	case blueprintErr != nil:
+		violation = &ResolvedPolicyViolation{StepIndex: stepIndex, RuleID: "GLOBAL-DISPATCH-CAPABILITY", Reason: "validated workflow cannot be decoded at dispatch"}
+	case token == nil:
+		violation = &ResolvedPolicyViolation{StepIndex: stepIndex, RuleID: "GLOBAL-DISPATCH-CAPABILITY", Reason: "validation token is required at dispatch"}
+	case !v.VerifyToken(token):
+		violation = &ResolvedPolicyViolation{StepIndex: stepIndex, RuleID: "GLOBAL-DISPATCH-CAPABILITY", Reason: "validation token proof is invalid at dispatch"}
+	case token.WorkflowContentHash != workflowContentHash:
+		violation = &ResolvedPolicyViolation{StepIndex: stepIndex, RuleID: "GLOBAL-DISPATCH-CAPABILITY", Reason: "workflow content hash changed before dispatch"}
+	case token.RegistryHash != v.RegistryHash():
+		violation = &ResolvedPolicyViolation{StepIndex: stepIndex, RuleID: "GLOBAL-DISPATCH-CAPABILITY", Reason: "registry hash changed before dispatch"}
+	case stepIndex < 0 || stepIndex >= len(blueprint.Steps):
+		violation = &ResolvedPolicyViolation{StepIndex: stepIndex, RuleID: "GLOBAL-DISPATCH-CAPABILITY", Reason: "step index is outside the validated workflow"}
+	}
+
+	if key, value, found := firstSensitiveEntry(params, ""); violation == nil && found {
 		violation = &ResolvedPolicyViolation{
 			StepIndex: stepIndex,
 			ParamKey:  key,
@@ -430,6 +456,16 @@ func (v *RegistryValidator) EvaluateResolvedStep(action string, blueprint models
 						RuleID:    ruleID,
 						Value:     params[deferred.ParamKey],
 						Reason:    "deferred rule has no enabled evaluator",
+					}
+					break
+				}
+				if ClassifyRuleFamily(rule.RuleType) == RuleFamilyNoEvaluator {
+					violation = &ResolvedPolicyViolation{
+						StepIndex: stepIndex,
+						ParamKey:  deferred.ParamKey,
+						RuleID:    ruleID,
+						Value:     params[deferred.ParamKey],
+						Reason:    fmt.Sprintf("deferred rule %s in family %s has no evaluator", rule.RuleID, rule.RuleType),
 					}
 					break
 				}
@@ -470,8 +506,21 @@ func (v *RegistryValidator) EvaluateResolvedStep(action string, blueprint models
 		ruleResults["param_key"] = violation.ParamKey
 		ruleResults["reason"] = violation.Reason
 	}
+	if violation == nil {
+		var mintErr error
+		capability, mintErr = v.mintDispatchCapability(token, blueprint, stepIndex, params)
+		if mintErr != nil {
+			violation = &ResolvedPolicyViolation{
+				StepIndex: stepIndex,
+				RuleID:    "GLOBAL-DISPATCH-CAPABILITY",
+				Reason:    mintErr.Error(),
+			}
+			ruleResults["failed_rule"] = violation.RuleID
+			ruleResults["reason"] = violation.Reason
+		}
+	}
 	v.auditDecision(action, "runtime", violation == nil, contentHash, registryHash, ruleResults)
-	return violation
+	return capability, violation
 }
 
 func evaluateResolvedRule(rule registry.Rule, blueprint models.WorkflowBlueprint, step models.WorkflowStepBlueprint, paramKey string, params map[string]interface{}) (bool, bool, string) {
@@ -1004,39 +1053,6 @@ func WorkflowContentHash(raw string) string {
 func (v *RegistryValidator) RegistryHash() string {
 	sum := sha256.Sum256([]byte(v.Tools.Version() + "\x00" + v.Rules.Version()))
 	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-// AuditBaselineBypass records a gate decision that Baseline B observed but
-// deliberately did not enforce. It does not evaluate or alter any rule.
-func (v *RegistryValidator) AuditBaselineBypass(action, actorRole, contentHash, decision, reason string, evidence map[string]interface{}) {
-	timestamp := time.Now().UTC()
-	actorRole = strings.TrimSpace(actorRole)
-	if actorRole == "" {
-		actorRole = "anonymous"
-	}
-	if evidence == nil {
-		evidence = map[string]interface{}{}
-	}
-	v.Store.Mu.Lock()
-	defer v.Store.Mu.Unlock()
-	v.Store.Audit(
-		models.Principal{ID: actorRole, Name: actorRole},
-		"validation.gate.baseline_b."+action,
-		models.ResourceRef{Type: "workflow_validation", ID: contentHash},
-		nil,
-		map[string]interface{}{
-			"baseline":              "B",
-			"decision":              decision,
-			"reason":                reason,
-			"would_have_blocked":    true,
-			"evidence":              evidence,
-			"registry_hash":         v.RegistryHash(),
-			"workflow_content_hash": contentHash,
-			"timestamp":             timestamp,
-		},
-		"",
-		"experiment-baseline-b",
-	)
 }
 
 func (v *RegistryValidator) auditDecision(action, actorRole string, passed bool, contentHash, registryHash string, ruleResults map[string]interface{}) {

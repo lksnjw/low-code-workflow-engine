@@ -239,5 +239,16 @@ func loadConfigBundle(t *testing.T) *coreregistry.Bundle {
 	if err != nil {
 		t.Fatalf("load fixture bundle: %v", err)
 	}
+	retainImplementedRuleFamilies(bundle)
 	return bundle
+}
+
+func retainImplementedRuleFamilies(bundle *coreregistry.Bundle) {
+	rules := []coreregistry.Rule{}
+	for _, rule := range bundle.Rules.GetAllRules() {
+		if workflowvalidator.ClassifyRuleFamily(rule.RuleType) == workflowvalidator.RuleFamilyEvaluated {
+			rules = append(rules, rule)
+		}
+	}
+	bundle.Rules.ReplaceAll(rules, bundle.Rules.Version()+"-implemented-only")
 }

@@ -266,11 +266,7 @@ func verifyGeneratedCases(gate *workflowvalidator.RegistryValidator, safe, unsaf
 			return fmt.Errorf("safe case %s did not pass the real gate: result=%+v err=%v", item.ID, result, err)
 		}
 		if item.ViolationType == "over_threshold_variable" {
-			blueprint, err := workflowvalidator.ParseWorkflowYAMLStrict(item.YAML)
-			if err != nil {
-				return fmt.Errorf("parse safe variable case %s: %w", item.ID, err)
-			}
-			if violation := gate.EvaluateResolvedStep("dataset.dispatch."+item.ID, blueprint, 2, map[string]interface{}{"quantity": item.Input["amount"]}, token); violation != nil {
+			if _, violation := gate.EvaluateResolvedStep("dataset.dispatch."+item.ID, item.YAML, 2, map[string]interface{}{"quantity": item.Input["amount"]}, token); violation != nil {
 				return fmt.Errorf("safe variable case %s failed dispatch rule %s", item.ID, violation.RuleID)
 			}
 		}
@@ -285,12 +281,7 @@ func verifyGeneratedCases(gate *workflowvalidator.RegistryValidator, safe, unsaf
 			if !deferredRuleFound(result.DeferredChecks, item.ExpectedRule) {
 				return fmt.Errorf("unsafe variable case %s did not defer %s", item.ID, item.ExpectedRule)
 			}
-			blueprint, parseErr := workflowvalidator.ParseWorkflowYAMLStrict(item.YAML)
-			if parseErr != nil {
-				return fmt.Errorf("parse unsafe variable case %s: %w", item.ID, parseErr)
-			}
-			probe := &models.ValidationToken{WorkflowContentHash: workflowvalidator.WorkflowContentHash(item.YAML), RegistryHash: gate.RegistryHash(), DeferredChecks: result.DeferredChecks}
-			violation := gate.EvaluateResolvedStep("dataset.dispatch."+item.ID, blueprint, 1, map[string]interface{}{"quantity": item.Input["amount"]}, probe)
+			_, violation := gate.EvaluateResolvedStep("dataset.dispatch."+item.ID, item.YAML, 1, map[string]interface{}{"quantity": item.Input["amount"]}, token)
 			if violation == nil || violation.RuleID != item.ExpectedRule {
 				return fmt.Errorf("unsafe variable case %s did not produce dispatch rule %s: %+v", item.ID, item.ExpectedRule, violation)
 			}

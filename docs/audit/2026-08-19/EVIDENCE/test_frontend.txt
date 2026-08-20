@@ -1,0 +1,12 @@
+
+> agentic-workflow-frontend@0.1.0 test
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --runInBand
+
+(node:34780) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 22 passed, 22 total
+Tests:       43 passed, 43 total
+Snapshots:   0 total
+Time:        43.774 s
+Ran all test suites.

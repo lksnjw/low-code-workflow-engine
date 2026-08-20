@@ -13,14 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type Executor struct {
-	Registry         *tools.Registry
-	Validator        *workflowvalidator.RegistryValidator
-	AnalysisProvider analysisprovider.Provider
-	Log              *zap.Logger
-	baselineB        bool
-}
-
 // ErrDispatchPolicyViolation is returned before a tool call when a resolved
 // value violates a deferred or sensitive-data policy. It never retains the
 // unredacted offending value.
@@ -49,12 +41,6 @@ func NewExecutor(registry *tools.Registry, validator *workflowvalidator.Registry
 	return &Executor{Registry: registry, Validator: validator, Log: log}
 }
 
-// SetBaselineB enables the gate-off comparison path. Callers must first pass
-// config validation, which restricts this mode to APP_ENV=experiment.
-func (e *Executor) SetBaselineB(enabled bool) {
-	e.baselineB = enabled
-}
-
 func (e *Executor) SetAnalysisProvider(provider analysisprovider.Provider) {
 	e.AnalysisProvider = provider
 }
@@ -62,12 +48,8 @@ func (e *Executor) SetAnalysisProvider(provider analysisprovider.Provider) {
 func (e *Executor) Run(ctx context.Context, executionID string, workflow models.Workflow, input map[string]interface{}, token *models.ValidationToken) (Result, error) {
 	contentHash := workflowvalidator.WorkflowContentHash(workflow.YAML)
 	if decision, reason, evidence := e.validationTokenBlock(contentHash, token); reason != "" {
-		if !e.baselineB {
-			return Result{}, fmt.Errorf("%s", reason)
-		}
-		e.Validator.AuditBaselineBypass("entry."+executionID, "runtime", contentHash, decision, reason, evidence)
-		if e.Log != nil {
-			e.Log.Warn("Baseline B bypassed validation-token gate", zap.String("baseline", "B"), zap.String("decision", decision), zap.String("execution_id", executionID))
+		if blockErr := e.handleValidationTokenBlock(executionID, contentHash, decision, reason, evidence); blockErr != nil {
+			return Result{}, blockErr
 		}
 	}
 	blueprint, err := workflowvalidator.ParseWorkflowYAMLStrict(workflow.YAML)
@@ -133,27 +115,18 @@ func (e *Executor) Run(ctx context.Context, executionID string, workflow models.
 		}
 
 		params := manager.Resolve(step.Parameters)
-		if violation := e.Validator.EvaluateResolvedStep("dispatch."+executionID, blueprint, index, params, token); violation != nil && e.baselineB {
-			e.Validator.AuditBaselineBypass("dispatch."+executionID, "runtime", contentHash, "dispatch_revalidation", violation.Reason, map[string]interface{}{
-				"step_index": violation.StepIndex,
-				"param_key":  violation.ParamKey,
-				"rule_id":    violation.RuleID,
-			})
-			if e.Log != nil {
-				e.Log.Warn("Baseline B bypassed dispatch gate", zap.String("baseline", "B"), zap.String("rule_id", violation.RuleID), zap.Int("step_index", violation.StepIndex), zap.String("execution_id", executionID))
+		params["_action"] = step.Action
+		capability, violation := e.Validator.EvaluateResolvedStep("dispatch."+executionID, workflow.YAML, index, params, token)
+		if violation != nil {
+			policyErr := e.handleDispatchViolation(executionID, contentHash, violation)
+			if policyErr == nil {
+				goto dispatch
 			}
-		} else if violation != nil {
 			completed := time.Now().UTC()
 			duration := completed.Sub(stepStart).Milliseconds()
 			timelineStep.CompletedAt = &completed
 			timelineStep.DurationMS = &duration
 			timelineStep.Status = models.StatusFailed
-			policyErr := &ErrDispatchPolicyViolation{
-				StepIndex:     violation.StepIndex,
-				ParamKey:      violation.ParamKey,
-				RuleID:        violation.RuleID,
-				RedactedValue: redactValue(violation.Value),
-			}
 			result.Timeline = append(result.Timeline, timelineStep)
 			result.Logs = append(result.Logs, models.ExecutionLog{
 				ID: executionID + fmt.Sprintf("_log_%03d", index+1), ExecutionID: executionID, Timestamp: completed,
@@ -161,14 +134,13 @@ func (e *Executor) Run(ctx context.Context, executionID string, workflow models.
 			})
 			return result, policyErr
 		}
-		params["_action"] = step.Action
-
+	dispatch:
 		tool, err := e.Registry.Get(step.Action)
 		if err != nil {
 			return result, err
 		}
 
-		toolResult, err := tool.Execute(ctx, params)
+		toolResult, err := tool.Execute(ctx, capability, params)
 		completed := time.Now().UTC()
 		duration := completed.Sub(stepStart).Milliseconds()
 		timelineStep.CompletedAt = &completed

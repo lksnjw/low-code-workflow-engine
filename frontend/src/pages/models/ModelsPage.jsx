@@ -8,7 +8,7 @@ import { useNotifications } from "../../context/NotificationContext";
 import { apiErrorMessage } from "../../services/api";
 import { settingsService } from "../../services/settings.service";
 
-const EMPTY_FORM = { name: "", type: "gemini", baseUrl: "", model: "", apiKey: "" };
+const EMPTY_FORM = { name: "", type: "gemini", baseUrl: "", model: "", temperature: 0, apiKey: "" };
 const INPUT_CLASS = "w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-1 focus:ring-primary dark:border-gray-700 dark:bg-darkBackgroundVery dark:text-white";
 const COLUMNS = [
   { key: "name", label: "Provider" },
@@ -53,12 +53,14 @@ function ModelsPage() {
       type: provider.type,
       baseUrl: provider.baseUrl || "",
       model: provider.model,
+      temperature: provider.temperature ?? 0,
       apiKey: "",
     });
   };
 
   const updateField = (event) => {
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: name === "temperature" ? Number(value) : value }));
   };
 
   const save = (event) => {
@@ -122,6 +124,7 @@ function ModelsPage() {
             <Field label="Provider type"><select name="type" value={form.type} onChange={updateField} className={INPUT_CLASS}><option value="gemini">Gemini</option><option value="ollama">Ollama</option><option value="openai_compatible">OpenAI compatible</option></select></Field>
             <Field label="Base URL"><input name="baseUrl" value={form.baseUrl} onChange={updateField} className={INPUT_CLASS} placeholder={form.type === "gemini" ? "Optional Gemini API base URL" : "https://provider.example/v1"} /></Field>
             <Field label="Model"><input required name="model" value={form.model} onChange={updateField} className={INPUT_CLASS} placeholder="Model identifier" /></Field>
+            <Field label="Temperature" hint="Defaults to 0 for reproducible generation."><input required name="temperature" type="number" min="0" step="0.1" value={form.temperature} onChange={updateField} className={INPUT_CLASS} /></Field>
             <Field label="API key" hint={editor.id ? `Leave blank to retain ${editor.keyPreview || "the stored credential"}.` : form.type === "ollama" ? "Optional for Ollama." : "Required and never returned."}>
               <input name="apiKey" type="password" value={form.apiKey} onChange={updateField} className={INPUT_CLASS} placeholder="Write-only credential" autoComplete="new-password" />
             </Field>

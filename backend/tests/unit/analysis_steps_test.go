@@ -48,7 +48,7 @@ type namedSpyTool struct {
 
 func (s *namedSpyTool) Name() string        { return s.name }
 func (s *namedSpyTool) Description() string { return "analysis step spy tool" }
-func (s *namedSpyTool) Execute(_ context.Context, params map[string]interface{}) (map[string]interface{}, error) {
+func (s *namedSpyTool) Execute(_ context.Context, _ workflowvalidator.DispatchCapability, params map[string]interface{}) (map[string]interface{}, error) {
 	s.calls++
 	s.received = append(s.received, params)
 	return s.result, nil

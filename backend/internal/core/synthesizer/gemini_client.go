@@ -12,10 +12,11 @@ import (
 )
 
 type GeminiClient struct {
-	APIKey  string
-	Model   string
-	BaseURL string
-	HTTP    *http.Client
+	APIKey      string
+	Model       string
+	BaseURL     string
+	Temperature float64
+	HTTP        *http.Client
 }
 
 func NewGeminiClient(apiKey, model string) *GeminiClient {
@@ -54,7 +55,7 @@ func (c *GeminiClient) generateWithUsage(ctx context.Context, prompt, overrideMo
 			},
 		},
 		"generationConfig": map[string]interface{}{
-			"temperature":     0.1,
+			"temperature":     c.Temperature,
 			"topP":            0.8,
 			"maxOutputTokens": 8192,
 		},
@@ -112,12 +113,13 @@ func (c *GeminiClient) generateWithUsage(ctx context.Context, prompt, overrideMo
 		return "", providerUsage{}, fmt.Errorf("gemini returned HTTP %d", resp.StatusCode)
 	}
 
-	usage := providerUsage{}
+	usage := providerUsage{Temperature: c.Temperature}
 	if payload.UsageMetadata != nil {
 		usage = providerUsage{
 			InputTokens:  payload.UsageMetadata.PromptTokenCount,
 			OutputTokens: payload.UsageMetadata.CandidatesTokenCount,
 			Measured:     true,
+			Temperature:  c.Temperature,
 		}
 	}
 

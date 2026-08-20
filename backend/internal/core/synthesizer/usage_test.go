@@ -15,6 +15,16 @@ func TestSynthesizeReportsGeminiUsageMetadata(t *testing.T) {
 		if request.URL.Path != "/models/gemini-2.5-flash:generateContent" {
 			t.Errorf("Gemini request path = %q", request.URL.Path)
 		}
+		var body struct {
+			GenerationConfig struct {
+				Temperature float64 `json:"temperature"`
+			} `json:"generationConfig"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Errorf("decode Gemini request: %v", err)
+		} else if body.GenerationConfig.Temperature != 0 {
+			t.Errorf("Gemini temperature = %v, want default 0", body.GenerationConfig.Temperature)
+		}
 		response.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(response).Encode(map[string]interface{}{
 			"candidates": []map[string]interface{}{{
@@ -40,12 +50,23 @@ func TestSynthesizeReportsGeminiUsageMetadata(t *testing.T) {
 		t.Fatalf("Synthesize returned an error: %v", err)
 	}
 	assertUsage(t, result.Usage, 37, 11, true)
+	assertTemperature(t, result.Usage, 0)
 }
 
 func TestSynthesizeReportsOllamaUsageCounts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/api/generate" {
 			t.Errorf("Ollama request path = %q", request.URL.Path)
+		}
+		var body struct {
+			Options struct {
+				Temperature float64 `json:"temperature"`
+			} `json:"options"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Errorf("decode Ollama request: %v", err)
+		} else if body.Options.Temperature != 0 {
+			t.Errorf("Ollama temperature = %v, want default 0", body.Options.Temperature)
 		}
 		response.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(response).Encode(map[string]interface{}{
@@ -65,6 +86,7 @@ func TestSynthesizeReportsOllamaUsageCounts(t *testing.T) {
 		t.Fatalf("Synthesize returned an error: %v", err)
 	}
 	assertUsage(t, result.Usage, 29, 7, true)
+	assertTemperature(t, result.Usage, 0)
 }
 
 func TestGenerateCandidatesPreservesBatchUsageOnEveryCandidate(t *testing.T) {
@@ -107,6 +129,7 @@ func TestGenerateCandidatesPreservesBatchUsageOnEveryCandidate(t *testing.T) {
 		if got := candidate.GenerationMetadata["model"]; got != "gemini-candidate-test" {
 			t.Errorf("candidate %s model = %#v, want gemini-candidate-test", candidate.CandidateID, got)
 		}
+		assertTemperature(t, candidate.GenerationMetadata, 0)
 	}
 }
 
@@ -114,6 +137,14 @@ func TestSynthesizeReportsOpenAICompatibleUsage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/chat/completions" {
 			t.Errorf("OpenAI-compatible request path = %q", request.URL.Path)
+		}
+		var body struct {
+			Temperature float64 `json:"temperature"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Errorf("decode OpenAI-compatible request: %v", err)
+		} else if body.Temperature != 0.25 {
+			t.Errorf("OpenAI-compatible temperature = %v, want configured 0.25", body.Temperature)
 		}
 		response.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(response).Encode(map[string]interface{}{
@@ -132,11 +163,12 @@ func TestSynthesizeReportsOpenAICompatibleUsage(t *testing.T) {
 	service := NewService("", "", false)
 	service.SetProviderResolver(func() (models.ProviderConfig, bool) {
 		return models.ProviderConfig{
-			Type:    "openai_compatible",
-			BaseURL: server.URL,
-			Model:   "compatible-test-model",
-			APIKey:  "test-key",
-			Active:  true,
+			Type:        "openai_compatible",
+			BaseURL:     server.URL,
+			Model:       "compatible-test-model",
+			Temperature: 0.25,
+			APIKey:      "test-key",
+			Active:      true,
 		}, true
 	})
 
@@ -145,6 +177,7 @@ func TestSynthesizeReportsOpenAICompatibleUsage(t *testing.T) {
 		t.Fatalf("Synthesize returned an error: %v", err)
 	}
 	assertUsage(t, result.Usage, 43, 9, true)
+	assertTemperature(t, result.Usage, 0.25)
 	if got := result.Usage["provider"]; got != "openai_compatible" {
 		t.Errorf("provider = %#v, want openai_compatible", got)
 	}
@@ -171,6 +204,7 @@ func TestSynthesizeDoesNotClaimUnreportedUsage(t *testing.T) {
 		t.Fatalf("Synthesize returned an error: %v", err)
 	}
 	assertUsage(t, result.Usage, 0, 0, false)
+	assertTemperature(t, result.Usage, 0)
 }
 
 func assertUsage(t *testing.T, usage map[string]interface{}, inputTokens, outputTokens int, measured bool) {
@@ -186,5 +220,12 @@ func assertUsage(t *testing.T, usage map[string]interface{}, inputTokens, output
 	}
 	if got := usage["costUsd"]; got != float64(0) {
 		t.Errorf("costUsd = %#v, want 0 without authoritative pricing", got)
+	}
+}
+
+func assertTemperature(t *testing.T, usage map[string]interface{}, want float64) {
+	t.Helper()
+	if got := usage["temperature"]; got != want {
+		t.Errorf("temperature = %#v, want %v", got, want)
 	}
 }

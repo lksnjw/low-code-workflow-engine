@@ -147,6 +147,9 @@ func main() {
 		zapLogger.Fatal("load semantic registries", zap.Error(err))
 	}
 	registryValidator := workflowvalidator.NewRegistryValidator(registryBundle.Tools, registryBundle.Rules, store)
+	if gaps := registryValidator.EnabledRulesWithoutEvaluator(); len(gaps) > 0 {
+		zapLogger.Warn("enabled registry rules have no deterministic evaluator and will fail closed", zap.Any("rules", gaps))
+	}
 	searchService := semanticsearch.NewServiceFromDataset(registryBundle, cfg.SemanticSearchMode, cfg.SemanticSearchURL, cfg.SemanticSearchAllowLexicalFallback)
 	chatOrchestrator := orchestrator.NewChatOrchestrator(searchService, synth, registryValidator)
 	mcp := tools.NewMCPClient(cfg.MCPBaseURL, cfg.MCPTimeout)
@@ -168,7 +171,6 @@ func main() {
 	}
 
 	exec := runner.NewExecutor(registry, registryValidator, zapLogger)
-	exec.SetBaselineB(cfg.BaselineBEnabled())
 	healer := healing.NewHealer(synth)
 	handler := handlers.New(cfg, store, synth, validator, registryBundle, registryValidator, searchService, chatOrchestrator, exec, healer, zapLogger)
 	backfilledWorkflows, err := relevance.BackfillWorkflowDomainTags(store, handler.RegistryManager.Tools())

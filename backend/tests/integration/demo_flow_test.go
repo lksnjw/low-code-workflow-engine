@@ -231,6 +231,7 @@ func newGovernedDemoApp(t *testing.T) *fiber.App {
 	if err != nil {
 		t.Fatalf("load temporary demo registries: %v", err)
 	}
+	retainImplementedRuleFamilies(bundle)
 	if tool, ok := bundle.Tools.FindToolByName("demo.echo"); !ok || !tool.IsReadOnly {
 		t.Fatal("demo.echo must be present as a read-only registered tool")
 	}

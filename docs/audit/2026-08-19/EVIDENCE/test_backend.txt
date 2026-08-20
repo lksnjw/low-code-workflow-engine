@@ -1,0 +1,86 @@
+FAIL	./... [setup failed]
+# ./...
+pattern ./...: open C:\Users\LKsnj\AppData\Local\go-build\04\04f9fbbf1d58585410f730b6c33ea5de2e96a35341a5ed4077e9139d6c7e9c9a-d: Access is denied.
+FAIL
+go: failed to trim cache: open C:\Users\LKsnj\AppData\Local\go-build\trim.txt: Access is denied.
+?   	github.com/sanjeewa/agentic-orchestrator/cmd/generate-eval-dataset	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/cmd/mock-erp	3.987s
+?   	github.com/sanjeewa/agentic-orchestrator/cmd/run-experiment	[no test files]
+?   	github.com/sanjeewa/agentic-orchestrator/cmd/server	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/dataset/eval	3.102s
+--- FAIL: TestCompanyProfileRejectsInvalidTimezoneAndCurrency (1.00s)
+    company_handler_test.go:46: registry request failed: test: timeout error 1000ms
+FAIL
+FAIL	github.com/sanjeewa/agentic-orchestrator/internal/api/handlers	7.298s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/api/middlewares	2.028s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/api/routes	3.558s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/authn	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/config	1.912s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/analysisprovider	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/company	6.908s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/context	9.393s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/healing	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/importer	2.573s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator	1.882s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/registry	0.952s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/relevance	0.685s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/runner	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch	1.379s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/structuredoutput	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/synthesizer	1.991s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/validator	1.763s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/models	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/repository	2.133s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/storage	2.492s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/tools	2.471s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/tools/impl	[no test files]
+?   	github.com/sanjeewa/agentic-orchestrator/pkg/logger	[no test files]
+?   	github.com/sanjeewa/agentic-orchestrator/pkg/parser	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/tests/integration	4.515s
+?   	github.com/sanjeewa/agentic-orchestrator/tests/mocks	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/tests/unit	109.338s
+FAIL
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/api/handlers	2.381s
+?   	github.com/sanjeewa/agentic-orchestrator/cmd/generate-eval-dataset	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/cmd/mock-erp	2.399s
+?   	github.com/sanjeewa/agentic-orchestrator/cmd/run-experiment	[no test files]
+?   	github.com/sanjeewa/agentic-orchestrator/cmd/server	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/dataset/eval	5.778s
+--- FAIL: TestBulkToolImportAppliesAtomicallyPersistsAndChangesHash (1.93s)
+    registry_bulk_import_test.go:33: test: timeout error 1000ms
+--- FAIL: TestBulkRuleImportAppliesAtomically (1.34s)
+    registry_bulk_import_test.go:173: test: timeout error 1000ms
+--- FAIL: TestOldValidationTokenRejectedAfterBulkImport (2.72s)
+    registry_bulk_import_test.go:192: test: timeout error 1000ms
+--- FAIL: TestRegistryMutationPersistsSwapsHashRejectsOldTokenAndAudits (1.36s)
+    registry_handler_test.go:73: registry request failed: test: timeout error 1000ms
+FAIL
+FAIL	github.com/sanjeewa/agentic-orchestrator/internal/api/handlers	16.553s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/api/middlewares	4.936s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/api/routes	1.544s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/authn	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/config	5.125s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/analysisprovider	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/company	10.131s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/context	19.662s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/healing	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/importer	3.967s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator	1.970s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/registry	2.160s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/relevance	0.975s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/runner	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch	2.483s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/core/structuredoutput	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/synthesizer	2.595s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/core/validator	1.217s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/models	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/repository	1.143s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/storage	2.900s
+ok  	github.com/sanjeewa/agentic-orchestrator/internal/tools	1.406s
+?   	github.com/sanjeewa/agentic-orchestrator/internal/tools/impl	[no test files]
+?   	github.com/sanjeewa/agentic-orchestrator/pkg/logger	[no test files]
+?   	github.com/sanjeewa/agentic-orchestrator/pkg/parser	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/tests/integration	3.600s
+?   	github.com/sanjeewa/agentic-orchestrator/tests/mocks	[no test files]
+ok  	github.com/sanjeewa/agentic-orchestrator/tests/unit	98.091s
+FAIL

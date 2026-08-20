@@ -33,7 +33,7 @@ type handlerSpyTool struct {
 
 func (s *handlerSpyTool) Name() string        { return "test.transfer" }
 func (s *handlerSpyTool) Description() string { return "handler gate spy" }
-func (s *handlerSpyTool) Execute(_ context.Context, _ map[string]interface{}) (map[string]interface{}, error) {
+func (s *handlerSpyTool) Execute(_ context.Context, _ workflowvalidator.DispatchCapability, _ map[string]interface{}) (map[string]interface{}, error) {
 	s.calls++
 	if s.failure != nil && s.calls > s.failAfter {
 		return nil, s.failure
@@ -209,31 +209,6 @@ func TestDispatchViolationMarksExecutionFailedWithoutHealing(t *testing.T) {
 	}
 	if !dispatchAuditFound {
 		t.Fatal("dispatch policy violation was not written to the existing audit store")
-	}
-}
-
-func TestBaselineBHandlerExecutesPlanBlockedWorkflowAndAuditsBypass(t *testing.T) {
-	handler, store, app, spy := newGateTestHandler()
-	handler.Cfg = config.Config{Environment: "experiment", ExperimentBaseline: "B"}
-	handler.Runner.SetBaselineB(true)
-	store.Workflows["wf-baseline"] = &models.Workflow{ID: "wf-baseline", Name: "baseline", YAML: validWorkflowYAML("101"), Status: models.StatusPending}
-
-	response := gateRequest(t, app, http.MethodPost, "/workflows/wf-baseline/run", map[string]interface{}{"input": map[string]interface{}{}})
-	if response.StatusCode != fiber.StatusOK {
-		t.Fatalf("expected Baseline B execution result, got %d: %s", response.StatusCode, responseBody(t, response))
-	}
-	if spy.calls != 1 {
-		t.Fatalf("expected Baseline B to execute spy tool, got %d calls", spy.calls)
-	}
-	baselineAuditFound := false
-	for _, entry := range store.AuditLogs {
-		if entry.After["baseline"] == "B" && entry.After["decision"] == "plan_validation" && entry.After["would_have_blocked"] == true {
-			baselineAuditFound = true
-			break
-		}
-	}
-	if !baselineAuditFound {
-		t.Fatal("expected plan bypass audit with baseline B")
 	}
 }
 

@@ -9,14 +9,15 @@ type SettingsBundle struct {
 }
 
 type ProviderConfig struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	BaseURL   string    `json:"baseUrl,omitempty"`
-	Model     string    `json:"model"`
-	APIKey    string    `json:"-"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	BaseURL     string    `json:"baseUrl,omitempty"`
+	Model       string    `json:"model"`
+	Temperature float64   `json:"temperature"`
+	APIKey      string    `json:"-"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 type Integration struct {

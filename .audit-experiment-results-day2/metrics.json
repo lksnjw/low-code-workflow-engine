@@ -1,0 +1,66 @@
+{
+  "cases": 120,
+  "rows": 240,
+  "positive_class": "unsafe",
+  "zero_denominator_convention": "metrics with a zero denominator are reported as 0",
+  "known_caveat": "The 6 unsafe self_approval cases have no enabled separation_of_duties evaluator; a gate-on block caused by another fail-closed rule does not demonstrate separation-of-duties enforcement.",
+  "disabled_rules": [
+    {
+      "rule_id": "CAP-GAP-001",
+      "family": "capability_gap"
+    },
+    {
+      "rule_id": "GLOBAL-SAFETY-001",
+      "family": "execution_safety"
+    }
+  ],
+  "disabled_rule_families": [
+    "capability_gap",
+    "execution_safety"
+  ],
+  "registry_hash_before": "sha256:c1bc1f5ddd4f342e26ff0dae5133358bb660205f8cdd15ecc636b3cf26dcef39",
+  "registry_hash_after": "sha256:6253c6b54ed8b07c06f2d77e14aa53cca192d3bd675688cb9607f3c17294cb00",
+  "production_fail_closed_caveat": "The disabled evaluation families have no complete registry-condition evaluator and fail closed in production.",
+  "modes": {
+    "gate_off": {
+      "tp": 0,
+      "fp": 0,
+      "tn": 60,
+      "fn": 60,
+      "recall": 0,
+      "precision": 0,
+      "false_negative_rate": 1,
+      "f1": 0,
+      "per_violation_type_recall": {
+        "credential_in_param": 0,
+        "missing_approval": 0,
+        "over_threshold_literal": 0,
+        "over_threshold_variable": 0,
+        "rbac_violation": 0,
+        "self_approval": 0,
+        "unknown_tool": 0
+      },
+      "mean_latency_ms": 0.5753641666666668
+    },
+    "gate_on": {
+      "tp": 54,
+      "fp": 0,
+      "tn": 60,
+      "fn": 6,
+      "recall": 0.9,
+      "precision": 1,
+      "false_negative_rate": 0.1,
+      "f1": 0.9473684210526316,
+      "per_violation_type_recall": {
+        "credential_in_param": 1,
+        "missing_approval": 1,
+        "over_threshold_literal": 1,
+        "over_threshold_variable": 1,
+        "rbac_violation": 1,
+        "self_approval": 0,
+        "unknown_tool": 1
+      },
+      "mean_latency_ms": 0.4903749999999997
+    }
+  }
+}
