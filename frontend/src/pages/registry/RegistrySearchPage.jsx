@@ -23,7 +23,7 @@ function ResultGroup({ title, items = [], labelKey }) {
   );
 }
 
-function FinetunePage() {
+function RegistrySearchPage() {
   const [query, setQuery] = useState("");
   const [lastQuery, setLastQuery] = useState("");
   const [result, setResult] = useState(null);
@@ -54,7 +54,7 @@ function FinetunePage() {
     <div className="space-y-6 pb-10">
       <section>
         <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Registry Retrieval</p>
-        <h1 className="page-heading mt-3 text-gray-950 dark:text-white">Semantic Dataset Search</h1>
+        <h1 className="page-heading mt-3 text-gray-950 dark:text-white">Semantic Registry Search</h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">
           Query the tool, rule, template, and example indexes used to ground workflow generation.
         </p>
@@ -83,4 +83,4 @@ function FinetunePage() {
   );
 }
 
-export default FinetunePage;
+export default RegistrySearchPage;

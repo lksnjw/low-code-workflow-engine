@@ -135,12 +135,12 @@ export const NAVIGATION_GROUPS = [
     ],
   },
   {
-    id: "finetune",
-    label: "ERP Models",
-    description: "ERP data & queries",
-    icon: "mdi:robot-industrial",
+    id: "registry_search",
+    label: "Registry Search",
+    description: "Semantic retrieval inspection",
+    icon: "mdi:database-search-outline",
 		requiredAny: ["workflow:read"],
-    subMenu: [{ id: "overview", label: "Model Integration", path: "/erp-models" }],
+    subMenu: [{ id: "overview", label: "Semantic Search", path: "/registry-search" }],
   },
   {
     id: "profile",
