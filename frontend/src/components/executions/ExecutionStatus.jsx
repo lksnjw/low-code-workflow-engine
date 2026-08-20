@@ -12,7 +12,7 @@ const icons = {
 function ExecutionStatus({ status, failure }) {
   const blocked = isGovernanceBlock(failure);
   const meta = statusMetaFor(status, failure);
-  const icon = blocked ? "mdi:shield-alert-outline" : icons[status] ?? icons.PENDING;
+  const icon = blocked ? "mdi:shield-alert-outline" : icons[status] ?? "mdi:help-circle-outline";
 
   return (
     <span
