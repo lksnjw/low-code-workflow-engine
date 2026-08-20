@@ -20,8 +20,12 @@ export const userService = {
       departments: unwrap(departments, []),
     };
   },
-  async loadAudit(params = { limit: 10 }) {
-    return unwrap(await apiClient.get("/audit", { params }), []);
+  async loadAudit(params = { limit: 20 }) {
+    const response = await apiClient.get("/audit", { params });
+    return {
+      logs: unwrap(response, []),
+      meta: response?.data?.meta ?? null,
+    };
   },
   async create(payload) {
     return normalizeUser(unwrap(await apiClient.post("/users", payload)));
