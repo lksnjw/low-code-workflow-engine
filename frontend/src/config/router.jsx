@@ -38,7 +38,7 @@ export const lazyRouteComponents = {
   DatafeedPage: lazy(() => import("../pages/datafeed/DatafeedPage")),
   VectorMetricsPage: lazy(() => import("../pages/datafeed/VectorMetricsPage")),
   PipelineConfigPage: lazy(() => import("../pages/datafeed/PipelineConfigPage")),
-  FinetunePage: lazy(() => import("../pages/finetune/FinetunePage")),
+  RegistrySearchPage: lazy(() => import("../pages/registry/RegistrySearchPage")),
   ProfilePage: lazy(() => import("../pages/profile/ProfilePage")),
   SecurityPage: lazy(() => import("../pages/profile/SecurityPage")),
   LoginPage: lazy(() => import("../pages/auth/LoginPage")),
@@ -84,7 +84,7 @@ export const protectedRouteDefinitions = [
   { id: "datafeed.overview", path: "/datafeed", Component: C.DatafeedPage, requiredAny: ["workflow:read"] },
   { id: "datafeed.metrics", path: "/datafeed/metrics", Component: C.VectorMetricsPage, requiredAny: ["workflow:read"] },
   { id: "datafeed.config", path: "/datafeed/configuration", Component: C.PipelineConfigPage, requiredAny: ["workflow:read"] },
-  { id: "finetune.overview", path: "/erp-models", Component: C.FinetunePage, requiredAny: ["workflow:read"] },
+  { id: "registry_search.overview", path: "/registry-search", Component: C.RegistrySearchPage, requiredAny: ["workflow:read"] },
   { id: "profile.profile", path: "/profile", Component: C.ProfilePage, requiredAny: [] },
   { id: "profile.security", path: "/profile/security", Component: C.SecurityPage, requiredAny: [] },
 ];
