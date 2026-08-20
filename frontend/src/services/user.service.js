@@ -5,12 +5,11 @@ const normalizeUser = (user) => ({ ...user, role: user.role?.name || user.role |
 
 export const userService = {
   async loadAdministration() {
-    const [users, roles, permissions, matrix, audit, departments] = await Promise.all([
+    const [users, roles, permissions, matrix, departments] = await Promise.all([
       apiClient.get("/users"),
       apiClient.get("/roles"),
       apiClient.get("/permissions"),
       apiClient.get("/permissions/matrix"),
-      apiClient.get("/audit", { params: { limit: 10 } }).catch(() => null),
       apiClient.get("/company/departments"),
     ]);
     return {
@@ -18,9 +17,11 @@ export const userService = {
       roles: unwrap(roles, []),
       permissions: unwrap(permissions, []),
       matrix: unwrap(matrix, []),
-      audit: unwrap(audit, []),
       departments: unwrap(departments, []),
     };
+  },
+  async loadAudit(params = { limit: 10 }) {
+    return unwrap(await apiClient.get("/audit", { params }), []);
   },
   async create(payload) {
     return normalizeUser(unwrap(await apiClient.post("/users", payload)));
