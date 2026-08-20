@@ -5,9 +5,10 @@ import Textarea from "../shared/ui/Textarea";
 import { useNotifications } from "../../context/NotificationContext";
 import { executionService } from "../../services/execution.service";
 import { workflowService } from "../../services/workflow.service";
-import { apiErrorMessage } from "../../services/api";
+import { apiErrorDetails, apiErrorMessage } from "../../services/api";
 import usePermissions from "../../hooks/usePermissions";
 import WorkflowActionControls from "./WorkflowActionControls";
+import GateRejectionAlert from "./GateRejectionAlert";
 
 function WorkflowActions({ workflow, onChanged }) {
   const { notify } = useNotifications();
@@ -16,9 +17,11 @@ function WorkflowActions({ workflow, onChanged }) {
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [runtimeInput, setRuntimeInput] = useState("{}");
   const [inputError, setInputError] = useState("");
+  const [runError, setRunError] = useState(null);
 
   const openRunDialog = () => {
     setInputError("");
+    setRunError(null);
     setRunDialogOpen(true);
   };
 
@@ -36,6 +39,7 @@ function WorkflowActions({ workflow, onChanged }) {
       return;
     }
     setInputError("");
+    setRunError(null);
 
     setRunning(true);
     try {
@@ -44,7 +48,9 @@ function WorkflowActions({ workflow, onChanged }) {
       notify(`Execution ${execution.id} finished with status ${execution.status}.`, execution.status === "DONE" ? "success" : "warning");
       await onChanged?.();
     } catch (error) {
-      notify(apiErrorMessage(error, "Workflow run failed."), "error");
+      const details = apiErrorDetails(error, "Workflow run failed.");
+      setRunError(details);
+      notify(details.message, "error");
     } finally {
       setRunning(false);
     }
@@ -98,6 +104,7 @@ function WorkflowActions({ workflow, onChanged }) {
             }}
           />
           {inputError ? <p className="text-sm font-semibold text-red-600" role="alert">{inputError}</p> : null}
+          <GateRejectionAlert details={runError} />
           <div className="flex justify-end gap-2">
             <Button
               variant="secondary"
