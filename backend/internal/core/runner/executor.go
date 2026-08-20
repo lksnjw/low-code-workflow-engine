@@ -9,6 +9,7 @@ import (
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/analysisprovider"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"github.com/sanjeewa/agentic-orchestrator/internal/redact"
 	"github.com/sanjeewa/agentic-orchestrator/internal/tools"
 	"go.uber.org/zap"
 )
@@ -161,7 +162,7 @@ func (e *Executor) Run(ctx context.Context, executionID string, workflow models.
 		result.Timeline = append(result.Timeline, timelineStep)
 		result.Logs = append(result.Logs, models.ExecutionLog{
 			ID: executionID + fmt.Sprintf("_log_%03d", index+1), ExecutionID: executionID, Timestamp: completed,
-			Level: "info", NodeID: nodeID, Message: fmt.Sprintf("%s executed through tool registry", step.Action), Metadata: toolResult,
+			Level: "info", NodeID: nodeID, Message: fmt.Sprintf("%s executed through tool registry", step.Action), Metadata: redact.WithoutSecretFields(toolResult),
 		})
 	}
 

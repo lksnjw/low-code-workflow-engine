@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
+	"github.com/sanjeewa/agentic-orchestrator/internal/redact"
 	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 	"go.uber.org/zap"
 )
@@ -72,65 +73,15 @@ func (h *Handler) PatchLLMSettings(c *fiber.Ctx) error {
 }
 
 func withoutSecretFields(values map[string]interface{}) map[string]interface{} {
-	safe := make(map[string]interface{}, len(values))
-	for key, value := range values {
-		if isSecretField(key) {
-			continue
-		}
-		safe[key] = withoutNestedSecretFields(value)
-	}
-	return safe
+	return redact.WithoutSecretFields(values)
 }
 
 func withoutNestedSecretFields(value interface{}) interface{} {
-	switch typed := value.(type) {
-	case map[string]interface{}:
-		return withoutSecretFields(typed)
-	case []interface{}:
-		safe := make([]interface{}, len(typed))
-		for index, item := range typed {
-			safe[index] = withoutNestedSecretFields(item)
-		}
-		return safe
-	default:
-		return value
-	}
+	return redact.WithoutNestedSecretFields(value)
 }
 
 func isSecretField(key string) bool {
-	normalized := strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(strings.ToLower(key))
-	if strings.Contains(normalized, "apikey") ||
-		strings.Contains(normalized, "secret") ||
-		strings.Contains(normalized, "password") ||
-		strings.Contains(normalized, "passwd") ||
-		strings.Contains(normalized, "credential") ||
-		strings.Contains(normalized, "privatekey") ||
-		strings.Contains(normalized, "connectionstring") {
-		return true
-	}
-
-	// Match credential-bearing token fields narrowly. In particular, do not
-	// classify ordinary usage metrics such as inputTokens or tokenCount as
-	// secrets merely because their names contain "token".
-	for _, suffix := range []string{
-		"accesstoken", "accesstokens", "refreshtoken", "refreshtokens", "authtoken", "authtokens",
-		"bearertoken", "bearertokens", "idtoken", "idtokens", "sessiontoken", "sessiontokens",
-	} {
-		if strings.HasSuffix(normalized, suffix) {
-			return true
-		}
-	}
-
-	switch normalized {
-	case "token", "bearer", "authorization":
-		return true
-	}
-
-	return strings.HasSuffix(normalized, "authorizationheader") ||
-		strings.HasSuffix(normalized, "authheader") ||
-		strings.HasSuffix(normalized, "dsn") ||
-		strings.HasSuffix(normalized, "databaseurl") ||
-		strings.HasSuffix(normalized, "redisurl")
+	return redact.IsSecretField(key)
 }
 
 func withoutSecretSettings(settings models.SettingsBundle) models.SettingsBundle {

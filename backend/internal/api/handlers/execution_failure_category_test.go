@@ -43,6 +43,7 @@ func failureCategoryApp(t *testing.T) (*Handler, *fiber.App, *handlerSpyTool) {
 	app.Post("/workflows", handler.CreateWorkflow)
 	app.Post("/workflows/:id/run", handler.RunWorkflow)
 	app.Get("/executions/:id", handler.GetExecution)
+	app.Get("/executions/:id/logs", handler.ExecutionLogs)
 	app.Get("/executions/:id/timeline", handler.ExecutionTimeline)
 	return handler, app, spy
 }

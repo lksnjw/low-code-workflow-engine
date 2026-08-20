@@ -416,6 +416,9 @@ func (h *Handler) ExecutionLogs(c *fiber.Ctx) error {
 	h.Store.Mu.RLock()
 	logs := append([]models.ExecutionLog{}, h.Store.ExecutionLogs[c.Params("id")]...)
 	h.Store.Mu.RUnlock()
+	for index := range logs {
+		logs[index].Metadata = withoutSecretFields(logs[index].Metadata)
+	}
 	return c.JSON(models.OK(logs, "OK", map[string]interface{}{"nextCursor": nil}))
 }
 
