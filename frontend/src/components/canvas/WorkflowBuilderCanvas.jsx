@@ -41,9 +41,10 @@ import {
 import { catalogService } from "../../services/catalog.service";
 import { workflowService } from "../../services/workflow.service";
 import { executionService } from "../../services/execution.service";
-import { apiErrorMessage } from "../../services/api";
+import { apiErrorDetails, apiErrorMessage } from "../../services/api";
 import { useNotifications } from "../../context/NotificationContext";
 import BuilderModeControls from "./BuilderModeControls";
+import GateRejectionAlert from "../workflows/GateRejectionAlert";
 
 const iconMap = {
   AlertCircle,
@@ -292,6 +293,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
   const [workflow, setWorkflow] = useState(initialCanvasState.workflow);
   const [executionState, setExecutionState] = useState("idle");
   const [isExecuting, setIsExecuting] = useState(false);
+  const [runError, setRunError] = useState(null);
   const { notify } = useNotifications();
   const catalogQuery = useQuery({
     queryKey: ["tool-catalog-groups"],
@@ -413,6 +415,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     if (isExecuting || nodes.length === 0) return;
     setIsExecuting(true);
     setExecutionState("running");
+    setRunError(null);
     setNodes((currentNodes) =>
       currentNodes.map((node) => ({
         ...node,
@@ -436,7 +439,9 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
       notify(`Execution ${execution.id} finished with status ${execution.status}.`, succeeded ? "success" : "warning");
     } catch (error) {
       setExecutionState("error");
-      notify(apiErrorMessage(error, "Workflow execution failed."), "error");
+      const details = apiErrorDetails(error, "Workflow execution failed.");
+      setRunError(details);
+      notify(details.message, "error");
     } finally {
       setIsExecuting(false);
     }
@@ -462,6 +467,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
           statusCounts={statusCounts}
           workflow={workflow}
         />
+        {runError ? <div className="shrink-0 bg-white px-6 py-2"><GateRejectionAlert details={runError} /></div> : null}
         <div className="min-h-0 flex-1 bg-slate-100 p-4">
           <div
             ref={reactFlowWrapper}

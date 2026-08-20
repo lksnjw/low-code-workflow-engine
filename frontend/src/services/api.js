@@ -6,8 +6,20 @@ export function unwrap(response, fallback = null) {
   return payload?.data ?? fallback;
 }
 
+export function apiErrorDetails(error, fallback = "The request could not be completed.") {
+  const payload = error?.response?.data;
+  const message = typeof payload?.message === "string" && payload.message.trim()
+    ? payload.message
+    : fallback;
+  const meta = payload?.meta && typeof payload.meta === "object" && !Array.isArray(payload.meta)
+    ? payload.meta
+    : null;
+
+  return { message, meta };
+}
+
 export function apiErrorMessage(error, fallback = "The request could not be completed.") {
-  return error?.response?.data?.message || fallback;
+  return apiErrorDetails(error, fallback).message;
 }
 
 export function formatRelativeTime(value) {
