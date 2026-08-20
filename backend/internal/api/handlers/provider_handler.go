@@ -11,22 +11,24 @@ import (
 )
 
 type providerConfigRequest struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	BaseURL string `json:"baseUrl"`
-	Model   string `json:"model"`
-	APIKey  string `json:"apiKey"`
+	Name        string  `json:"name"`
+	Type        string  `json:"type"`
+	BaseURL     string  `json:"baseUrl"`
+	Model       string  `json:"model"`
+	Temperature float64 `json:"temperature"`
+	APIKey      string  `json:"apiKey"`
 }
 
 type providerConfigView struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"`
-	BaseURL    string    `json:"baseUrl,omitempty"`
-	Model      string    `json:"model"`
-	KeyPreview string    `json:"keyPreview"`
-	Active     bool      `json:"active"`
-	CreatedAt  time.Time `json:"createdAt"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	BaseURL     string    `json:"baseUrl,omitempty"`
+	Model       string    `json:"model"`
+	Temperature float64   `json:"temperature"`
+	KeyPreview  string    `json:"keyPreview"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 func (h *Handler) ListProviders(c *fiber.Ctx) error {
@@ -151,7 +153,7 @@ func (h *Handler) TestProvider(c *fiber.Ctx) error {
 func providerFromRequest(request providerConfigRequest, existingKey string) (models.ProviderConfig, error) {
 	provider := models.ProviderConfig{
 		Name: strings.TrimSpace(request.Name), Type: strings.ToLower(strings.TrimSpace(request.Type)),
-		BaseURL: strings.TrimRight(strings.TrimSpace(request.BaseURL), "/"), Model: strings.TrimSpace(request.Model),
+		BaseURL: strings.TrimRight(strings.TrimSpace(request.BaseURL), "/"), Model: strings.TrimSpace(request.Model), Temperature: request.Temperature,
 		APIKey: strings.TrimSpace(request.APIKey),
 	}
 	if provider.APIKey == "" {
@@ -188,14 +190,14 @@ func providerFromRequest(request providerConfigRequest, existingKey string) (mod
 func providerView(provider models.ProviderConfig) providerConfigView {
 	return providerConfigView{
 		ID: provider.ID, Name: provider.Name, Type: provider.Type, BaseURL: provider.BaseURL,
-		Model: provider.Model, KeyPreview: keyPreview(provider.APIKey), Active: provider.Active, CreatedAt: provider.CreatedAt,
+		Model: provider.Model, Temperature: provider.Temperature, KeyPreview: keyPreview(provider.APIKey), Active: provider.Active, CreatedAt: provider.CreatedAt,
 	}
 }
 
 func providerAuditState(provider models.ProviderConfig) map[string]interface{} {
 	return map[string]interface{}{
 		"name": provider.Name, "type": provider.Type, "baseUrl": provider.BaseURL,
-		"model": provider.Model, "active": provider.Active, "credentialConfigured": provider.APIKey != "",
+		"model": provider.Model, "temperature": provider.Temperature, "active": provider.Active, "credentialConfigured": provider.APIKey != "",
 	}
 }
 

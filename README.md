@@ -1,4 +1,4 @@
-# Enterprise Low-Code Workflow Engine
+# Research Low-Code Workflow Engine
 
 [![Go Backend](https://img.shields.io/badge/Backend-Go%20%2B%20Fiber-00ADD8?logo=go&logoColor=white)](backend)
 [![React Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB?logo=react&logoColor=0B1020)](frontend)
@@ -26,11 +26,11 @@ This project addresses the gap between those two approaches by combining:
 - semantic retrieval over enterprise tool and rule registries,
 - LLM-based candidate generation,
 - deterministic semantic validation,
-- RBAC-aware workflow approval,
-- audit-ready workflow execution design,
+- RBAC-aware plan validation,
+- registry-based audit checks and gate decision records,
 - and visual workflow canvas representation.
 
-The result is a safer AI-assisted workflow generation system suitable for enterprise-style ERP automation scenarios.
+The result is a research prototype for measuring governed AI-assisted workflow generation in enterprise-style ERP scenarios.
 
 ## Research Objectives
 
@@ -121,7 +121,7 @@ Important areas:
 
 ### Backend Orchestration API
 
-The Go backend coordinates the complete workflow intelligence pipeline:
+The Go backend coordinates these workflow pipeline components:
 
 - chat request handling,
 - semantic retrieval,
@@ -202,8 +202,8 @@ The validator checks:
 | RBAC | Ensures the current role is allowed to use selected tools. |
 | Policy rules | Enforces domain-specific business controls. |
 | Process order | Ensures required pre-checks happen before write actions. |
-| Risk escalation | Requires human approval for high-risk workflows. |
-| Auditability | Requires audit logging for write or high-risk workflows. |
+| Risk escalation | Checks for an approval-named step at plan time; it does not implement an approval lifecycle. |
+| Auditability | Applies registry audit rules and records gate decisions; complete tamper-resistant provenance is not enforced. |
 | Sensitive data safety | Prevents secrets from appearing in generated workflow YAML. |
 
 ## Critical Action Blocking
@@ -298,7 +298,7 @@ Important test and validation references:
 | Frontend | React, Vite, Tailwind CSS, React Flow, TanStack Query, Zustand |
 | Backend | Go, Fiber, Zap logging, JWT-based local auth |
 | Semantic Retrieval | Python, FastAPI/Uvicorn, FAISS, Ollama embeddings |
-| Workflow Generation | Gemini model integration |
+| Workflow Generation | Configurable Gemini, Ollama, or OpenAI-compatible provider |
 | Validation | Registry-based semantic validator with RBAC and policy checks |
 | Visualization | React Flow canvas |
 | Execution Boundary | MCP-style tool registry and mock ERP bridge |
@@ -313,12 +313,30 @@ Important test and validation references:
 | [Role Natural Language Test Guide](docs/ROLE_NATURAL_LANGUAGE_TEST_GUIDE.md) | Role-by-role good and bad natural-language prompt matrix. |
 | [Chat Semantic Pipeline](backend/docs/CHAT_EMBEDDING_SEARCH_GEMINI_PIPELINE.md) | Detailed explanation of retrieval, generation, validation, and selection. |
 | [Backend Codebase Index](backend/docs/CODEBASE_INDEX.md) | Generated codebase navigation reference. |
+| [Consolidated Results](docs/RESULTS.md) | Frozen experiment setup, confusion matrices, registry hashes, and disclosures. |
+| [Validation and Dispatch Invariants](docs/INVARIANTS.md) | Test-backed G1–G5 and structural model-independence boundaries. |
+
+## Verified Safety Boundaries
+
+| Boundary | Status | Proving tests |
+|---|---|---|
+| Production dispatch requires a validator-minted capability | ENFORCED | `TestRunnerRejectsMissingOrMismatchedValidationTokenWithoutExecution`, `TestMCPClientZeroValueCapabilityMakesNoHTTPRequest`, `TestMCPClientMutatedParametersFailHashWithoutHTTPRequest` |
+| Resolved threshold, required-parameter, and sensitive-key checks | PARTIAL | `TestDeferredThresholdDispatch`, `TestDeferredRequiredParameterRevalidatedAtDispatch`, `TestResolvedSensitiveKeyAbortsBeforeTool` |
+| Experiment gate-off cannot use a real MCP-backed tool | ENFORCED in the experiment build | `TestExperimentGateOffRejectsRealMCPToolRegistry` |
+| Side-effect idempotency (G3) | NOT ENFORCED | No proving test exists |
+| Recorded human approval lifecycle (G4) | NOT ENFORCED | No proving test exists |
+| Complete tamper-resistant provenance (G5) | NOT ENFORCED | No proving test exists |
+| Model independence of gate decisions | STRUCTURAL GUARANTEE | `TestGateVerdictsAreDeterministicAcrossRepeatedRuns`, `TestGateVerdictIsInvariantToModelProvenance`, `TestValidatorImportsNoModelOrSynthesisPackage` |
+
+Baseline B is retained for gate-on/gate-off research. It is compiled only with `-tags experiment`, is absent from the production binary, and gate-off accepts only marked spy/no-op tools. Evidence: `TestBaselineBExecutesDispatchViolationAndAuditsBypass`, `TestExperimentGateOffRejectsRealMCPToolRegistry`, and `TestExperimentHarnessProducesCSVAndMetricsForFourCases`.
+
+See [docs/INVARIANTS.md](docs/INVARIANTS.md) for the precise G1–G5 status.
 
 ## Project Scope
 
-This project is currently implemented as a research and demonstration platform. It uses local development infrastructure and an in-memory backend repository to make the full workflow experience easy to demonstrate.
+This project is currently implemented as a research and demonstration platform. It defaults to local development infrastructure and an in-memory backend repository; an encrypted PostgreSQL snapshot store is optional, but production deployment hardening is not established.
 
-The implementation is suitable for:
+The implementation is intended for:
 
 - academic viva demonstration,
 - research evaluation,
@@ -328,31 +346,35 @@ The implementation is suitable for:
 
 ## Current Limitations
 
-The current version intentionally keeps some production concerns out of scope:
+The current version intentionally keeps these concerns out of scope or unenforced:
 
-- persistent database storage is not fully connected,
 - enterprise SSO is not implemented,
 - ERP execution uses a mock/MCP-style tool boundary,
 - semantic search uses a local FAISS index,
 - Singlish/Sinhala normalization is identified as a future improvement,
-- production secret management must be added before deployment.
+- side-effect idempotency (G3) is not enforced,
+- a recorded approval lifecycle (G4) is not enforced,
+- complete tamper-resistant provenance (G5) is not enforced,
+- the Smart Dispatcher specified in `CLAUDE.md` is not implemented; existing hard-coded orchestration branches are not that component,
+- the multi-model generation-quality study is specified but not run,
+- deployment secret management and operational hardening remain environment-specific work.
 
 ## Future Enhancements
 
 Recommended future work:
 
-1. Add persistent PostgreSQL workflow, audit, user, and execution storage.
-2. Add enterprise SSO/OIDC authentication.
-3. Improve multilingual and Singlish natural-language normalization.
-4. Expand ERP tool coverage and connect real ERP middleware.
-5. Add approval lifecycle state tracking.
-6. Add advanced workflow version comparison and governance explainability.
-7. Replace local FAISS with a managed vector database for production scale.
-8. Add richer evaluation metrics for generation accuracy and policy compliance.
+1. Enforce G3 idempotency by carrying a stable key through retries and external dispatch, with ambiguity and deduplication tests.
+2. Implement G4 runtime approval with a durable approval record, execution suspension/resumption, and distinct-principal enforcement.
+3. Complete G5 with append-only, tamper-resistant model, prompt, policy, registry, and decision provenance.
+4. Implement the Smart Dispatcher specified in `CLAUDE.md`; it is not present in the current codebase.
+5. Run the independently labelled multi-model generation-quality study described below.
+6. Add enterprise SSO/OIDC authentication and production deployment hardening.
+7. Improve multilingual/Singlish normalization, ERP integration coverage, and governance explainability.
+8. Replace local FAISS with a managed retrieval service if production scale requires it.
+
+The multi-model study was not run because the dataset labels the workflow artifact, not the instruction. A model receiving an unsafe instruction that emits a safe workflow would be scored as a gate false negative, conflating model refusal behaviour with gate recall. Sound execution requires independent labelling of every generated artifact. The study measures generation quality, not enforcement; enforcement invariance is established structurally.
 
 ## Summary
 
-The **Enterprise Low-Code Workflow Engine** demonstrates a practical approach to safe AI-assisted workflow automation. It does not rely on the LLM alone. Instead, it combines retrieval grounding, deterministic validation, RBAC, governance rules, audit controls, and visual workflow representation to create a more trustworthy low-code automation experience.
-
-This makes the project suitable for demonstrating how enterprise systems can adopt natural-language automation while still preserving control, compliance, and operational safety.
+The **Research Low-Code Workflow Engine** demonstrates an AI-assisted workflow architecture in which generated plans pass through deterministic validation and a capability-bound dispatch boundary. The enforced and unenforced portions of that architecture are listed above and in `docs/INVARIANTS.md`.
 

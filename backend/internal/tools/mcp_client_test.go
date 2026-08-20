@@ -3,18 +3,25 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	coreregistry "github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
+	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
 func TestMCPClientDefaultModeRequiresRemoteURL(t *testing.T) {
 	client := NewMCPClient("", time.Second)
+	params := map[string]interface{}{"message": "hello"}
+	capability := mintTestDispatchCapability(t, mockDemoEchoAction, params)
 
-	result, err := client.Execute(context.Background(), mockDemoEchoAction, map[string]interface{}{"message": "hello"})
+	result, err := client.Execute(context.Background(), mockDemoEchoAction, capability, params)
 	if err == nil {
 		t.Fatal("Execute() error = nil, want missing MCP_BASE_URL error")
 	}
@@ -33,17 +40,18 @@ func TestMCPClientMockModeExecutesDemoEchoDeterministically(t *testing.T) {
 	}
 
 	params := map[string]interface{}{"message": "hello", "count": float64(2)}
+	capability := mintTestDispatchCapability(t, mockDemoEchoAction, params)
 	want := map[string]interface{}{
 		"action": mockDemoEchoAction,
 		"mock":   true,
 		"echo":   map[string]interface{}{"message": "hello", "count": float64(2)},
 	}
 
-	first, err := client.Execute(context.Background(), mockDemoEchoAction, params)
+	first, err := client.Execute(context.Background(), mockDemoEchoAction, capability, params)
 	if err != nil {
 		t.Fatalf("first Execute() error = %v", err)
 	}
-	second, err := client.Execute(context.Background(), mockDemoEchoAction, params)
+	second, err := client.Execute(context.Background(), mockDemoEchoAction, capability, params)
 	if err != nil {
 		t.Fatalf("second Execute() error = %v", err)
 	}
@@ -66,7 +74,8 @@ func TestMCPClientMockModeRefusesNonDemoAction(t *testing.T) {
 		t.Fatalf("SetMode(mock) error = %v", err)
 	}
 
-	result, err := client.Execute(context.Background(), "send_webhook", nil)
+	capability := mintTestDispatchCapability(t, "send_webhook", nil)
+	result, err := client.Execute(context.Background(), "send_webhook", capability, nil)
 	if err == nil {
 		t.Fatal("Execute() error = nil, want unsupported mock action error")
 	}
@@ -105,7 +114,8 @@ func TestMCPClientRemoteModePostsToMiddleware(t *testing.T) {
 
 	client := NewMCPClient(server.URL, time.Second)
 	params := map[string]interface{}{"message": "through HTTP"}
-	result, err := client.Execute(context.Background(), mockDemoEchoAction, params)
+	capability := mintTestDispatchCapability(t, mockDemoEchoAction, params)
+	result, err := client.Execute(context.Background(), mockDemoEchoAction, capability, params)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -131,7 +141,9 @@ func TestMCPClientRemoteErrorDoesNotExposeDownstreamPayload(t *testing.T) {
 	defer server.Close()
 
 	client := NewMCPClient(server.URL, time.Second)
-	result, err := client.Execute(context.Background(), mockDemoEchoAction, map[string]interface{}{"message": "hello"})
+	params := map[string]interface{}{"message": "hello"}
+	capability := mintTestDispatchCapability(t, mockDemoEchoAction, params)
+	result, err := client.Execute(context.Background(), mockDemoEchoAction, capability, params)
 	if err == nil {
 		t.Fatalf("Execute() result = %#v, error = nil; want downstream HTTP error", result)
 	}
@@ -146,4 +158,63 @@ func TestMCPClientRemoteErrorDoesNotExposeDownstreamPayload(t *testing.T) {
 			t.Fatalf("Execute() error exposed downstream payload %q: %v", forbidden, err)
 		}
 	}
+}
+
+type countingTransport struct {
+	calls int
+}
+
+func (s *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	s.calls++
+	return nil, fmt.Errorf("unexpected HTTP request")
+}
+
+func TestMCPClientZeroValueCapabilityMakesNoHTTPRequest(t *testing.T) {
+	transport := &countingTransport{}
+	client := NewMCPClient("https://bridge.invalid", time.Second)
+	client.HTTP = &http.Client{Transport: transport}
+
+	result, err := client.Execute(context.Background(), mockDemoEchoAction, workflowvalidator.DispatchCapability{}, map[string]interface{}{"message": "hello"})
+	if err == nil || !strings.Contains(err.Error(), "capability is missing or invalid") {
+		t.Fatalf("expected zero-capability rejection, result=%#v err=%v", result, err)
+	}
+	if transport.calls != 0 {
+		t.Fatalf("zero capability made %d HTTP requests", transport.calls)
+	}
+}
+
+func TestMCPClientMutatedParametersFailHashWithoutHTTPRequest(t *testing.T) {
+	transport := &countingTransport{}
+	client := NewMCPClient("https://bridge.invalid", time.Second)
+	client.HTTP = &http.Client{Transport: transport}
+	params := map[string]interface{}{"amount": float64(25)}
+	capability := mintTestDispatchCapability(t, mockDemoEchoAction, params)
+	params["amount"] = float64(25000)
+
+	result, err := client.Execute(context.Background(), mockDemoEchoAction, capability, params)
+	if err == nil || !strings.Contains(err.Error(), "resolved-parameter hash mismatch") {
+		t.Fatalf("expected mutated-parameter rejection, result=%#v err=%v", result, err)
+	}
+	if transport.calls != 0 {
+		t.Fatalf("parameter mismatch made %d HTTP requests", transport.calls)
+	}
+}
+
+func mintTestDispatchCapability(t *testing.T, action string, params map[string]interface{}) workflowvalidator.DispatchCapability {
+	t.Helper()
+	toolRegistry := coreregistry.NewToolRegistry([]coreregistry.Tool{{
+		ToolID: "TEST-MCP-TOOL", Name: action, Status: "active_mcp_schema_present",
+		AllowedRoles: []string{"Workflow Builder"}, RiskLevel: "low", IsReadOnly: true,
+	}}, "tools-v1")
+	gate := workflowvalidator.NewRegistryValidator(toolRegistry, coreregistry.NewRuleRegistry(nil, "rules-v1"), repository.NewStore())
+	rawYAML := fmt.Sprintf("name: mcp_test\ndescription: Mint a capability for an MCP client test.\ntrigger:\n  type: manual\nsteps:\n  - id: dispatch\n    action: %s\n    parameters: {}\n", action)
+	token, result, err := gate.ValidateAndIssueToken("mcp-test", rawYAML, "Workflow Builder")
+	if err != nil || !result.Passed || token == nil {
+		t.Fatalf("mint prerequisite validation failed: result=%+v token=%+v err=%v", result, token, err)
+	}
+	capability, violation := gate.EvaluateResolvedStep("mcp-test.dispatch", rawYAML, 0, params, token)
+	if violation != nil || !capability.IsUsable() {
+		t.Fatalf("capability mint failed: capability=%+v violation=%+v", capability, violation)
+	}
+	return capability
 }

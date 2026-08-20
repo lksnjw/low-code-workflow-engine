@@ -11,10 +11,11 @@ import (
 )
 
 type OpenAICompatibleClient struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	HTTP    *http.Client
+	BaseURL     string
+	APIKey      string
+	Model       string
+	Temperature float64
+	HTTP        *http.Client
 }
 
 func NewOpenAICompatibleClient(baseURL, apiKey, model string) *OpenAICompatibleClient {
@@ -38,7 +39,7 @@ func (c *OpenAICompatibleClient) generateWithUsage(ctx context.Context, prompt, 
 	body, err := json.Marshal(map[string]interface{}{
 		"model":       selectedModel(c.Model, overrideModel),
 		"messages":    []map[string]string{{"role": "user", "content": prompt}},
-		"temperature": 0.1,
+		"temperature": c.Temperature,
 	})
 	if err != nil {
 		return "", providerUsage{}, fmt.Errorf("encode openai-compatible request")
@@ -71,12 +72,13 @@ func (c *OpenAICompatibleClient) generateWithUsage(ctx context.Context, prompt, 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", providerUsage{}, fmt.Errorf("openai-compatible provider returned HTTP %d", response.StatusCode)
 	}
-	usage := providerUsage{}
+	usage := providerUsage{Temperature: c.Temperature}
 	if payload.Usage != nil {
 		usage = providerUsage{
 			InputTokens:  payload.Usage.PromptTokens,
 			OutputTokens: payload.Usage.CompletionTokens,
 			Measured:     true,
+			Temperature:  c.Temperature,
 		}
 	}
 	for _, choice := range payload.Choices {

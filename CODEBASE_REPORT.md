@@ -118,7 +118,7 @@ Status definitions are applied exactly as requested: **IMPLEMENTED**, **PARTIAL*
 
 | Feature/module | Status | Key evidence | Evidence / notes |
 |---|---|---|---|
-| Smart dispatcher (overall) | PARTIAL | `backend/internal/core/orchestrator/chat_orchestrator.go:30-166` | Hard-coded safety/capability/generation branches exist, but there is no general dispatcher type, intent schema, or extensible route registry. |
+| Smart Dispatcher specified in `CLAUDE.md` | MISSING | `backend/internal/core/orchestrator/chat_orchestrator.go:30-166` | The specified component is not implemented. Hard-coded safety/capability/generation branches exist, but they are not a general dispatcher type, intent schema, or extensible route registry. |
 | Dispatcher route: destructive identity/admin request | IMPLEMENTED | `backend/internal/core/orchestrator/chat_orchestrator.go:57-69`, `:169-192` | Deterministically blocks destructive verbs paired with identity targets before generation. |
 | Dispatcher route: no executable tools | IMPLEMENTED | `backend/internal/core/orchestrator/chat_orchestrator.go:71-100` | Routes to capability/schema generation or an executable capability-request tool. |
 | Dispatcher route: generate/validate/select workflow | IMPLEMENTED | `backend/internal/core/orchestrator/chat_orchestrator.go:102-156` | Retrieves context, makes one multi-candidate LLM call, validates every candidate, selects a passing candidate. |

@@ -16,10 +16,11 @@ import (
 )
 
 type OllamaClient struct {
-	BaseURL string
-	Model   string
-	Enabled bool
-	HTTP    *http.Client
+	BaseURL     string
+	Model       string
+	Enabled     bool
+	Temperature float64
+	HTTP        *http.Client
 }
 
 type Service struct {
@@ -98,6 +99,7 @@ func (s *Service) Synthesize(ctx context.Context, userPrompt, mode, model string
 			"provider":     provider,
 			"model":        selectedModel,
 			"measured":     usage.Measured,
+			"temperature":  usage.Temperature,
 		},
 	}, nil
 }
@@ -126,6 +128,7 @@ func (s *Service) logPromptUsage(operation, provider, model string, usage provid
 		zap.Int("prompt_tokens", usage.InputTokens),
 		zap.Int("output_tokens", usage.OutputTokens),
 		zap.Bool("measured", usage.Measured),
+		zap.Float64("temperature", usage.Temperature),
 		zap.Int("prompt_bytes", promptBytes),
 		zap.Int("retrieved_tool_count", toolCount),
 		zap.Int("retrieved_rule_count", ruleCount),
@@ -215,17 +218,19 @@ func (s *Service) generateWithConfigUsage(ctx context.Context, config models.Pro
 	switch strings.ToLower(strings.TrimSpace(config.Type)) {
 	case "gemini":
 		client := NewGeminiClient(config.APIKey, config.Model)
+		client.Temperature = config.Temperature
 		if strings.TrimSpace(config.BaseURL) != "" {
 			client.BaseURL = strings.TrimRight(config.BaseURL, "/")
 		}
 		text, usage, err := client.generateWithUsage(ctx, prompt, overrideModel)
 		return text, "gemini", model, usage, err
 	case "ollama":
-		client := &OllamaClient{BaseURL: strings.TrimRight(config.BaseURL, "/"), Model: config.Model, Enabled: true, HTTP: &http.Client{Timeout: 45 * time.Second}}
+		client := &OllamaClient{BaseURL: strings.TrimRight(config.BaseURL, "/"), Model: config.Model, Enabled: true, Temperature: config.Temperature, HTTP: &http.Client{Timeout: 45 * time.Second}}
 		text, usage, err := client.generateWithUsage(ctx, prompt, overrideModel)
 		return text, "ollama", model, usage, err
 	case "openai_compatible":
 		client := NewOpenAICompatibleClient(config.BaseURL, config.APIKey, config.Model)
+		client.Temperature = config.Temperature
 		text, usage, err := client.generateWithUsage(ctx, prompt, overrideModel)
 		return text, "openai_compatible", model, usage, err
 	default:
@@ -265,7 +270,7 @@ func (c *OllamaClient) generateWithUsage(ctx context.Context, prompt, overrideMo
 		"prompt": prompt,
 		"stream": false,
 		"options": map[string]interface{}{
-			"temperature": 0.1,
+			"temperature": c.Temperature,
 		},
 	})
 	if err != nil {
@@ -297,7 +302,7 @@ func (c *OllamaClient) generateWithUsage(ctx context.Context, prompt, overrideMo
 		return "", providerUsage{}, fmt.Errorf("ollama returned %d: %s", resp.StatusCode, payload.Error)
 	}
 
-	usage := providerUsage{}
+	usage := providerUsage{Temperature: c.Temperature}
 	if payload.PromptEvalCount != nil {
 		usage.InputTokens = *payload.PromptEvalCount
 	}
@@ -305,5 +310,6 @@ func (c *OllamaClient) generateWithUsage(ctx context.Context, prompt, overrideMo
 		usage.OutputTokens = *payload.EvalCount
 	}
 	usage.Measured = payload.PromptEvalCount != nil && payload.EvalCount != nil
+	usage.Temperature = c.Temperature
 	return payload.Response, usage, nil
 }

@@ -86,6 +86,7 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 		candidates[index].GenerationMetadata["outputTokens"] = usage.OutputTokens
 		candidates[index].GenerationMetadata["costUsd"] = 0.0
 		candidates[index].GenerationMetadata["measured"] = usage.Measured
+		candidates[index].GenerationMetadata["temperature"] = usage.Temperature
 		candidates[index].GenerationMetadata["provider"] = provider
 		candidates[index].GenerationMetadata["model"] = model
 		candidates[index].GenerationMetadata["promptToolCount"] = toolCount

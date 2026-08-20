@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	coreregistry "github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
+	"github.com/sanjeewa/agentic-orchestrator/internal/repository"
 )
 
 const minGeneratedLongFlowSteps = 8
@@ -60,7 +62,7 @@ func TestRegistryValidatorAccuracyReport(t *testing.T) {
 		t.Fatal("expected validator accuracy cases")
 	}
 
-	validator := newRegistryValidator(t)
+	validator := newImplementedRuleRegistryValidator(t)
 	outcomes, metrics := evaluateValidatorCases(t, validator, cases, true)
 	reportDir := filepath.Join(repoRootFromTest(t), "test-results")
 	writeValidatorReports(t, reportDir, metrics, outcomes)
@@ -88,7 +90,7 @@ func TestRegistryValidatorGeneratedLongFlowAccuracyReport(t *testing.T) {
 		}
 	}
 
-	validator := newRegistryValidator(t)
+	validator := newImplementedRuleRegistryValidator(t)
 	outcomes, metrics := evaluateValidatorCases(t, validator, cases, false)
 	reportDir := filepath.Join(repoRootFromTest(t), "test-results")
 
@@ -118,6 +120,26 @@ func loadValidatorAccuracyCases(t *testing.T) []validatorAccuracyCase {
 		t.Fatalf("decode validator accuracy fixture: %v", err)
 	}
 	return cases
+}
+
+// Accuracy reports measure families with real deterministic evaluators. The
+// separate fail-closed tests cover enabled NO_EVALUATOR families explicitly;
+// including them here would turn every labeled safe case into the same
+// configuration-gap block instead of measuring evaluator accuracy.
+func newImplementedRuleRegistryValidator(t *testing.T) *workflowvalidator.RegistryValidator {
+	t.Helper()
+	bundle := loadRegistryFixture(t)
+	rules := []coreregistry.Rule{}
+	for _, rule := range bundle.Rules.GetAllRules() {
+		if workflowvalidator.ClassifyRuleFamily(rule.RuleType) == workflowvalidator.RuleFamilyEvaluated {
+			rules = append(rules, rule)
+		}
+	}
+	return workflowvalidator.NewRegistryValidator(
+		bundle.Tools,
+		coreregistry.NewRuleRegistry(rules, bundle.Rules.Version()+"-implemented-only"),
+		repository.NewStore(),
+	)
 }
 
 func evaluateValidatorCases(t *testing.T, validator *workflowvalidator.RegistryValidator, cases []validatorAccuracyCase, strictExpectations bool) ([]validatorCaseOutcome, validatorAccuracyMetrics) {

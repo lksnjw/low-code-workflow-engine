@@ -1,9 +1,13 @@
+//go:build experiment
+
 package eval
 
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	appconfig "github.com/sanjeewa/agentic-orchestrator/internal/config"
 	coreregistry "github.com/sanjeewa/agentic-orchestrator/internal/core/registry"
 	"github.com/sanjeewa/agentic-orchestrator/internal/core/runner"
 	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
@@ -26,14 +29,16 @@ import (
 )
 
 const (
-	ModeGateOn              = "gate_on"
-	ModeGateOff             = "gate_off"
-	PredictionBlock         = "BLOCK"
-	PredictionAllow         = "ALLOW"
-	ExperimentCSVFilename   = "experiment_results.csv"
-	ExperimentMetricsFile   = "metrics.json"
-	SelfApprovalCaveat      = "The 6 unsafe self_approval cases are ground-truth false-negative probes because no enabled separation_of_duties rule exists; they remain false negatives when gate-on allows them."
-	defaultExperimentAction = "experiment"
+	ModeGateOn                   = "gate_on"
+	ModeGateOff                  = "gate_off"
+	PredictionBlock              = "BLOCK"
+	PredictionAllow              = "ALLOW"
+	ExperimentCSVFilename        = "experiment_results.csv"
+	ExperimentMetricsFile        = "metrics.json"
+	SelfApprovalCaveat           = "The 6 unsafe self_approval cases have no enabled separation_of_duties evaluator; a gate-on block caused by another fail-closed rule does not demonstrate separation-of-duties enforcement."
+	EvaluationRegistryHashBefore = "sha256:c1bc1f5ddd4f342e26ff0dae5133358bb660205f8cdd15ecc636b3cf26dcef39"
+	ProductionEvaluatorCaveat    = "The disabled evaluation families have no complete registry-condition evaluator and fail closed in production."
+	defaultExperimentAction      = "experiment"
 )
 
 var experimentCSVHeader = []string{
@@ -47,6 +52,10 @@ var experimentCSVHeader = []string{
 	"rule_fired",
 	"blocked_stage",
 	"latency_ms",
+	"disabled_rule_ids",
+	"disabled_rule_families",
+	"rule_registry_hash",
+	"production_fail_closed_caveat",
 }
 
 type ExperimentConfig struct {
@@ -83,13 +92,23 @@ type ModeMetrics struct {
 	MeanLatencyMS          float64            `json:"mean_latency_ms"`
 }
 
+type DisabledEvaluationRule struct {
+	RuleID string `json:"rule_id"`
+	Family string `json:"family"`
+}
+
 type MetricsReport struct {
-	Cases                     int                    `json:"cases"`
-	Rows                      int                    `json:"rows"`
-	PositiveClass             string                 `json:"positive_class"`
-	ZeroDenominatorConvention string                 `json:"zero_denominator_convention"`
-	KnownCaveat               string                 `json:"known_caveat"`
-	Modes                     map[string]ModeMetrics `json:"modes"`
+	Cases                      int                      `json:"cases"`
+	Rows                       int                      `json:"rows"`
+	PositiveClass              string                   `json:"positive_class"`
+	ZeroDenominatorConvention  string                   `json:"zero_denominator_convention"`
+	KnownCaveat                string                   `json:"known_caveat"`
+	DisabledRules              []DisabledEvaluationRule `json:"disabled_rules"`
+	DisabledRuleFamilies       []string                 `json:"disabled_rule_families"`
+	RegistryHashBefore         string                   `json:"registry_hash_before"`
+	RegistryHashAfter          string                   `json:"registry_hash_after"`
+	ProductionFailClosedCaveat string                   `json:"production_fail_closed_caveat"`
+	Modes                      map[string]ModeMetrics   `json:"modes"`
 }
 
 type ExperimentReport struct {
@@ -145,17 +164,18 @@ func RunExperiment(ctx context.Context, cfg ExperimentConfig) (ExperimentReport,
 	if strings.TrimSpace(cfg.OutputDir) == "" {
 		return ExperimentReport{}, errors.New("experiment output directory is required")
 	}
-	baselineGuard := appconfig.Config{Environment: cfg.Environment, ExperimentBaseline: "B"}
-	if err := baselineGuard.Validate(); err != nil {
-		return ExperimentReport{}, fmt.Errorf("experiment baseline guard: %w", err)
-	}
-	if !baselineGuard.BaselineBEnabled() {
-		return ExperimentReport{}, errors.New("experiment baseline guard did not enable Baseline B")
+	if !strings.EqualFold(strings.TrimSpace(cfg.Environment), "experiment") {
+		return ExperimentReport{}, fmt.Errorf("experiment baseline requires APP_ENV=experiment, got %q", cfg.Environment)
 	}
 	bundle, err := coreregistry.LoadBundle(cfg.ToolRegistryPath, cfg.RuleRegistryPath, zap.NewNop())
 	if err != nil {
 		return ExperimentReport{}, fmt.Errorf("load experiment registries: %w", err)
 	}
+	registryHash, err := fileSHA256(cfg.RuleRegistryPath)
+	if err != nil {
+		return ExperimentReport{}, fmt.Errorf("hash experiment rule registry: %w", err)
+	}
+	disabledRules, disabledFamilies := disabledNoEvaluatorRules(bundle)
 
 	rows := make([]ExperimentRow, 0, len(cfg.Cases)*2)
 	for _, item := range cfg.Cases {
@@ -169,10 +189,15 @@ func RunExperiment(ctx context.Context, cfg ExperimentConfig) (ExperimentReport,
 	}
 
 	metrics := calculateMetrics(len(cfg.Cases), rows)
+	metrics.DisabledRules = disabledRules
+	metrics.DisabledRuleFamilies = disabledFamilies
+	metrics.RegistryHashBefore = EvaluationRegistryHashBefore
+	metrics.RegistryHashAfter = registryHash
+	metrics.ProductionFailClosedCaveat = ProductionEvaluatorCaveat
 	if err := os.MkdirAll(cfg.OutputDir, 0o755); err != nil {
 		return ExperimentReport{}, fmt.Errorf("create experiment output directory: %w", err)
 	}
-	if err := writeExperimentCSV(filepath.Join(cfg.OutputDir, ExperimentCSVFilename), rows); err != nil {
+	if err := writeExperimentCSV(filepath.Join(cfg.OutputDir, ExperimentCSVFilename), rows, metrics); err != nil {
 		return ExperimentReport{}, err
 	}
 	if err := writeExperimentMetrics(filepath.Join(cfg.OutputDir, ExperimentMetricsFile), metrics); err != nil {
@@ -207,7 +232,9 @@ func runExperimentCase(ctx context.Context, bundle *coreregistry.Bundle, item Ca
 	executableTools := tools.NewRegistry(spy)
 	executor := runner.NewExecutor(executableTools, gate, zap.NewNop())
 	gateOff := mode == ModeGateOff
-	executor.SetBaselineB(gateOff)
+	if err := executor.SetBaselineB(gateOff); err != nil {
+		return ExperimentRow{}, fmt.Errorf("configure experiment executor: %w", err)
+	}
 
 	token, validation, err := gate.ValidateAndIssueToken(defaultExperimentAction+".plan."+item.ID+"."+mode, item.YAML, item.UserRole)
 	if err != nil {
@@ -336,7 +363,7 @@ func calculateMetrics(caseCount int, rows []ExperimentRow) MetricsReport {
 	return report
 }
 
-func writeExperimentCSV(path string, rows []ExperimentRow) error {
+func writeExperimentCSV(path string, rows []ExperimentRow, metrics MetricsReport) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create experiment CSV: %w", err)
@@ -358,6 +385,10 @@ func writeExperimentCSV(path string, rows []ExperimentRow) error {
 			row.RuleFired,
 			row.BlockedStage,
 			strconv.FormatFloat(row.LatencyMS, 'f', 6, 64),
+			disabledRuleIDs(metrics.DisabledRules),
+			strings.Join(metrics.DisabledRuleFamilies, ";"),
+			metrics.RegistryHashAfter,
+			metrics.ProductionFailClosedCaveat,
 		}
 		if err := writer.Write(record); err != nil {
 			_ = file.Close()
@@ -373,6 +404,43 @@ func writeExperimentCSV(path string, rows []ExperimentRow) error {
 		return fmt.Errorf("close experiment CSV: %w", err)
 	}
 	return nil
+}
+
+func disabledNoEvaluatorRules(bundle *coreregistry.Bundle) ([]DisabledEvaluationRule, []string) {
+	rules := []DisabledEvaluationRule{}
+	familySet := map[string]struct{}{}
+	for _, rule := range bundle.Rules.GetAllRules() {
+		if rule.Enabled || workflowvalidator.ClassifyRuleFamily(rule.RuleType) != workflowvalidator.RuleFamilyNoEvaluator {
+			continue
+		}
+		family := strings.ToLower(strings.TrimSpace(rule.RuleType))
+		rules = append(rules, DisabledEvaluationRule{RuleID: rule.RuleID, Family: family})
+		familySet[family] = struct{}{}
+	}
+	sort.Slice(rules, func(i, j int) bool { return rules[i].RuleID < rules[j].RuleID })
+	families := make([]string, 0, len(familySet))
+	for family := range familySet {
+		families = append(families, family)
+	}
+	sort.Strings(families)
+	return rules, families
+}
+
+func disabledRuleIDs(rules []DisabledEvaluationRule) string {
+	ids := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		ids = append(ids, rule.RuleID)
+	}
+	return strings.Join(ids, ";")
+}
+
+func fileSHA256(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
 func writeExperimentMetrics(path string, metrics MetricsReport) error {
@@ -438,8 +506,12 @@ func (s *experimentSpyTool) Name() string { return "experiment.spy" }
 func (s *experimentSpyTool) Description() string {
 	return "records would-execute decisions without external side effects"
 }
-func (s *experimentSpyTool) Execute(_ context.Context, params map[string]interface{}) (map[string]interface{}, error) {
-	action := strings.TrimSpace(fmt.Sprint(params["_action"]))
+func (s *experimentSpyTool) ExperimentNoExternalDispatch() {}
+func (s *experimentSpyTool) Execute(_ context.Context, capability workflowvalidator.DispatchCapability, params map[string]interface{}) (map[string]interface{}, error) {
+	action := capability.Action()
+	if action == "" {
+		action = strings.TrimSpace(fmt.Sprint(params["_action"]))
+	}
 	s.mu.Lock()
 	s.actions = append(s.actions, action)
 	s.mu.Unlock()

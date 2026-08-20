@@ -13,7 +13,7 @@
     "validator_message": "Workflow contains an unknown or hallucinated tool.",
     "llm_prompt_instruction": "Use only tools listed in AVAILABLE TOOLS. Do not invent actions.",
     "healing_guidance": "Replace the unknown action with a registered tool or create a capability request.",
-    "enabled": true
+    "enabled": false
   },
   {
     "rule_id": "GLOBAL-SAFETY-002",
@@ -173,6 +173,22 @@
     "validator_message": "Tool is not backed by an active MCP schema.",
     "llm_prompt_instruction": "If a tool is not active, use capability.create_capability_request instead of executing it.",
     "healing_guidance": "Create a capability request or generate MCP schema before execution.",
+    "enabled": false
+  },
+  {
+    "rule_id": "GLOBAL-SOD-001",
+    "rule_name": "Requester and approver must differ",
+    "rule_type": "separation_of_duties",
+    "domain": "global",
+    "description": "Approval steps must assign a principal other than the requester as approver.",
+    "applies_to_tools": ["approval.request_human_approval", "TOOL-GLB-001"],
+    "applies_to_roles": [],
+    "condition": {"type": "identity_comparison", "parameter": "requester_id,approver_id", "operator": "!=", "value": null},
+    "enforcement_action": "block",
+    "severity": "critical",
+    "validator_message": "requester_id and approver_id must be different.",
+    "llm_prompt_instruction": "Ensure requester_id and approver_id refer to different people.",
+    "healing_guidance": "Route the approval to a different authorized user.",
     "enabled": true
   }
 ]

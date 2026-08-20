@@ -64,7 +64,6 @@ type Config struct {
 	CandidateCount                     int
 	ChatTraceBoxes                     bool
 	ChatUserRoleOverride               string
-	ExperimentBaseline                 string
 }
 
 func Load() Config {
@@ -157,7 +156,6 @@ func Load() Config {
 		CandidateCount:                     getEnvInt("CANDIDATE_COUNT", 5),
 		ChatTraceBoxes:                     getEnvBool("CHAT_TRACE_BOXES", strings.EqualFold(environment, "development")),
 		ChatUserRoleOverride:               getEnv("CHAT_USER_ROLE_OVERRIDE", devUserRole),
-		ExperimentBaseline:                 getEnv("EXPERIMENT_BASELINE", ""),
 	}
 }
 
@@ -192,15 +190,6 @@ func (c Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("unsupported STORAGE_DRIVER %q (allowed values: memory or postgres)", c.StorageDriver)
-	}
-	switch c.ExperimentBaseline {
-	case "":
-	case "B":
-		if c.Environment != "experiment" {
-			return fmt.Errorf("EXPERIMENT_BASELINE=B requires APP_ENV=experiment")
-		}
-	default:
-		return fmt.Errorf("unsupported EXPERIMENT_BASELINE %q (allowed values: unset or B)", c.ExperimentBaseline)
 	}
 	switch strings.ToLower(strings.TrimSpace(c.MCPMode)) {
 	case "", "remote", "mock":
@@ -253,10 +242,6 @@ func (c Config) CORSOrigins() string {
 		add("http://127.0.0.1:5173")
 	}
 	return strings.Join(origins, ",")
-}
-
-func (c Config) BaselineBEnabled() bool {
-	return c.Environment == "experiment" && c.ExperimentBaseline == "B"
 }
 
 func detectBackendRoot() string {

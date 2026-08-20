@@ -29,7 +29,7 @@ type handlerAnalysisFetchTool struct{ calls int }
 
 func (s *handlerAnalysisFetchTool) Name() string        { return "test.analysis_fetch" }
 func (s *handlerAnalysisFetchTool) Description() string { return "returns confidential test data" }
-func (s *handlerAnalysisFetchTool) Execute(context.Context, map[string]interface{}) (map[string]interface{}, error) {
+func (s *handlerAnalysisFetchTool) Execute(context.Context, workflowvalidator.DispatchCapability, map[string]interface{}) (map[string]interface{}, error) {
 	s.calls++
 	return map[string]interface{}{"output": []interface{}{map[string]interface{}{"salary": "987654"}}}, nil
 }

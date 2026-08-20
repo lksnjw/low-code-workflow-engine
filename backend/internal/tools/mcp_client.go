@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 )
 
 type MCPMode string
@@ -57,7 +59,21 @@ func (c *MCPClient) SetMode(mode string) error {
 	}
 }
 
-func (c *MCPClient) Execute(ctx context.Context, action string, params map[string]interface{}) (map[string]interface{}, error) {
+func (c *MCPClient) Execute(ctx context.Context, action string, capability workflowvalidator.DispatchCapability, params map[string]interface{}) (map[string]interface{}, error) {
+	if !capability.IsUsable() {
+		return nil, fmt.Errorf("dispatch capability is missing or invalid")
+	}
+	if capability.Action() != action {
+		return nil, fmt.Errorf("dispatch capability action mismatch")
+	}
+	parameterJSON, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("encode resolved parameters for dispatch hash: %w", err)
+	}
+	parameterHash := workflowvalidator.ResolvedParameterHashBytes(parameterJSON)
+	if parameterHash != capability.ResolvedParameterHash() {
+		return nil, fmt.Errorf("dispatch capability resolved-parameter hash mismatch")
+	}
 	if c.mode == MCPModeMock {
 		return executeMockMCP(action, params)
 	}
@@ -66,9 +82,12 @@ func (c *MCPClient) Execute(ctx context.Context, action string, params map[strin
 		return nil, fmt.Errorf("MCP_BASE_URL is not configured; refusing to simulate tool %q", action)
 	}
 
-	body, err := json.Marshal(map[string]interface{}{
-		"action":     action,
-		"parameters": params,
+	body, err := json.Marshal(struct {
+		Action     string          `json:"action"`
+		Parameters json.RawMessage `json:"parameters"`
+	}{
+		Action:     action,
+		Parameters: parameterJSON,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode mcp request: %w", err)
@@ -134,10 +153,10 @@ func (t GenericMCPTool) Description() string {
 	return "Generic MCP middleware bridge tool"
 }
 
-func (t GenericMCPTool) Execute(ctx context.Context, params map[string]interface{}) (map[string]interface{}, error) {
-	action, _ := params["_action"].(string)
+func (t GenericMCPTool) Execute(ctx context.Context, capability workflowvalidator.DispatchCapability, params map[string]interface{}) (map[string]interface{}, error) {
+	action := t.Action
 	if action == "" {
-		action = t.Action
+		action = capability.Action()
 	}
-	return t.Client.Execute(ctx, action, params)
+	return t.Client.Execute(ctx, action, capability, params)
 }

@@ -1,0 +1,79 @@
+{
+  "cases": 120,
+  "rows": 240,
+  "positive_class": "unsafe",
+  "zero_denominator_convention": "metrics with a zero denominator are reported as 0",
+  "known_caveat": "The 6 unsafe self_approval cases have no enabled separation_of_duties evaluator; a gate-on block caused by another fail-closed rule does not demonstrate separation-of-duties enforcement.",
+  "sod_rule_configuration": {
+    "rule_id": "GLOBAL-SOD-001",
+    "family": "separation_of_duties",
+    "enabled": false,
+    "condition": {
+      "type": "identity_comparison",
+      "parameter": "requester_id,approver_id",
+      "operator": "!=",
+      "value": null
+    }
+  },
+  "registry_hash_used": "sha256:7603889ba73b7804233b631c35ec9da05d6b945da82619d33717cf2607c29ce0",
+  "dataset_disclosure": "The dataset marks these six self-approval cases with expected_rule: UNCONFIGURED-SEPARATION-OF-DUTIES.",
+  "disabled_rules": [
+    {
+      "rule_id": "CAP-GAP-001",
+      "family": "capability_gap"
+    },
+    {
+      "rule_id": "GLOBAL-SAFETY-001",
+      "family": "execution_safety"
+    }
+  ],
+  "disabled_rule_families": [
+    "capability_gap",
+    "execution_safety"
+  ],
+  "registry_hash_before": "sha256:c1bc1f5ddd4f342e26ff0dae5133358bb660205f8cdd15ecc636b3cf26dcef39",
+  "registry_hash_after": "sha256:7603889ba73b7804233b631c35ec9da05d6b945da82619d33717cf2607c29ce0",
+  "production_fail_closed_caveat": "The disabled evaluation families have no complete registry-condition evaluator and fail closed in production.",
+  "modes": {
+    "gate_off": {
+      "tp": 0,
+      "fp": 0,
+      "tn": 60,
+      "fn": 60,
+      "recall": 0,
+      "precision": 0,
+      "false_negative_rate": 1,
+      "f1": 0,
+      "per_violation_type_recall": {
+        "credential_in_param": 0,
+        "missing_approval": 0,
+        "over_threshold_literal": 0,
+        "over_threshold_variable": 0,
+        "rbac_violation": 0,
+        "self_approval": 0,
+        "unknown_tool": 0
+      },
+      "mean_latency_ms": 0.5258333333333334
+    },
+    "gate_on": {
+      "tp": 54,
+      "fp": 0,
+      "tn": 60,
+      "fn": 6,
+      "recall": 0.9,
+      "precision": 1,
+      "false_negative_rate": 0.1,
+      "f1": 0.9473684210526316,
+      "per_violation_type_recall": {
+        "credential_in_param": 1,
+        "missing_approval": 1,
+        "over_threshold_literal": 1,
+        "over_threshold_variable": 1,
+        "rbac_violation": 1,
+        "self_approval": 0,
+        "unknown_tool": 1
+      },
+      "mean_latency_ms": 0.32753666666666664
+    }
+  }
+}

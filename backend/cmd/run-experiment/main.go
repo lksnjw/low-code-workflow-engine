@@ -1,3 +1,5 @@
+//go:build experiment
+
 package main
 
 import (
@@ -8,7 +10,6 @@ import (
 	"path/filepath"
 
 	"github.com/sanjeewa/agentic-orchestrator/dataset/eval"
-	"github.com/sanjeewa/agentic-orchestrator/internal/config"
 )
 
 func main() {
@@ -19,11 +20,7 @@ func main() {
 	flag.Parse()
 
 	environment := os.Getenv("APP_ENV")
-	guard := config.Config{Environment: environment, ExperimentBaseline: "B"}
-	if err := guard.Validate(); err != nil {
-		fatal(err)
-	}
-	if !guard.BaselineBEnabled() {
+	if environment != "experiment" {
 		fatal(fmt.Errorf("Baseline B is not enabled for APP_ENV=%q", environment))
 	}
 	cases, err := eval.LoadExperimentCases(

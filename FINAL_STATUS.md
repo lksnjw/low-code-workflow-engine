@@ -1,98 +1,41 @@
-# Final Completion Audit
+# Final Consolidation Status
 
-## 1. Verdict
+Assessment date: 2026-08-20
 
-The G1/G2 gate invariants, 120-case gate-on/gate-off experiment, portal slices S1-S5 as narrowly specified, and controlled `demo.echo` path are `DONE` and passed their focused tests; the backend also passes vet, the repository-supported `-buildvcs=false` build, and 94 of 94 non-skipped top-level tests, while the frontend passes lint, 12 of 12 tests, and its production build. PostgreSQL code, migrations, encryption, configuration, and Compose provisioning exist, but both real-PostgreSQL tests skipped, so persistence is `UNVERIFIED`; request-level persistence atomicity and retry safety also remain incomplete. Security is `PARTIAL`: current tracked Go/Markdown files contain no `AIza` match, Gemini uses a header, and API responses redact provider/settings secrets, but prior non-redacted credential material requires owner rotation/history cleanup, and refresh rotation, role-permission propagation, WebSocket query tokens, proxy-aware rate limiting, outbound URL restrictions, and raw error handling still need work. The branch is `feat/role-portals`, is six commits ahead of its upstream, and had a pre-existing untracked `.claude/` directory at audit start.
+Branch: `feat/final-consolidation`
 
-## 2. Completion table
+## Verdict
 
-| Work stream | Status | Verified by | Notes |
-|---|---|---|---|
-| 2.1 G1/G2 invariants | DONE | `go test ./... -run 'Dispatch|Deferred|Token|WritePaths|StrictGate|Threshold' -count=1 -v` passed; `backend/internal/core/runner/executor.go:57`, `:99`, `:134`, `:163` | Validation tokens and dispatch-time revalidation execute before the tool. The only `RegistryValidator != nil` match is health reporting at `backend/internal/api/handlers/dashboard_handler.go:114`; no optional validation bypass was found. |
-| 2.2 Experiment harness and results | DONE | `APP_ENV=experiment go run -buildvcs=false ./cmd/run-experiment` reran 120 cases/240 rows; `backend/Makefile:14-15`; `backend/test-results/metrics.json` | CSV has 241 lines including its header. The rerun reproduced classifications and confusion matrices; only measured latency changed. |
-| 2.3 Portal slices S1-S5 | DONE | Focused Go slice tests passed; focused frontend command passed 4 suites/7 tests | This status covers the stated S1-S5 acceptance criteria. Broader role administration and user-management UI remain `PARTIAL` and are listed below. |
-| 2.4 Demo enablement | DONE | `TestGovernedDemoFlowThroughRealRoutes` passed; `backend/tests/integration/demo_flow_test.go:102-121` | The controlled mock/lexical demo proves safe -> `DONE`, unsafe -> `FAILED`, and no unsafe dispatch. It is not evidence for every remote MCP or semantic-search deployment. |
-| 2.5 PostgreSQL persistence | UNVERIFIED | `TestPostgresStoreRoundTrip` and `TestPostgresStoreEnforcesSingleWriterPerStateKey` both skipped | Code presence is not a database run. A live PostgreSQL instance and the required test environment are still needed. |
-| 2.6 Security posture | PARTIAL | Current/history searches, response-shaping inspection, and the full test suite | Header authentication and response redaction are present, but the outstanding defects and owner-only credential actions below prevent `DONE`. |
+G1 is enforced in the default production build: the server has no Baseline B wiring, the tool interface requires a validator-minted dispatch capability, and MCP rejects zero or parameter-mismatched capabilities before transport. Evidence: `TestProductionConfigIgnoresExperimentBaselineEnvironment`, `TestRunnerRejectsMissingOrMismatchedValidationTokenWithoutExecution`, `TestMCPClientZeroValueCapabilityMakesNoHTTPRequest`, `TestMCPClientMutatedParametersFailHashWithoutHTTPRequest`, and `TestMCPClientRemoteModePostsToMiddleware`.
 
-Repository/build evidence captured during this audit:
+G2 remains partial. Implemented deferred threshold/required-parameter rules and sensitive-key scans run after resolution, but no test establishes a complete dispatch-time replay of separation-of-duties or a recorded approval lifecycle. Evidence for the enforced subset: `TestDeferredThresholdDispatch`, `TestDeferredRequiredParameterRevalidatedAtDispatch`, `TestResolvedSensitiveKeyAbortsBeforeTool`, and `TestDeferredCheckWithoutEvaluatorFailsClosed`.
 
-- `git branch --show-current` returned `feat/role-portals`; `git status -sb` returned `ahead 6`; `git status --short` returned only the pre-existing `?? .claude/` before this report was created.
-- The requested `go build ./...` did not complete because Go's VCS stamping received Git exit 128 in this sandbox. `go build -buildvcs=false ./...` then passed with exit 0. `go vet ./...` passed with exit 0.
-- `go test ./... -count=1` passed: 13 packages with tests passed, 0 failed; 94 top-level tests passed, 0 failed, and 3 skipped. Remaining packages reported `[no test files]`.
-- `npm run lint` passed. `npm test` passed 9/9 suites and 12/12 tests. `npm run build` passed with 2,142 modules; Vite warned that the 683.49 kB main JavaScript chunk exceeds 500 kB.
+G3, G4, and G5 are NOT ENFORCED. There are no proving tests for idempotent external effects, a pause/approve/resume lifecycle tied to a distinct principal, or complete tamper-resistant provenance.
 
-## 3. FINISHED - the definitive list
+## Baseline B
 
-- The runner rejects absent, mismatched, content-mismatched, and forged validation tokens before execution. Proof: `backend/internal/core/runner/executor.go:57`, `:163`; passing `TestRunnerRejectsMissingOrMismatchedValidationTokenWithoutExecution` and its four subtests.
-- The runner revalidates resolved deferred values before calling a tool. Proof: validation at `backend/internal/core/runner/executor.go:99` precedes `tool.Execute` at `:134`; passing `TestDeferredThresholdDispatch`, `TestDeferredRequiredParameterRevalidatedAtDispatch`, and `TestDeferredCheckWithoutEvaluatorFailsClosed`.
-- Workflow writes and strict YAML input are gate-protected. Proof: passing `TestWorkflowWritePathsRejectInvalidDefinitionsWithoutPersistence`, `TestUnknownYAMLFieldRejectedByStrictGate`, `TestLiteralOverThresholdRejectedAtPlanTime`, and `TestDispatchViolationMarksExecutionFailedWithoutHealing` in the full/focused Go runs.
-- Baseline B deliberately bypasses the safety gate only in experiment mode and records that behavior. Proof: passing `TestBaselineBExecutesDispatchViolationAndAuditsBypass` and `TestBaselineBBypassesMissingTokenWhileDefaultStillBlocks`; experiment guard coverage is in `backend/internal/config/config_test.go:14`.
-- The experiment harness evaluates 120 labeled cases in both modes and emits 240 result rows. Proof: `backend/dataset/eval/experiment.go:239`, spy execution at `:432`; `backend/test-results/experiment_results.csv` has 241 lines including the header; `backend/test-results/metrics.json` records 120 cases/240 rows.
-- Experiment classifications are reproducible from one command. Proof: `backend/Makefile:14-15` runs `APP_ENV=experiment go run -buildvcs=false ./cmd/run-experiment`; the audit rerun reproduced every classification and confusion-matrix count, with latency as the only changed measurement.
-- Provider token-use metrics come from provider responses rather than fixed totals. Proof: Gemini parsing at `backend/internal/core/synthesizer/gemini_client.go:100-119`, Ollama at `backend/internal/core/synthesizer/ollama_client.go:207-224`, OpenAI at `backend/internal/core/synthesizer/openai_client.go:64-78`, and the measured marker at `backend/internal/core/synthesizer/candidates.go:62`; the full Go suite passed. A tracked search found no `duplicateWritesPrevented`, `1210`, `830`, `5400`, or `3000` fabricated-metric marker.
-- S1 client authorization works for its defined path: later registrations default to the client role, permissions derive from authenticated context, navigation is filtered, and direct forbidden routes show access denied. Proof: `backend/internal/repository/memory.go:116-118`, `backend/internal/api/handlers/auth_handler.go:109`, `frontend/src/hooks/usePermissions.js:2-6`, `frontend/src/constants/navigation.js:152`, `frontend/src/App.jsx:79-82`; `TestRegisterDefaultsSecondUserToClientRole` and the focused frontend permission/navigation tests passed.
-- S2 administrators can mutate the runtime tool/rule registry; successful mutation persists JSON, replaces the live snapshot, changes its hash, and invalidates an old validation token. Proof: routes at `backend/internal/api/routes/routes.go:89-94`; mutation/snapshot/hash flow at `backend/internal/core/registry/manager.go:63-87`, `:131-141`, `:178-185`, `:249`; passing `TestRegistryMutationPersistsSwapsHashRejectsOldTokenAndAudits` (`backend/internal/api/handlers/registry_handler_test.go:25`).
-- S3 provider configurations are writable and activatable without returning the stored key. Proof: routes at `backend/internal/api/routes/routes.go:154-158`; response DTO exposes `KeyPreview` at `backend/internal/api/handlers/provider_handler.go:26`, and response shaping at `:172-175`; active synthesis resolution at `backend/internal/api/handlers/handler.go:50`; passing `TestProviderSecretsAreWriteOnlyAndActivationAffectsNextSynthesis`.
-- S4 workflow assignment and client own-scope isolation work for workflows, executions, and chat sessions. Proof: `AssignedUserIDs` at `backend/internal/models/workflow.go:44`, `OwnerID` at `:117`, assignment routes at `backend/internal/api/routes/routes.go:68-69`, scope helpers at `backend/internal/api/handlers/scope_helper.go:36-61`, assignment handlers/audit at `backend/internal/api/handlers/workflow_handler.go:352-371`; passing `TestClientScopeAndWorkflowAssignment`.
-- S5's writable workflow builder binds the catalog query and renders in writable mode. Proof: `queryFn: () => ...` at `frontend/src/components/canvas/WorkflowBuilderCanvas.jsx:298`; writable test setup at `frontend/src/components/canvas/WorkflowBuilderCanvas.test.jsx:43-68`; the focused 4-suite/7-test frontend run passed.
-- The controlled demo tool is client-allowed, low risk, read-only, and side-effect-free. Proof: `backend/configs/registries/all_tools_master_registry.json:402-435`, including name at `:404`, Client role at `:423`, and safety attributes at `:424-426`.
-- Mock MCP is constrained to `demo.echo`, defaults off/remote, and is refused in production. Proof: defaults at `backend/internal/tools/mcp_client.go:32-37`, mock branch at `:50`, non-demo refusal at `:94-95`, production refusal at `backend/internal/config/config.go:181-182`, and remote example at `backend/.env.example:25`. Runner validation still precedes MCP execution (`backend/internal/core/runner/executor.go:99`, `:134`).
-- Lexical semantic fallback defaults off and the click-path runbook exists. Proof: `backend/internal/config/config.go:85-90`, `backend/.env.example:39`, and `docs/DEMO.md` (integration lifecycle at `:205`).
-- The end-to-end demo route lifecycle is verified. Proof: passing `TestGovernedDemoFlowThroughRealRoutes`; it asserts safe `DONE` at `backend/tests/integration/demo_flow_test.go:102`, mock execution at `:106`, unsafe `FAILED` at `:113`, rule evidence at `:117`, and absence of an executed message at `:120-121`.
-- Current credential response handling protects stored provider/settings values. Proof: Gemini sends `x-goog-api-key` at `backend/internal/core/synthesizer/gemini_client.go:72` and no `key=` URL-query use was found; recursive settings redaction is at `backend/internal/api/handlers/settings_handler.go:43-99`; provider views return a preview at `backend/internal/api/handlers/provider_handler.go:26`, `:172-175`.
-- Current tracked Go and Markdown files contain no `AIza` match. Proof: `git grep -n -I AIza -- '*.md' '*.go'` returned no matches. `git log --no-textconv -S AIza --oneline --all` also returned no commit match for that exact prefix.
+Baseline B was preserved for the experiment. It is compiled with `-tags experiment`, records would-block decisions, and may dispatch only to tools implementing the experiment spy/no-op marker. A real MCP tool prevents gate-off enablement. Evidence: `TestBaselineBExecutesDispatchViolationAndAuditsBypass`, `TestBaselineBHandlerExecutesPlanBlockedWorkflowAndAuditsBypass`, `TestExperimentGateOffRejectsRealMCPToolRegistry`, and `TestExperimentHarnessProducesCSVAndMetricsForFourCases`.
 
-## 4. NOT FINISHED / UNVERIFIED - the definitive list
+## Rule evaluator gaps
 
-- **P0 - PostgreSQL persistence is UNVERIFIED.** The storage abstraction exists at `backend/internal/storage/storage.go:12-27`, PostgreSQL embeds migrations at `backend/internal/storage/postgres.go:25`, migration files exist under `backend/internal/storage/migrations/`, driver selection is at `backend/internal/config/config.go:108-109`, production requires PostgreSQL at `:185`, and AES-GCM construction is at `backend/internal/storage/codec.go:32-41`; nevertheless, both live-database tests skipped. Finish by starting PostgreSQL (the `postgres` service is present in `backend/docker-compose.yml`), setting `TEST_DATABASE_URL` and a valid `STORAGE_ENCRYPTION_KEY`, then running `go test ./internal/storage -run 'TestPostgresStore(RoundTrip|EnforcesSingleWriterPerStateKey)' -count=1 -v`. Do not mark it done until both tests run rather than skip.
-- **P0 - persistence is not request-atomic and execution retry safety is not implemented.** Every write-lock release triggers a snapshot (`backend/internal/repository/persistent_store.go:26`, `:33-37`, `:77-93`), while middleware only compares a global failure generation around the whole request (`backend/internal/api/middlewares/persistence.go:40-45`). An execution record is saved before the external runner call (`backend/internal/api/handlers/execute_handler.go:71-76`), so a failed first save can be rolled back and followed by an external tool call before the request becomes 503. `RunWorkflowRequest.IdempotencyKey` exists at `backend/internal/models/state.go:54-58`, but no backend consumption was found. Finish by implementing request-scoped transaction/outbox semantics plus enforced idempotency, then add and run failure-injection tests that prove no external dispatch after a failed durable write and no duplicate dispatch after retry.
-- **P0 - browser silent refresh is BROKEN after one rotation.** The server consumes the old refresh session and stores a new one (`backend/internal/api/handlers/auth_handler.go:188-206`), but the interceptor persists only the returned access token (`frontend/src/config/axios.js:63-70`) and leaves the consumed refresh token in storage. Finish by saving the returned refresh token atomically and add a frontend test that performs two consecutive refresh cycles; run `npm test`.
-- **P1 - role permission changes do not propagate to existing users.** Users receive copied permission arrays when created (`backend/internal/api/handlers/admin_handler.go:68`; registration at `backend/internal/api/handlers/auth_handler.go:124`), authorization reads the copy (`backend/internal/api/handlers/handler.go:126`), and `UpdateRole` only mutates the role (`backend/internal/api/handlers/admin_handler.go:188-202`). It also cannot set an empty permission list because of the `len(...) > 0` guard at `:199`; `DeleteRole` deletes blindly at `:205-209`. Finish by deriving permissions from role at authorization time or synchronizing users transactionally, handling empty/referenced roles, and run new revoke/delete-role authorization tests.
-- **P1 - WebSocket access tokens are placed in URLs.** The browser opens `?token=...` at `frontend/src/hooks/useWebSocket.js:14`, and middleware accepts the query value at `backend/internal/api/middlewares/auth.go:18-22`; the Nginx `/ws` location has no access-log suppression (`frontend/nginx.conf:25-34`). Finish by using a short-lived single-use WebSocket ticket or a subprotocol/cookie design, remove query JWT acceptance, and test that URL tokens are rejected.
-- **P1 - proxy rate limiting is not client-aware.** The key is `c.IP() + path` (`backend/internal/api/middlewares/rate_limit.go:27`), Nginx forwards `X-Forwarded-For` (`frontend/nginx.conf:21`, `:32`), and no Fiber trusted-proxy configuration was found. Behind Nginx, clients may share the proxy address. Finish by configuring a strict trusted-proxy list/header and test distinct forwarded client addresses plus spoofed untrusted headers.
-- **P1 - outbound integration/provider probes have an SSRF boundary gap.** `outboundURL` checks only scheme, host, and embedded credentials (`backend/internal/api/handlers/settings_handler.go:359-367`) before `client.Do` at `:388`; it does not block loopback, private, link-local, or DNS-rebinding destinations. Finish by adding resolved-address policy checks on every connect/redirect path and run table tests for IPv4/IPv6 private and metadata endpoints.
-- **P1 - some API paths expose raw internal error strings.** Chat returns orchestration errors at `backend/internal/api/handlers/chat_handler.go:211` (also `:24`, `:49`), and settings responses include underlying request errors at `backend/internal/api/handlers/settings_handler.go:229`, `:308`, `:325`. Finish by returning stable public error codes/messages, logging redacted details server-side, and add response-leakage tests.
-- **P1 - broader administration UI is PARTIAL.** The page renders the user table, read-only matrix/audit data, and create form only (`frontend/src/pages/users/UserListPage.jsx:9-13`); rows contain no action controls (`frontend/src/components/users/UserRow.jsx:4-16`); the service implements load, create, and assignable users only (`frontend/src/services/user.service.js:6-26`). Finish by implementing authorized edit/suspend/delete/user-role and role CRUD flows, then add UI/API tests. This does not invalidate the narrow S1-S5 result.
-- **P1 - a dropped pinned PostgreSQL writer connection has no reacquisition path.** The connection is acquired once at `backend/internal/storage/postgres.go:58-77`; `Load`, `Save`, and `Probe` reuse it at `:80-126` and only `Close` releases it at `:129-149`. Finish with reconnect-and-reacquire-lock logic and a real-PostgreSQL connection-loss integration test.
-- **P2 - the exact default Go build command is UNVERIFIED in this sandbox.** `go build ./...` reached `error obtaining VCS status: exit status 128`; `go build -buildvcs=false ./...` passed. Finish by running the exact command as the repository owner or correcting safe-directory/VCS access and recording exit 0.
-- **P2 - frontend bundle splitting remains.** `npm run build` passed, but Vite reported a 683.49 kB main JavaScript chunk, above its 500 kB warning threshold. Finish with route/vendor chunking and rerun `npm run build` without the size warning.
-- **P2 - repository handoff is incomplete.** `git status -sb` reports the branch six commits ahead of `origin/feat/role-portals`; `.claude/` was already untracked. Finish by reviewing the six commits, deciding whether `.claude/` should be ignored/committed/removed, and pushing the approved branch.
+The explicit `NO_EVALUATOR` families are:
 
-## 5. Thesis-relevant results
+- `execution_safety`
+- `capability_gap`
+- `cache_safety`
 
-The committed result set is `backend/test-results/experiment_results.csv` (240 data rows plus one header) and `backend/test-results/metrics.json` (120 cases, 240 mode rows). The audit reran the harness outside the committed result directory; classifications and confusion-matrix counts matched, while latency changed as expected for a timing measurement.
+An enabled rule in one of these families blocks validation and is included in the startup warning list. Evidence: `TestEnabledCacheSafetyRuleFailsClosedWithRuleAndFamily` and `TestEnabledRulesWithoutEvaluatorListsExactlyUnimplementedFamilies`.
 
-| Mode | Recall | Precision | F1 | TP | FP | TN | FN | False-negative rate | Committed mean latency |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Gate ON | 0.9 | 1 | 0.9473684210526316 | 54 | 0 | 60 | 6 | 0.1 | 0.2753708333333333 ms |
-| Gate OFF | 0 | 0 | 0 | 0 | 0 | 60 | 60 | 1 | 0.23724833333333337 ms |
+## Out-of-scope work left unchanged
 
-The six gate-ON false negatives are reported as failures, not auto-passed. In `backend/test-results/experiment_results.csv:218-229`, the gate-ON rows are `ALLOW` where `BLOCK` is expected, all with violation type `self_approval`:
+- G3 idempotency and retry deduplication: NOT ENFORCED; no proving test carries a stable key through retry and external dispatch.
+- G4 runtime approval lifecycle: NOT ENFORCED; no proving test covers a durable approval record, execution suspension/resumption, and approval by a principal distinct from the requester.
+- G5 provenance completeness and tamper resistance: NOT ENFORCED; no proving test exists.
+- Smart Dispatcher: NOT IMPLEMENTED. The component specified in `CLAUDE.md` is future work; existing hard-coded orchestration branches are not the specified dispatcher.
+- Multi-model generation study: specified but not run. The dataset labels the workflow artifact, not the instruction. A model receiving an unsafe instruction that emits a safe workflow would be scored as a gate false negative, conflating model refusal behaviour with gate recall. Sound execution requires independent labelling of every generated artifact. The study measures generation quality, not enforcement; enforcement invariance is established structurally.
 
-- `unsafe_separation_of_duties_01`
-- `unsafe_separation_of_duties_02`
-- `unsafe_separation_of_duties_03`
-- `unsafe_separation_of_duties_04`
-- `unsafe_separation_of_duties_05`
-- `unsafe_separation_of_duties_06`
+## Consolidated evidence
 
-The caveat is explicit in `backend/test-results/metrics.json`: no enabled separation-of-duties rule covers these probes. Therefore the measured gate catches 54 of 60 unsafe cases and does not establish protection against self-approval.
+The existing Day 3A artifacts show gate-on TP=54, FP=0, TN=60, FN=6 with `GLOBAL-SOD-001` disabled and TP=60, FP=0, TN=60, FN=0 with it enabled. Exactly `unsafe_separation_of_duties_01` through `_06` changed from allow to block. Full setup, hashes, metrics, and disclosures are in `docs/RESULTS.md`.
 
-## 6. Owner actions (human-only)
-
-- Revoke/rotate any provider credential that appeared before commit `e7300c0`, then confirm revocation in the provider console. The audit printed no credential value.
-- Decide whether repository history must be rewritten to remove pre-redaction material, coordinate that rewrite with collaborators, and force-push only under an approved history-scrub procedure. `e7300c0` is the cleanup commit; the audit's exact-prefix `AIza` history search returned no commit, but direct pre/post-commit inspection showed the two documentation locations changed to `[REDACTED]`.
-- Review and push the six local commits on `feat/role-portals` to `origin/feat/role-portals` when approved.
-- Provision an isolated PostgreSQL test instance, provide `TEST_DATABASE_URL` and a valid 32-byte-key encoding through `STORAGE_ENCRYPTION_KEY`, and run the two skipped storage tests. For a server restart verification, configure `STORAGE_DRIVER=postgres`, `DATABASE_URL`, and `STORAGE_ENCRYPTION_KEY`, then verify saved state after restart.
-- Decide how the pre-existing untracked `.claude/` directory should be handled before handoff.
-
-## 7. Test skip register
-
-Full backend command: `go test ./... -count=1`. Result: 94 passed top-level tests, 0 failed, 3 skipped. Each skip was reproduced with a focused verbose run:
-
-1. `TestPostgresStoreRoundTrip` - skipped because `TEST_DATABASE_URL` was not set: `set TEST_DATABASE_URL to run PostgreSQL integration test`.
-2. `TestPostgresStoreEnforcesSingleWriterPerStateKey` - skipped because `TEST_DATABASE_URL` was not set: `set TEST_DATABASE_URL to run PostgreSQL integration test`.
-3. `TestGeminiLiveAPIGenerationAccuracyReport` - skipped because the explicit live-test opt-in and credential were absent: `set RUN_GEMINI_LIVE_TEST=1 and GEMINI_API_KEY to run the live Gemini API accuracy check`.
-
-No application code was modified; only `FINAL_STATUS.md` was created. No secret values were printed. Report line count: 98.
+Model independence is established structurally rather than through a multi-model sample. Evidence: `TestGateVerdictsAreDeterministicAcrossRepeatedRuns` (`600/600` identical), `TestGateVerdictIsInvariantToModelProvenance`, and `TestValidatorImportsNoModelOrSynthesisPackage`.

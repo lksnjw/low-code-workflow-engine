@@ -1,0 +1,17 @@
+warning: unable to access 'C:\Users\LKsnj/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\LKsnj/.config/git/ignore': Permission denied
+## fix/workflow-output-display
+?? .claude/
+?? docs/audit/
+59704f70fdf327b7680eeaadbd8b1bf0dd83d504
+fix/workflow-output-display
+59704f70fdf327b7680eeaadbd8b1bf0dd83d504`t2026-08-03T14:12:58+05:30`tLakshanSanjeewa`tfix: surface workflow final output (and partial output on failure)
+b2eadf5f6e3159442416abbd92dc0fb71407644f`t2026-08-03T12:07:55+05:30`tLakshanSanjeewa`tAdd standalone mock ERP demo integration
+de161ca8f83b6a1e3761496df26d41d7eee35b80`t2026-08-02T22:48:46+05:30`tLakshanSanjeewa`texecution: analysis steps with data-egress validation (Part 4)
+3bc7ade3c8c33523bf6c1fbb6670d3ea00794676`t2026-08-02T22:11:03+05:30`tLakshanSanjeewa`tregistry: atomic bulk import + generation-context MD (never gates)
+6b6181ddf012f25d08287996f1fb51cae6008380`t2026-08-02T21:38:37+05:30`tLakshanSanjeewa`tfix(part2): lint clean, 403→auth-denied terminal, no raw error leaks
+4805242928c0024ef9073f9b2ac42b3812aace8b`t2026-08-02T20:33:42+05:30`tLakshanSanjeewa`tfix(auth): persist rotated refresh token, prevent logout after refresh
+4d4af0cb724e424abdcbe2f1c975ae8a5ee7951e`t2026-08-02T20:12:35+05:30`tLakshanSanjeewa`tgeneration: grounded, schema-constrained prompting + accuracy report
+8a290d90615fc6bd00029e7c7b59bdfef88e9738`t2026-07-26T12:18:51+05:30`tLakshanSanjeewa`tAdd runtime registry import and context pipeline
+cd6bec27e69c0ce1b625211b935b368637b4f908`t2026-07-25T09:00:11+05:30`tLakshanSanjeewa`tRefactor routing and harden execution failures
+a0f8da831480e9a9408c5b31eefea3007a73c265`t2026-07-25T01:06:43+05:30`tLakshanSanjeewa`tAdd architecture map reconnaissance doc

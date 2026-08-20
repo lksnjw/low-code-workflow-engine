@@ -26,5 +26,6 @@ coverage.out
 backend/configs/runtime/*.json
 backend/configs/runtime/generated/
 qa-*.png
+.claude/
 
 RECONSTRUCTED_PLAN.md

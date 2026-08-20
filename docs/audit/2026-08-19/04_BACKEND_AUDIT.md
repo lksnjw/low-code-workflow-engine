@@ -1,0 +1,39 @@
+# Backend audit
+
+## Complete route inventory
+
+All `/api` protected routes use JWT plus active-user middleware; named permission middleware is defined at the same registration point (`backend/internal/api/routes/routes.go:30-44`). The table is grouped only to remain readable; every registered route is included, and each group cites the exact registration lines containing each method/path/handler.
+
+| Methods and paths | Handlers / status | Auth | Gate |
+|---|---|---|---|
+| `GET /healthz`, `GET /api/health` | `Health`, IMPLEMENTED (`backend/internal/api/routes/routes.go:13-17`, `backend/internal/api/handlers/handler.go:68-96`) | No | N/A |
+| `GET /ws/*` | `WebSocketEvents`, IMPLEMENTED health snapshot (`backend/internal/api/routes/routes.go:14`, `backend/internal/api/handlers/websocket_handler.go:12-48`) | JWT/user | N/A |
+| `/api/auth`: login, register, refresh, forgot/reset password, verify email, OAuth authorize/callback | PARTIAL: local login/register/refresh implemented; recovery/OAuth contain prototype responses (`backend/internal/api/routes/routes.go:19-28`, `backend/internal/api/handlers/auth_handler.go:17-230`) | Public + rate limit | N/A |
+| Protected auth logout/me/2FA verify/enable/disable | PARTIAL; 2FA behavior is local state, not an external factor (`backend/internal/api/routes/routes.go:46-50`, `backend/internal/api/handlers/auth_handler.go:160-230`) | JWT/user | N/A |
+| Company plus department/cost-centre/approval-tier CRUD | IMPLEMENTED local state (`backend/internal/api/routes/routes.go:52-65`, `backend/internal/api/handlers/company_handler.go:18-445`) | JWT/user; handler role checks | N/A |
+| Dashboard summary/activity/health/recent workflows | IMPLEMENTED derived state (`backend/internal/api/routes/routes.go:67-70`, `backend/internal/api/handlers/dashboard_handler.go:12-112`) | `workflow:read` | N/A |
+| Workflow templates, list/create/get/update/delete/duplicate/publish/archive/validate/run/assign/YAML/canvas/versions/restore/executions | PARTIAL; CRUD/gate/run implemented, cancellation separate STUB (`backend/internal/api/routes/routes.go:72-94`, `backend/internal/api/handlers/workflow_handler.go:19-555`, `backend/internal/api/handlers/execute_handler.go:22-175`) | Named workflow permissions | Full gate on executable YAML persistence and plan; lightweight dispatch |
+| Synthesis, synthesis validate/preview/explain, tool/rule catalog, semantic search/index health/metadata/rebuild, canvas validation | PARTIAL; real adapters with external dependencies (`backend/internal/api/routes/routes.go:96-106`, `backend/internal/api/handlers/chat_handler.go:13-110`, `backend/internal/api/handlers/catalog_handler.go:15-177`) | Workflow/settings permissions | Full gate only validation endpoints/candidates |
+| Registry status/context/history, tool/rule CRUD/import, import analyse/commit/history | IMPLEMENTED mutable runtime registry (`backend/internal/api/routes/routes.go:107-121`, `backend/internal/api/handlers/registry_handler.go:15-240`, `backend/internal/api/handlers/import_handler.go:14-111`) | Registry/settings permissions | Registry mutations invalidate old token by hash (`backend/internal/core/runner/executor.go:212-216`) |
+| Chat session CRUD/messages | IMPLEMENTED local/durable-optional session pipeline (`backend/internal/api/routes/routes.go:123-128`, `backend/internal/api/handlers/chat_handler.go:112-258`) | Chat/workflow permissions | Full candidate gate; no execution |
+| Executions list/detail/log/timeline/healing/cancel/retry | PARTIAL: read/retry real, cancel STUB (`backend/internal/api/routes/routes.go:130-136`, `backend/internal/api/handlers/execute_handler.go:347-469`) | Execution/workflow permissions | Retry delegates to run gate |
+| Analytics summary/performance/usage/healing/latency/F1/heatmap/cost | PARTIAL: state-derived; F1 explicitly unavailable (`backend/internal/api/routes/routes.go:138-145`, `backend/internal/api/handlers/analytics_handler.go:12-198`) | `workflow:read` | N/A |
+| Users/invite/detail/update/role/status/delete/activate/suspend; roles CRUD; permissions; audit list/detail/export | IMPLEMENTED local/durable-optional RBAC administration (`backend/internal/api/routes/routes.go:147-167`, `backend/internal/api/handlers/admin_handler.go:18-536`) | User/audit permissions | N/A |
+| Profile/security/notifications/API keys | PARTIAL local controls (`backend/internal/api/routes/routes.go:169-176`, `backend/internal/api/handlers/profile_handler.go:14-124`) | JWT/user plus settings for keys | N/A |
+| Settings/general/LLM/RBAC; providers; webhooks; integrations | PARTIAL records/probes, not live runner wiring (`backend/internal/api/routes/routes.go:178-204`, `backend/internal/api/handlers/settings_handler.go:14-416`, `backend/internal/api/handlers/provider_handler.go:16-222`) | Settings/provider permissions | N/A |
+| Notifications and uploads/workflow import | IMPLEMENTED local/durable-optional storage; workflow import gated (`backend/internal/api/routes/routes.go:206-214`, `backend/internal/api/handlers/notification_handler.go:14-145`) | JWT/user + workflow permission for uploads | Full gate on workflow import |
+
+## Layers
+
+- Handlers are real Fiber handlers over one shared store; mutations are usually guarded by the store lock (`backend/internal/api/handlers/handler.go:31-65`, `backend/internal/repository/memory.go:28-60`).
+- Orchestrator retrieval/generation/candidate validation and one repair are IMPLEMENTED (`backend/internal/core/orchestrator/chat_orchestrator.go:30-200`).
+- Validator rule families: RBAC, parameter required, numeric thresholds, process order, separation of duties, risk escalation, and audit are evaluated; `data_confidentiality` is partly dedicated, while `execution_safety`, `capability_gap`, and `cache_safety` silently no-op in the rule switch (`backend/internal/core/validator/registry_validator.go:242-266`, `backend/internal/core/validator/registry_validator.go:270-390`).
+- Runner is sequential: each step becomes RUNNING then DONE/FAILED; the outer execution becomes RUNNING, HEALING transiently, then DONE/FAILED. There is no general transition validator; handlers assign status strings directly (`backend/internal/core/runner/executor.go:95-194`, `backend/internal/api/handlers/execute_handler.go:71-175`).
+- Healing taxonomy permits only transient failures, one repair, full validation, and no automatic rerun (`backend/internal/core/healing/error_loop.go:11-51`, `backend/internal/api/handlers/execute_handler.go:95-139`).
+- Tools are a registry of concrete/generic MCP adapters; all active registry tools obtain a generic adapter at startup (`backend/cmd/server/main.go:152-168`, `backend/internal/tools/registry.go:8-46`).
+
+## Concurrency, errors, and authorization
+
+The store uses one RW mutex plus a synchronous persistence callback; the PostgreSQL backend holds a lifetime advisory writer lock, preventing active-active writers (`backend/internal/repository/persistent_store.go:23-40`, `backend/internal/storage/postgres.go:58-77`). Execution is synchronous in the request goroutine; a crash can orphan RUNNING state, reconciled only at next startup (`backend/internal/api/handlers/execute_handler.go:71-84`, `backend/cmd/server/main.go:101-104`). Retry parsing ignores errors and cancellation is unavailable (`backend/internal/api/handlers/execute_handler.go:453-469`).
+
+JWT authentication validates token signature/subject, then `RequireUser` checks the current store record; permissions derive from the current role rather than token claims (`backend/internal/api/middlewares/auth.go:12-46`, `backend/internal/api/handlers/handler.go:119-145`). All workflow execution HTTP routes are protected by run/run-own permission plus assignment checks (`backend/internal/api/routes/routes.go:34-36`, `backend/internal/api/routes/routes.go:85`, `backend/internal/api/handlers/execute_handler.go:35-38`).

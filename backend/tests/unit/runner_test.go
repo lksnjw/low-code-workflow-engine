@@ -20,7 +20,7 @@ type spyPolicyTool struct {
 
 func (s *spyPolicyTool) Name() string        { return "test.transfer" }
 func (s *spyPolicyTool) Description() string { return "records calls for policy tests" }
-func (s *spyPolicyTool) Execute(_ context.Context, _ map[string]interface{}) (map[string]interface{}, error) {
+func (s *spyPolicyTool) Execute(_ context.Context, _ workflowvalidator.DispatchCapability, _ map[string]interface{}) (map[string]interface{}, error) {
 	s.calls++
 	return map[string]interface{}{"ok": true}, nil
 }
@@ -148,52 +148,6 @@ func TestDeferredThresholdDispatch(t *testing.T) {
 	}
 }
 
-func TestBaselineBExecutesDispatchViolationAndAuditsBypass(t *testing.T) {
-	validator, executor, spy := newPolicyExecutor()
-	executor.SetBaselineB(true)
-	rawYAML := thresholdWorkflowYAML(`"{{input.amount}}"`)
-	token, result, err := validator.ValidateAndIssueToken("baseline-b-plan", rawYAML, "Workflow Builder")
-	if err != nil || !result.Passed || token == nil {
-		t.Fatalf("expected deferred plan to pass: result=%+v token=%+v err=%v", result, token, err)
-	}
-
-	workflow := models.Workflow{ID: "wf-baseline-b", Name: "Baseline B", YAML: rawYAML}
-	_, runErr := executor.Run(context.Background(), "run-baseline-b", workflow, map[string]interface{}{"amount": 123456}, token)
-	if runErr != nil {
-		t.Fatalf("Baseline B should execute despite dispatch violation: %v", runErr)
-	}
-	if spy.calls != 1 {
-		t.Fatalf("expected spy tool execution, got %d calls", spy.calls)
-	}
-	if !baselineAuditFound(validator.Store, "dispatch_revalidation", "TEST-THRESH-001") {
-		t.Fatal("expected Baseline B dispatch bypass audit")
-	}
-}
-
-func TestBaselineBBypassesMissingTokenWhileDefaultStillBlocks(t *testing.T) {
-	workflow := models.Workflow{ID: "wf-token-comparison", Name: "Token comparison", YAML: thresholdWorkflowYAML("25")}
-
-	_, gatedExecutor, gatedSpy := newPolicyExecutor()
-	if _, err := gatedExecutor.Run(context.Background(), "run-gated", workflow, map[string]interface{}{}, nil); err == nil {
-		t.Fatal("expected default mode to block a missing token")
-	}
-	if gatedSpy.calls != 0 {
-		t.Fatalf("default mode executed %d tool calls", gatedSpy.calls)
-	}
-
-	validator, baselineExecutor, baselineSpy := newPolicyExecutor()
-	baselineExecutor.SetBaselineB(true)
-	if _, err := baselineExecutor.Run(context.Background(), "run-baseline-token", workflow, map[string]interface{}{}, nil); err != nil {
-		t.Fatalf("Baseline B should bypass the missing token: %v", err)
-	}
-	if baselineSpy.calls != 1 {
-		t.Fatalf("expected Baseline B spy execution, got %d calls", baselineSpy.calls)
-	}
-	if !baselineAuditFound(validator.Store, "validation_token_required", "") {
-		t.Fatal("expected Baseline B token bypass audit")
-	}
-}
-
 func TestResolvedSensitiveKeyAbortsBeforeTool(t *testing.T) {
 	validator, executor, spy := newPolicyExecutor()
 	rawYAML := thresholdWorkflowYAML(`"{{input.amount}}"`)
@@ -255,7 +209,7 @@ func TestDeferredRequiredParameterRevalidatedAtDispatch(t *testing.T) {
 
 func TestDeferredCheckWithoutEvaluatorFailsClosed(t *testing.T) {
 	validator, executor, spy := newPolicyExecutorWithRules([]coreregistry.Rule{{
-		RuleID: "UNKNOWN-RULE", RuleType: "unsupported_sensitivity", Domain: "test",
+		RuleID: "UNKNOWN-RULE", RuleType: "rbac", Domain: "test",
 		AppliesToTools: []string{"test.transfer"}, Condition: coreregistry.RuleCondition{Type: "sensitive_key"},
 		EnforcementAction: "block", Enabled: true,
 	}})
@@ -267,6 +221,19 @@ func TestDeferredCheckWithoutEvaluatorFailsClosed(t *testing.T) {
 	if !hasDeferredRule(token.DeferredChecks, "UNKNOWN-RULE") {
 		t.Fatalf("expected unsupported rule to be deferred, got %+v", token.DeferredChecks)
 	}
+	validator.Rules.ReplaceAll([]coreregistry.Rule{{
+		RuleID: "UNKNOWN-RULE", RuleType: "cache_safety", Domain: "test",
+		AppliesToTools: []string{"test.transfer"}, Condition: coreregistry.RuleCondition{Type: "sensitive_key"},
+		EnforcementAction: "block", Enabled: true,
+	}, {
+		RuleID: "TEST-THRESH-001", RuleType: "amount_threshold", Domain: "test",
+		AppliesToTools: []string{"test.transfer"}, Condition: coreregistry.RuleCondition{Parameter: "amount", Operator: ">", Value: 100},
+		EnforcementAction: "require_human_approval", Enabled: true,
+	}, {
+		RuleID: "GLOBAL-SAFETY-002", RuleType: "data_confidentiality", Domain: "global",
+		Condition:         coreregistry.RuleCondition{Type: "sensitive_key", Parameter: "parameters", Operator: "not_exists"},
+		EnforcementAction: "block", Enabled: true,
+	}}, "rules-v1")
 	workflow := models.Workflow{ID: "wf-unknown-evaluator", YAML: rawYAML}
 	_, runErr := executor.Run(context.Background(), "run-unknown-evaluator", workflow, map[string]interface{}{"amount": 25}, token)
 	var policyErr *runner.ErrDispatchPolicyViolation
@@ -348,24 +315,6 @@ func hasDeferredRule(checks []models.DeferredCheck, ruleID string) bool {
 func containsText(value, needle string) bool {
 	for index := 0; index+len(needle) <= len(value); index++ {
 		if value[index:index+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
-}
-
-func baselineAuditFound(store *repository.Store, decision, ruleID string) bool {
-	store.Mu.RLock()
-	defer store.Mu.RUnlock()
-	for _, entry := range store.AuditLogs {
-		if entry.After["baseline"] != "B" || entry.After["decision"] != decision || entry.After["would_have_blocked"] != true {
-			continue
-		}
-		if ruleID == "" {
-			return true
-		}
-		evidence, ok := entry.After["evidence"].(map[string]interface{})
-		if ok && evidence["rule_id"] == ruleID {
 			return true
 		}
 	}

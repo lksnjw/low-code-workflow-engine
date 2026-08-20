@@ -375,8 +375,7 @@ steps:
 
 func newRegistryValidator(t *testing.T) *workflowvalidator.RegistryValidator {
 	t.Helper()
-	bundle := loadRegistryFixture(t)
-	return workflowvalidator.NewRegistryValidator(bundle.Tools, bundle.Rules, repository.NewStore())
+	return newImplementedRuleRegistryValidator(t)
 }
 
 func loadRegistryFixture(t *testing.T) *coreregistry.Bundle {
