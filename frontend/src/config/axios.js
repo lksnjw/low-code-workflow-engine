@@ -32,16 +32,9 @@ export function isNetworkError(error) {
   return Boolean(error.request) || error.code === "ECONNABORTED" || error.message === "Network Error";
 }
 
-/**
- * The server could not answer: either no response at all, or an upstream error
- * from whatever sits in front of it. A dev proxy answers 500 when the API is
- * down and nginx answers 502/504, so a 5xx is a health problem, never a reason
- * to end the session.
- */
+/** The API is unreachable only when no HTTP response was received. */
 export function isServerUnavailable(error) {
-  if (isNetworkError(error)) return true;
-  const status = error?.response?.status;
-  return typeof status === "number" && status >= 500;
+  return isNetworkError(error);
 }
 
 // Attach Bearer token to every request
@@ -104,8 +97,7 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config || {};
 
-    // The server could not answer (no response, or a 5xx from a proxy in
-    // front of it). Keep the session, tell the app.
+    // No HTTP response was received. Keep the session and tell the app.
     if (isServerUnavailable(error)) {
       window.dispatchEvent(new CustomEvent("auth:unreachable"));
       return Promise.reject(error);
