@@ -185,6 +185,63 @@ func TestExecutionOutputRedactsCredentialShapedFields(t *testing.T) {
 	}
 }
 
+func TestExecutionLogsRedactCredentialShapedToolResultsAtStorageAndReadBoundaries(t *testing.T) {
+	handler, app, spy := failureCategoryApp(t)
+	spy.result = map[string]interface{}{
+		"ok":      true,
+		"api_key": "storage-secret",
+		"nested":  map[string]interface{}{"password": "nested-secret", "visible": "kept"},
+	}
+
+	body := runOutputWorkflow(t, app, "redacted logs", singleStepYAML, map[string]interface{}{"amount": 10})
+	data, _ := body["data"].(map[string]interface{})
+	executionID, _ := data["id"].(string)
+	if executionID == "" {
+		t.Fatalf("run did not return an execution: %+v", body)
+	}
+
+	stored := handler.Store.ExecutionLogs[executionID]
+	if len(stored) != 1 {
+		t.Fatalf("stored logs = %d, want 1", len(stored))
+	}
+	assertExecutionLogSecretsRedacted(t, "stored", stored[0].Metadata)
+
+	// Simulate a legacy record written before write-time redaction existed, so
+	// this assertion independently proves the read boundary is fail-safe.
+	handler.Store.ExecutionLogs[executionID][0].Metadata = map[string]interface{}{
+		"api_key": "legacy-secret",
+		"nested":  map[string]interface{}{"password": "legacy-nested-secret", "visible": "kept"},
+	}
+
+	response := registryTestRequest(t, app, http.MethodGet, "/executions/"+executionID+"/logs", "admin", nil)
+	responseBody := decodeJSONBody(t, response)
+	response.Body.Close()
+	items, _ := responseBody["data"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("logs endpoint returned %d items: %+v", len(items), responseBody)
+	}
+	logItem, _ := items[0].(map[string]interface{})
+	metadata, _ := logItem["metadata"].(map[string]interface{})
+	assertExecutionLogSecretsRedacted(t, "response", metadata)
+}
+
+func assertExecutionLogSecretsRedacted(t *testing.T, boundary string, metadata map[string]interface{}) {
+	t.Helper()
+	if metadata == nil {
+		t.Fatalf("%s metadata is missing", boundary)
+	}
+	if _, exists := metadata["api_key"]; exists {
+		t.Fatalf("%s metadata retained api_key: %+v", boundary, metadata)
+	}
+	nested, _ := metadata["nested"].(map[string]interface{})
+	if nested == nil || nested["visible"] != "kept" {
+		t.Fatalf("%s metadata lost non-secret nested data: %+v", boundary, metadata)
+	}
+	if _, exists := nested["password"]; exists {
+		t.Fatalf("%s metadata retained nested password: %+v", boundary, metadata)
+	}
+}
+
 func TestAnalysisStepOutputIsUnwrapped(t *testing.T) {
 	// The runner stores an analysis result wrapped as {"output": ...}; the
 	// execution record must expose the inner value, not the wrapper.
