@@ -81,6 +81,7 @@ function RegistryPage({ initialKind = "tools" }) {
   const { notify } = useNotifications();
   const { has } = usePermissions();
   const canWrite = has("registry:write");
+  const canRebuild = has("settings:manage");
   const query = useQuery({ queryKey: ["admin-registry"], queryFn: registryService.load });
 
   const items = query.data?.[kind] ?? [];
@@ -117,10 +118,14 @@ function RegistryPage({ initialKind = "tools" }) {
       await queryClient.invalidateQueries({ queryKey: ["registry-status"] });
       setEditor(null);
       setDraft("");
-      notify("Registry saved. Semantic search may need a rebuild.", "success", {
-        label: "Rebuild index",
-        onClick: rebuild,
-      });
+      if (canRebuild) {
+        notify("Registry saved. Semantic search may need a rebuild.", "success", {
+          label: "Rebuild index",
+          onClick: rebuild,
+        });
+      } else {
+        notify("Registry saved. A settings manager can rebuild semantic search if needed.", "success");
+      }
     },
     onError: (error) => notify(apiErrorMessage(error, "Registry change failed."), "error"),
   });

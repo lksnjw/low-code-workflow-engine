@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import Card from "../../components/shared/ui/Card";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
-import AuditLogTable from "../../components/users/AuditLogTable";
 import PermissionMatrix from "../../components/users/PermissionMatrix";
 import RoleCreateForm, { restrictPermissionsToCaller } from "../../components/users/RoleCreateForm";
 import RolePermissionEditor from "../../components/users/RolePermissionEditor";
@@ -94,7 +93,6 @@ function UserListPage({ view = "directory" }) {
   const headings = {
     directory: ["User Directory", "Create accounts, assign roles, and change active status."],
     roles: ["Roles & Permissions", "Manage role definitions and inspect the effective permission matrix."],
-    audit: ["Audit Logs", "Review recorded administrative and governance actions."],
   };
   const [title, description] = headings[view] || headings.directory;
 
@@ -154,7 +152,6 @@ function UserListPage({ view = "directory" }) {
           <PermissionMatrix rows={data?.matrix} />
         </section>
       ) : null}
-      {view === "audit" ? <AuditLogTable logs={data?.audit} /> : null}
     </div>
   );
 }

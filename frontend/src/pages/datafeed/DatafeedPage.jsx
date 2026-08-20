@@ -2,10 +2,13 @@ import { Icon } from "@iconify/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import useSemanticStatus from "../../hooks/useSemanticStatus";
+import { usePermissions } from "../../hooks/usePermissions";
 import { semanticService } from "../../services/semantic.service";
 
 function DatafeedPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canRebuild = has("settings:manage");
   const status = useSemanticStatus();
   const rebuild = useMutation({
     mutationFn: semanticService.rebuild,
@@ -21,7 +24,7 @@ function DatafeedPage() {
     <div className="space-y-6">
       <section className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
         <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Semantic retrieval</p><h1 className="page-heading mt-3 text-gray-950 dark:text-white">Index Status</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">Live status reported by the configured semantic search service.</p></div>
-        <button onClick={() => rebuild.mutate()} disabled={rebuild.isPending} className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 disabled:opacity-70 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300"><Icon icon={rebuild.isPending ? "mdi:loading" : "mdi:database-refresh"} className={`h-5 w-5 ${rebuild.isPending ? "animate-spin" : ""}`} />{rebuild.isPending ? "Rebuilding…" : "Rebuild Index"}</button>
+        {canRebuild ? <button onClick={() => rebuild.mutate()} disabled={rebuild.isPending} className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 disabled:opacity-70 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300"><Icon icon={rebuild.isPending ? "mdi:loading" : "mdi:database-refresh"} className={`h-5 w-5 ${rebuild.isPending ? "animate-spin" : ""}`} />{rebuild.isPending ? "Rebuilding…" : "Rebuild Index"}</button> : <span className="w-fit rounded-full border border-gray-200 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-500 dark:border-gray-800">Read only · settings permission required to rebuild</span>}
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
