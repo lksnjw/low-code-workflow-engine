@@ -2,7 +2,9 @@ package synthesizer
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"sort"
@@ -13,6 +15,7 @@ import (
 )
 
 const (
+	candidatePromptTemplateVersion = "prompt/candidate/v1"
 	maxPromptTools            = 10
 	maxPromptRules            = 15
 	maxPromptGlobalRules      = 8
@@ -67,6 +70,8 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 	}
 	req = boundCandidateRequest(req)
 	prompt := s.Prompt.BuildCandidatePrompt(req)
+	promptDigest := sha256.Sum256([]byte(prompt))
+	promptSHA256 := "sha256:" + hex.EncodeToString(promptDigest[:])
 	raw, provider, model, usage, err := s.generateWithUsage(ctx, prompt, req.Model)
 	if err != nil {
 		return nil, err
@@ -91,6 +96,8 @@ func (s *Service) GenerateCandidates(ctx context.Context, req CandidateGeneratio
 		candidates[index].GenerationMetadata["model"] = model
 		candidates[index].GenerationMetadata["promptToolCount"] = toolCount
 		candidates[index].GenerationMetadata["promptRuleCount"] = ruleCount
+		candidates[index].GenerationMetadata["promptTemplateVersion"] = candidatePromptTemplateVersion
+		candidates[index].GenerationMetadata["promptSha256"] = promptSHA256
 		candidates[index].GenerationMetadata["generationAttempt"] = generationAttempt(req)
 	}
 	return candidates, nil

@@ -154,6 +154,22 @@ func (h *Handler) runWorkflowByID(c *fiber.Ctx, workflowID string, req models.Ru
 			c.Get("User-Agent"),
 		)
 	}
+	if execution.Status == models.StatusDone {
+		h.Store.Audit(
+			execution.StartedBy,
+			"execution.completed",
+			models.ResourceRef{Type: "execution", ID: execution.ID},
+			nil,
+			map[string]interface{}{
+				"executionId": execution.ID,
+				"workflowId":  execution.WorkflowID,
+				"stepCount":   len(runResult.Timeline),
+				"durationMs":  execution.DurationMS,
+			},
+			c.IP(),
+			c.Get("User-Agent"),
+		)
+	}
 	h.Store.Mu.Unlock()
 
 	if execution.Status == models.StatusFailed {

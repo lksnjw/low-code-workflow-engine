@@ -78,6 +78,39 @@ func TestSuccessfulRunReturns200(t *testing.T) {
 	}
 }
 
+func TestSuccessfulRunWritesCompletionAudit(t *testing.T) {
+	_, store, app, _ := newGateTestHandler()
+	store.Workflows["wf-completion-audit"] = &models.Workflow{
+		ID: "wf-completion-audit", Name: "completion audit", YAML: validWorkflowYAML("25"), Status: models.StatusPending,
+	}
+
+	response := gateRequest(t, app, http.MethodPost, "/workflows/wf-completion-audit/run", map[string]interface{}{"input": map[string]interface{}{}})
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.StatusCode, responseBody(t, response))
+	}
+
+	execution := executionForWorkflow(store, "wf-completion-audit")
+	if execution == nil {
+		t.Fatal("successful execution was not stored")
+	}
+	for _, entry := range store.AuditLogs {
+		if entry.Action != "execution.completed" || entry.Resource.ID != execution.ID {
+			continue
+		}
+		if entry.After["executionId"] != execution.ID || entry.After["workflowId"] != execution.WorkflowID {
+			t.Fatalf("completion audit identifiers = %+v", entry.After)
+		}
+		if entry.After["stepCount"] != 1 || entry.After["durationMs"] != execution.DurationMS {
+			t.Fatalf("completion audit terminal facts = %+v", entry.After)
+		}
+		if len(entry.After) != 4 {
+			t.Fatalf("completion audit contains non-minimal payload: %+v", entry.After)
+		}
+		return
+	}
+	t.Fatal("successful execution did not write execution.completed audit")
+}
+
 func TestDispatchPolicyViolationStillFailedNeverHealed(t *testing.T) {
 	_, store, app, spy := newGateTestHandler()
 	store.Workflows["wf-policy"] = &models.Workflow{

@@ -2,6 +2,8 @@ package synthesizer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -130,6 +132,47 @@ func TestGenerateCandidatesPreservesBatchUsageOnEveryCandidate(t *testing.T) {
 			t.Errorf("candidate %s model = %#v, want gemini-candidate-test", candidate.CandidateID, got)
 		}
 		assertTemperature(t, candidate.GenerationMetadata, 0)
+	}
+}
+
+func TestGenerateCandidatesRecordsPromptTemplateVersionAndHashWithoutRawPrompt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]interface{}{
+			"candidates": []map[string]interface{}{{
+				"content": map[string]interface{}{
+					"parts": []map[string]string{{"text": "name: provenance\ndescription: Prompt provenance test.\ntrigger:\n  type: manual\nsteps: []"}},
+			},
+		}},
+	})
+	}))
+	defer server.Close()
+
+	service := NewServiceWithProvider("", "", false, "gemini", "test-key", "gemini-provenance-test")
+	service.Gemini.BaseURL = server.URL
+	service.Gemini.HTTP = server.Client()
+	request := CandidateGenerationRequest{Prompt: "generate a provenance workflow", UserRole: "Client", CandidateCount: 1}
+	bounded := boundCandidateRequest(request)
+	prompt := service.Prompt.BuildCandidatePrompt(bounded)
+	digest := sha256.Sum256([]byte(prompt))
+	wantHash := "sha256:" + hex.EncodeToString(digest[:])
+
+	candidates, err := service.GenerateCandidates(context.Background(), request)
+	if err != nil {
+		t.Fatalf("GenerateCandidates returned an error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("candidate count = %d, want 1", len(candidates))
+	}
+	metadata := candidates[0].GenerationMetadata
+	if got := metadata["promptTemplateVersion"]; got != candidatePromptTemplateVersion {
+		t.Fatalf("promptTemplateVersion = %#v, want %q", got, candidatePromptTemplateVersion)
+	}
+	if got := metadata["promptSha256"]; got != wantHash {
+		t.Fatalf("promptSha256 = %#v, want %q", got, wantHash)
+	}
+	if _, retained := metadata["prompt"]; retained {
+		t.Fatal("generation metadata retained the raw prompt")
 	}
 }
 
