@@ -127,7 +127,10 @@ func (h *Handler) SemanticSearch(c *fiber.Ctx) error {
 	if h.Search == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "semantic search is not configured")
 	}
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	query := strings.TrimSpace(asString(body["query"]))
 	if query == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "query is required")
@@ -149,7 +152,10 @@ func (h *Handler) SemanticSearch(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CanvasValidateWorkflow(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	yamlText := strings.TrimSpace(asString(body["yaml"]))
 	if yamlText == "" {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(models.Fail("Canvas node/edge to YAML conversion is not implemented yet. Provide yaml for validation.", map[string]interface{}{

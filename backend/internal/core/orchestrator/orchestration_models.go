@@ -17,7 +17,6 @@ type ChatRequest struct {
 	TopKTemplates int
 	TopKExamples  int
 	GenerateCount int
-	DryRun        bool
 }
 
 type CandidateReport struct {

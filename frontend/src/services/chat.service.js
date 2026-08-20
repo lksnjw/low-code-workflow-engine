@@ -31,7 +31,6 @@ export const chatService = {
     ["mode", "model", "workflowId"].forEach((key) => {
       if (options[key]) payload[key] = options[key];
     });
-    if (typeof options.dry_run === "boolean") payload.dry_run = options.dry_run;
     const response = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload);
     return response.data.data;
   },

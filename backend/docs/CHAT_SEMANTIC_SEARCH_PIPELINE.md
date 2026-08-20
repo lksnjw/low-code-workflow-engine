@@ -158,8 +158,7 @@ Request:
   "mode": "generate_workflow",
   "top_k_tools": 10,
   "top_k_rules": 15,
-  "generate_candidates": 5,
-  "dry_run": true
+  "generate_candidates": 5
 }
 ```
 
