@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { afterEach, expect, test } from "@jest/globals";
+import { afterEach, expect, jest, test } from "@jest/globals";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import axios from "axios";
@@ -93,40 +93,36 @@ test("Retry restores the screen once the backend is back, with no re-authenticat
   expect(localStorage.getItem("workflow.authToken")).toBe("tok");
 });
 
-function proxyFiveHundred(config) {
-  const error = new Error("Request failed with status code 500");
+function structuredServiceUnavailable(config) {
+  const error = new Error("Request failed with status code 503");
   error.config = config;
   error.request = {};
-  error.response = { data: "", status: 500, statusText: "500", headers: {}, config, request: {} };
+  error.response = {
+    data: { success: false, message: "Persistence is temporarily unavailable." },
+    status: 503,
+    statusText: "503",
+    headers: {},
+    config,
+    request: {},
+  };
   return Promise.reject(error);
 }
 
-// A dev proxy answers 500 (and nginx 502/504) when the API is down. That is a
-// health problem, not an expiry, and must not clear the session.
-test("a 5xx from the proxy keeps the session and shows the banner", async () => {
-  localStorage.setItem("workflow.authToken", "tok");
-  localStorage.setItem("workflow.refreshToken", "ref");
-  localStorage.setItem("workflow.user", JSON.stringify({ id: "usr_1", name: "Admin" }));
+test("a structured 503 response does not trigger the unreachable banner", async () => {
+  apiClient.defaults.adapter = structuredServiceUnavailable;
+  const unreachable = jest.fn();
+  window.addEventListener("auth:unreachable", unreachable);
 
-  apiClient.defaults.adapter = proxyFiveHundred;
-  axios.defaults.adapter = proxyFiveHundred;
+  await expect(apiClient.get("/workflows")).rejects.toMatchObject({ response: { status: 503 } });
 
-  render(
-    <AuthProvider>
-      <Probe />
-    </AuthProvider>,
-  );
-
-  await waitFor(() => expect(screen.getByTestId("unreachable").textContent).toBe("true"));
-  expect(localStorage.getItem("workflow.authToken")).toBe("tok");
-  expect(screen.getByTestId("authed").textContent).toBe("true");
-  expect(screen.queryByText(/Welcome back/i)).toBeNull();
+  expect(unreachable).not.toHaveBeenCalled();
+  window.removeEventListener("auth:unreachable", unreachable);
 });
 
-test("isServerUnavailable covers both no-response and 5xx, but not 401", () => {
+test("isServerUnavailable covers no-response failures but not HTTP responses", () => {
   expect(isServerUnavailable({ request: {}, message: "Network Error" })).toBe(true);
-  expect(isServerUnavailable({ response: { status: 500 } })).toBe(true);
-  expect(isServerUnavailable({ response: { status: 502 } })).toBe(true);
+  expect(isServerUnavailable({ response: { status: 500 } })).toBe(false);
+  expect(isServerUnavailable({ response: { status: 503 } })).toBe(false);
   expect(isServerUnavailable({ response: { status: 401 } })).toBe(false);
   expect(isServerUnavailable({ response: { status: 403 } })).toBe(false);
 });
