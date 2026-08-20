@@ -65,5 +65,9 @@ export function isGovernanceBlock(failure) {
 
 export function statusMetaFor(status, failure) {
   if (status === WORKFLOW_STATUS.FAILED && isGovernanceBlock(failure)) return BLOCKED_META;
-  return STATUS_META[status] ?? STATUS_META.PENDING;
+  return STATUS_META[status] ?? {
+    label: typeof status === "string" && status ? status : "Unknown",
+    tone: "gray",
+    color: "bg-gray-100 text-gray-700 dark:bg-gray-500/15 dark:text-gray-300",
+  };
 }
