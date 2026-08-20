@@ -69,7 +69,7 @@ test("audit-only user loads audit data without administration endpoints", async 
   const queryClient = renderWithQuery(<AuditPage />);
   expect(await screen.findByText("No audit events recorded.")).not.toBeNull();
   expect(get).toHaveBeenCalledTimes(1);
-  expect(get).toHaveBeenCalledWith("/audit", { params: { limit: 10 } });
+  expect(get).toHaveBeenCalledWith("/audit", { params: { limit: 20 } });
   expect(get.mock.calls.some(([path]) => ["/users", "/roles", "/permissions", "/permissions/matrix"].includes(path))).toBe(false);
   queryClient.clear();
 });

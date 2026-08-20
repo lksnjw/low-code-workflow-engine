@@ -9,6 +9,10 @@ function AuditPage() {
   if (query.isLoading) return <LoadingState label="Loading audit events…" />;
   if (query.error) return <ErrorState error={query.error} onRetry={query.refetch} />;
 
+  const logs = query.data?.logs ?? [];
+  const total = Number(query.data?.meta?.total);
+  const hasTotal = Number.isFinite(total);
+
   return (
     <div className="space-y-6">
       <div>
@@ -17,7 +21,12 @@ function AuditPage() {
           Review recorded administrative and governance actions.
         </p>
       </div>
-      <AuditLogTable logs={query.data} />
+      {hasTotal ? (
+        <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">
+          Showing {logs.length.toLocaleString()} of {total.toLocaleString()} audit events.
+        </p>
+      ) : null}
+      <AuditLogTable logs={logs} />
     </div>
   );
 }
