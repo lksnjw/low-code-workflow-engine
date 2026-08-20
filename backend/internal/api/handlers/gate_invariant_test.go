@@ -29,7 +29,6 @@ type handlerSpyTool struct {
 	// is how a partial-output run is produced.
 	failure   error
 	failAfter int
-	result    map[string]interface{}
 }
 
 func (s *handlerSpyTool) Name() string        { return "test.transfer" }
@@ -38,9 +37,6 @@ func (s *handlerSpyTool) Execute(_ context.Context, _ workflowvalidator.Dispatch
 	s.calls++
 	if s.failure != nil && s.calls > s.failAfter {
 		return nil, s.failure
-	}
-	if s.result != nil {
-		return s.result, nil
 	}
 	return map[string]interface{}{"ok": true}, nil
 }

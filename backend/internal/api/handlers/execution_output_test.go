@@ -1,13 +1,25 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	workflowvalidator "github.com/sanjeewa/agentic-orchestrator/internal/core/validator"
 	"github.com/sanjeewa/agentic-orchestrator/internal/models"
 )
+
+type credentialResultTool struct {
+	result map[string]interface{}
+}
+
+func (t credentialResultTool) Name() string        { return "test.transfer" }
+func (t credentialResultTool) Description() string { return "credential-shaped result fixture" }
+func (t credentialResultTool) Execute(_ context.Context, _ workflowvalidator.DispatchCapability, _ map[string]interface{}) (map[string]interface{}, error) {
+	return t.result, nil
+}
 
 // runOutputWorkflow creates and runs a workflow, returning the run response.
 func runOutputWorkflow(t *testing.T, app *fiber.App, name, yaml string, input map[string]interface{}) map[string]interface{} {
@@ -186,12 +198,12 @@ func TestExecutionOutputRedactsCredentialShapedFields(t *testing.T) {
 }
 
 func TestExecutionLogsRedactCredentialShapedToolResultsAtStorageAndReadBoundaries(t *testing.T) {
-	handler, app, spy := failureCategoryApp(t)
-	spy.result = map[string]interface{}{
+	handler, app, _ := failureCategoryApp(t)
+	handler.Runner.Registry.Register(credentialResultTool{result: map[string]interface{}{
 		"ok":      true,
 		"api_key": "storage-secret",
 		"nested":  map[string]interface{}{"password": "nested-secret", "visible": "kept"},
-	}
+	}})
 
 	body := runOutputWorkflow(t, app, "redacted logs", singleStepYAML, map[string]interface{}{"amount": 10})
 	data, _ := body["data"].(map[string]interface{})
