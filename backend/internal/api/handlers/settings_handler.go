@@ -24,7 +24,10 @@ func (h *Handler) GetSettings(c *fiber.Ctx) error {
 }
 
 func (h *Handler) PatchSettings(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	if general, ok := body["general"].(map[string]interface{}); ok {
 		h.Store.Settings.General = mergeMap(h.Store.Settings.General, general)
@@ -48,7 +51,10 @@ func (h *Handler) GetGeneralSettings(c *fiber.Ctx) error {
 }
 
 func (h *Handler) PatchGeneralSettings(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	h.Store.Settings.General = mergeMap(h.Store.Settings.General, body)
 	data := withoutSecretFields(h.Store.Settings.General)
@@ -64,7 +70,10 @@ func (h *Handler) GetLLMSettings(c *fiber.Ctx) error {
 }
 
 func (h *Handler) PatchLLMSettings(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	h.Store.Settings.LLM = mergeMap(h.Store.Settings.LLM, body)
 	data := withoutSecretFields(h.Store.Settings.LLM)
@@ -100,7 +109,10 @@ func (h *Handler) GetRBACSettings(c *fiber.Ctx) error {
 }
 
 func (h *Handler) PatchRBACSettings(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	h.Store.Settings.RBAC = mergeMap(h.Store.Settings.RBAC, body)
 	data := withoutSecretFields(h.Store.Settings.RBAC)
@@ -116,7 +128,10 @@ func (h *Handler) ListWebhooks(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateWebhook(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	name := strings.TrimSpace(fmt.Sprint(body["name"]))
 	endpoint := strings.TrimSpace(fmt.Sprint(body["url"]))
 	if name == "" || name == "<nil>" {
@@ -134,7 +149,10 @@ func (h *Handler) CreateWebhook(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateWebhook(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
 	webhook, ok := h.Store.Webhooks[c.Params("id")]
@@ -199,7 +217,10 @@ func (h *Handler) ListIntegrations(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateIntegration(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	name := strings.TrimSpace(fmt.Sprint(body["name"]))
 	integrationType := strings.TrimSpace(fmt.Sprint(body["type"]))
 	if name == "" || name == "<nil>" || integrationType == "" || integrationType == "<nil>" {
@@ -226,7 +247,10 @@ func (h *Handler) GetIntegration(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateIntegration(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
 	integration, ok := h.Store.Integrations[c.Params("id")]

@@ -269,10 +269,12 @@ func mergeMap(dst map[string]interface{}, src map[string]interface{}) map[string
 	return dst
 }
 
-func decodeMap(c *fiber.Ctx) map[string]interface{} {
+func decodeMap(c *fiber.Ctx) (map[string]interface{}, error) {
 	payload := map[string]interface{}{}
-	_ = c.BodyParser(&payload)
-	return payload
+	if err := c.BodyParser(&payload); err != nil {
+		return nil, fiber.NewError(fiber.StatusBadRequest, "Invalid JSON request body")
+	}
+	return payload, nil
 }
 
 func initials(name string) string {

@@ -113,7 +113,10 @@ func (h *Handler) DeleteUpload(c *fiber.Ctx) error {
 func (h *Handler) ImportWorkflow(c *fiber.Ctx) error {
 	yamlText := c.FormValue("yaml")
 	if yamlText == "" {
-		body := decodeMap(c)
+		body, err := decodeMap(c)
+		if err != nil {
+			return err
+		}
 		yamlText, _ = body["yaml"].(string)
 	}
 	if yamlText == "" {

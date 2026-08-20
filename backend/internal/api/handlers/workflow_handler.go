@@ -185,7 +185,10 @@ func (h *Handler) DeleteWorkflow(c *fiber.Ctx) error {
 }
 
 func (h *Handler) DuplicateWorkflow(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	source, ok := h.workflowByID(c.Params("id"))
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
@@ -209,7 +212,10 @@ func (h *Handler) DuplicateWorkflow(c *fiber.Ctx) error {
 }
 
 func (h *Handler) PublishWorkflow(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	actor := principalFromUser(h.currentUser(c))
 	stored, ok := h.workflowByID(c.Params("id"))
 	if !ok {
@@ -265,7 +271,10 @@ func (h *Handler) ValidateWorkflow(c *fiber.Ctx) error {
 	if !ok {
 		return fiber.NewError(fiber.StatusNotFound, "Workflow not found")
 	}
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	yamlText, _ := body["yaml"].(string)
 	if yamlText == "" {
 		yamlText = workflow.YAML
@@ -384,7 +393,10 @@ func (h *Handler) ListAssignableWorkflowUsers(c *fiber.Ctx) error {
 }
 
 func (h *Handler) AssignWorkflowUser(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	userID := fmt.Sprint(body["userId"])
 	if userID == "" || userID == "<nil>" {
 		return fiber.NewError(fiber.StatusBadRequest, "userId is required")
@@ -486,7 +498,10 @@ func (h *Handler) ListTemplates(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateTemplate(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	template := &models.WorkflowTemplate{
 		ID: "tpl_" + randomHex(4), Name: fmt.Sprint(body["name"]), Description: fmt.Sprint(body["description"]),
 		Category: fmt.Sprint(body["category"]), Tags: parseStringSlice(body["tags"]), YAML: fmt.Sprint(body["yaml"]),
@@ -499,7 +514,10 @@ func (h *Handler) CreateTemplate(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UseTemplate(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.RLock()
 	template, ok := h.Store.Templates[c.Params("id")]
 	h.Store.Mu.RUnlock()

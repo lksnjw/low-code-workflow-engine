@@ -34,7 +34,10 @@ func (h *Handler) GetProfile(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateProfile(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	h.Store.Mu.Lock()
 	user := h.Store.Users[h.currentUserID(c)]
 	if name := fmt.Sprint(body["name"]); name != "" && name != "<nil>" {
@@ -90,7 +93,10 @@ func (h *Handler) ListAPIKeys(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateAPIKey(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	key := "wf_live_" + randomHex(24)
 	apiKey := &models.APIKey{ID: "key_" + randomHex(4), Name: fmt.Sprint(body["name"]), Key: key, MaskedKey: "wf_live_................" + key[len(key)-4:], Scopes: parseStringSlice(body["scopes"]), CreatedAt: time.Now().UTC()}
 	h.Store.Mu.Lock()

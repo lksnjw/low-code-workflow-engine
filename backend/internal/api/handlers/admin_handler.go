@@ -46,7 +46,10 @@ func (h *Handler) ListUsers(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateUser(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	name := strings.TrimSpace(fmt.Sprint(body["name"]))
 	email := strings.ToLower(strings.TrimSpace(fmt.Sprint(body["email"])))
 	password := fmt.Sprint(body["password"])
@@ -104,11 +107,18 @@ func (h *Handler) GetUser(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateUser(c *fiber.Ctx) error {
-	return h.updateUser(c, decodeMap(c))
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
+	return h.updateUser(c, body)
 }
 
 func (h *Handler) UpdateUserRole(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	roleID, provided := requestString(body, "roleId")
 	if !provided {
 		return fiber.NewError(fiber.StatusBadRequest, "roleId is required")
@@ -117,7 +127,10 @@ func (h *Handler) UpdateUserRole(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateUserStatus(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	status, provided := requestString(body, "status")
 	if !provided {
 		return fiber.NewError(fiber.StatusBadRequest, "status is required")
@@ -304,7 +317,10 @@ func (h *Handler) ListRoles(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateRole(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	actorUser := h.currentUser(c)
 	if !canManageRoles(actorUser) {
 		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Your role cannot manage roles", nil))
@@ -345,7 +361,10 @@ func (h *Handler) GetRole(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateRole(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	actorUser := h.currentUser(c)
 	if !canManageRoles(actorUser) {
 		return c.Status(fiber.StatusForbidden).JSON(models.Fail("Your role cannot manage roles", nil))

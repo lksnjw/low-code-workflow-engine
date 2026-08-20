@@ -226,8 +226,7 @@ Request:
   "top_k_rules": 15,
   "top_k_templates": 5,
   "top_k_examples": 5,
-  "generate_candidates": 5,
-  "dry_run": true
+  "generate_candidates": 5
 }
 ```
 

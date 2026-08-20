@@ -11,7 +11,10 @@ import (
 )
 
 func (h *Handler) Synthesize(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	prompt, _ := body["prompt"].(string)
 	if prompt == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "prompt is required")
@@ -43,7 +46,10 @@ func (h *Handler) Synthesize(c *fiber.Ctx) error {
 }
 
 func (h *Handler) SynthesisValidate(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	yamlText, _ := body["yaml"].(string)
 	_, validation, err := h.validateWithFullGate(c, "SynthesisValidate", yamlText)
 	if err != nil {
@@ -53,7 +59,10 @@ func (h *Handler) SynthesisValidate(c *fiber.Ctx) error {
 }
 
 func (h *Handler) SynthesisPreviewFlow(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	yamlText, _ := body["yaml"].(string)
 	validation, blueprint := h.Validator.ValidateYAML(yamlText, h.permissions(c))
 	if !validation.Valid {
@@ -63,7 +72,10 @@ func (h *Handler) SynthesisPreviewFlow(c *fiber.Ctx) error {
 }
 
 func (h *Handler) SynthesisExplain(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	yamlText, _ := body["yaml"].(string)
 	validation, blueprint := h.Validator.ValidateYAML(yamlText, h.permissions(c))
 	if !validation.Valid {
@@ -92,7 +104,10 @@ func (h *Handler) ListChatSessions(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateChatSession(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	title := fmt.Sprint(body["title"])
 	if title == "" || title == "<nil>" {
 		title = "New workflow conversation"
@@ -117,7 +132,10 @@ func (h *Handler) GetChatSession(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateChatSession(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	user := h.currentUser(c)
 	h.Store.Mu.Lock()
 	defer h.Store.Mu.Unlock()
@@ -146,7 +164,10 @@ func (h *Handler) DeleteChatSession(c *fiber.Ctx) error {
 }
 
 func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
-	body := decodeMap(c)
+	body, err := decodeMap(c)
+	if err != nil {
+		return err
+	}
 	message := fmt.Sprint(body["content"])
 	if message == "" || message == "<nil>" {
 		message = fmt.Sprint(body["message"])
@@ -188,7 +209,6 @@ func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
 	if generateCount <= 0 {
 		generateCount = h.Cfg.CandidateCount
 	}
-	dryRun, _ := body["dry_run"].(bool)
 	chatReq := orchestrator.ChatRequest{
 		SessionID:     c.Params("id"),
 		UserText:      message,
@@ -200,7 +220,6 @@ func (h *Handler) SendChatMessage(c *fiber.Ctx) error {
 		TopKTemplates: toInt(body["top_k_templates"], h.Cfg.SemanticSearchTopKTemplates),
 		TopKExamples:  toInt(body["top_k_examples"], h.Cfg.SemanticSearchTopKExamples),
 		GenerateCount: generateCount,
-		DryRun:        dryRun,
 	}
 	started := time.Now()
 	response, err := h.Orchestrator.HandleChatMessage(c.Context(), chatReq)
