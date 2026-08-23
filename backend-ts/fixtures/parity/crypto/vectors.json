@@ -1,0 +1,88 @@
+[
+  {
+    "id": "aes-256-gcm-fixed-nonce",
+    "kind": "aes-gcm",
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonceHex": "000102030405060708090a0b",
+      "plaintextBase64": "eyJ2ZXJzaW9uIjoxLCJzYW1wbGUiOiJ2YWx1ZSJ9"
+    },
+    "output": {
+      "decodedBase64": "eyJ2ZXJzaW9uIjoxLCJzYW1wbGUiOiJ2YWx1ZSJ9",
+      "envelopeBase64": "TENXRV9TVEFURV9WMQABAgMEBQYHCAkKCzwgoH63lqt042Otup3LCwzuputR0kF9ClkLkOA/FBShtQDpZz+YX2Xs8IYhjaE="
+    }
+  },
+  {
+    "id": "bcrypt-default-cost",
+    "kind": "bcrypt",
+    "input": {
+      "password": "parity-password"
+    },
+    "output": {
+      "hash": "$2a$10$cJVsSzuFeYqfcG9DODRkl.4fC4Be3K0AJuXJW8AlhKqZI6cJblvNS",
+      "rejectsWrong": true,
+      "verifies": true
+    }
+  },
+  {
+    "id": "jwt-hs256-fixed-claims",
+    "kind": "jwt",
+    "input": {
+      "claims": {
+        "exp": 1787396400,
+        "iat": 1787392800,
+        "sub": "usr_fixture"
+      },
+      "secret": "fixture-jwt-secret"
+    },
+    "output": {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3ODczOTY0MDAsImlhdCI6MTc4NzM5MjgwMCwic3ViIjoidXNyX2ZpeHR1cmUifQ.BsKRh0biRsdtRWT2UuPMjjescg0KSr3plp0c5Xv_nuA",
+      "valid": true
+    }
+  },
+  {
+    "id": "workflow-content-hash",
+    "kind": "canonical-bytes",
+    "input": {
+      "utf8Base64": "bmFtZTogY2Fub25pY2FsDQpkZXNjcmlwdGlvbjogRXhhY3QgYnl0ZXMgbWF0dGVyLg0K"
+    },
+    "output": {
+      "hash": "sha256:12613b87b1c092518fd00494c8f4feb7c4acb54904549b0ea1993f036dceef6e"
+    }
+  },
+  {
+    "id": "resolved-parameter-hash",
+    "kind": "canonical-bytes",
+    "input": {
+      "a": {
+        "a": null,
+        "b": false
+      },
+      "list": [
+        3,
+        "x"
+      ],
+      "z": 1
+    },
+    "output": {
+      "canonicalHex": "7b2261223a7b2261223a6e756c6c2c2262223a66616c73657d2c226c697374223a5b332c2278225d2c227a223a317d",
+      "canonicalUtf8": "{\"a\":{\"a\":null,\"b\":false},\"list\":[3,\"x\"],\"z\":1}",
+      "hash": "sha256:6ee714cc61066c83dc8adb19b0ee1d4be98042931128a76adf97a8488bbb6f2a",
+      "rawHash": "sha256:6ee714cc61066c83dc8adb19b0ee1d4be98042931128a76adf97a8488bbb6f2a"
+    }
+  },
+  {
+    "id": "registry-composite-hash",
+    "kind": "canonical-bytes",
+    "input": {
+      "preimageHex": "7368613235363a63636133643330663130343366333539007368613235363a65363839653131373666313137623066",
+      "ruleFileSHA256": "sha256:e689e1176f117b0f5ba05a113739211dca411c6902b5ca6ead798947157fb5dc",
+      "rulesVersion": "sha256:e689e1176f117b0f",
+      "toolFileSHA256": "sha256:cca3d30f1043f3590d0fe6434e27ea83fd78d6a7e8e7e8cae90055fbb1eef81f",
+      "toolsVersion": "sha256:cca3d30f1043f359"
+    },
+    "output": {
+      "hash": "sha256:6e3bfc5f87cd6e11370cbecfeb18b85c285f9dd872ccd4287728522a5eddfe8b"
+    }
+  }
+]

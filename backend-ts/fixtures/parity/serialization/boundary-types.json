@@ -1,0 +1,5513 @@
+[
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/company.ApprovalTier",
+    "zero": {
+      "label": "",
+      "maxAmount": 0,
+      "approverRoleId": ""
+    },
+    "emptyCollections": {
+      "label": "",
+      "maxAmount": 0,
+      "approverRoleId": ""
+    },
+    "populated": {
+      "label": "sample",
+      "maxAmount": 7.5,
+      "approverRoleId": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/company.CostCentre",
+    "zero": {
+      "code": "",
+      "name": "",
+      "ownerUserId": "",
+      "budgetAmount": 0,
+      "currency": ""
+    },
+    "emptyCollections": {
+      "code": "",
+      "name": "",
+      "ownerUserId": "",
+      "budgetAmount": 0,
+      "currency": ""
+    },
+    "populated": {
+      "code": "sample",
+      "name": "sample",
+      "ownerUserId": "sample",
+      "budgetAmount": 7.5,
+      "currency": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/company.Department",
+    "zero": {
+      "id": "",
+      "name": "",
+      "domains": null
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "domains": []
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "domains": [
+        "sample"
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/company.Profile",
+    "zero": {
+      "name": "",
+      "legalName": "",
+      "industry": "",
+      "timezone": "",
+      "currency": "",
+      "fiscalYearStart": "",
+      "contactEmail": "",
+      "erpSystemName": "",
+      "erpVersion": "",
+      "notes": "",
+      "departments": null,
+      "costCentres": null,
+      "approvalTiers": null
+    },
+    "emptyCollections": {
+      "name": "",
+      "legalName": "",
+      "industry": "",
+      "timezone": "",
+      "currency": "",
+      "fiscalYearStart": "",
+      "contactEmail": "",
+      "erpSystemName": "",
+      "erpVersion": "",
+      "notes": "",
+      "departments": [],
+      "costCentres": [],
+      "approvalTiers": []
+    },
+    "populated": {
+      "name": "sample",
+      "legalName": "sample",
+      "industry": "sample",
+      "timezone": "sample",
+      "currency": "sample",
+      "fiscalYearStart": "sample",
+      "contactEmail": "sample",
+      "erpSystemName": "sample",
+      "erpVersion": "sample",
+      "notes": "sample",
+      "departments": [
+        {
+          "id": "sample",
+          "name": "sample",
+          "domains": [
+            "sample"
+          ]
+        }
+      ],
+      "costCentres": [
+        {
+          "code": "sample",
+          "name": "sample",
+          "ownerUserId": "sample",
+          "budgetAmount": 7.5,
+          "currency": "sample"
+        }
+      ],
+      "approvalTiers": [
+        {
+          "label": "sample",
+          "maxAmount": 7.5,
+          "approverRoleId": "sample"
+        }
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.Analysis",
+    "zero": {
+      "id": "",
+      "filename": "",
+      "fileSha256": "",
+      "kind": "",
+      "allowUpdates": false,
+      "stages": null,
+      "preview": {
+        "added": null,
+        "updated": null,
+        "unchanged": null,
+        "rejected": null,
+        "orphaned": null
+      },
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "filename": "",
+      "fileSha256": "",
+      "kind": "",
+      "allowUpdates": false,
+      "stages": [],
+      "preview": {
+        "added": [],
+        "updated": [],
+        "unchanged": [],
+        "rejected": [],
+        "orphaned": []
+      },
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "filename": "sample",
+      "fileSha256": "sample",
+      "kind": "sample",
+      "allowUpdates": true,
+      "stages": [
+        {
+          "name": "sample",
+          "status": "sample"
+        }
+      ],
+      "preview": {
+        "added": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "updated": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "unchanged": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "rejected": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "orphaned": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ]
+      },
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.CommitResult",
+    "zero": {
+      "analysisId": "",
+      "filename": "",
+      "fileSha256": "",
+      "resultingRegistryHash": "",
+      "committedRecordIds": null,
+      "counts": null,
+      "committedAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "analysisId": "",
+      "filename": "",
+      "fileSha256": "",
+      "resultingRegistryHash": "",
+      "committedRecordIds": [],
+      "counts": {},
+      "committedAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "analysisId": "sample",
+      "filename": "sample",
+      "fileSha256": "sample",
+      "resultingRegistryHash": "sample",
+      "committedRecordIds": [
+        "sample"
+      ],
+      "counts": {
+        "sample": 7
+      },
+      "committedAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.FieldChange",
+    "zero": {
+      "field": "",
+      "before": null,
+      "after": null
+    },
+    "emptyCollections": {
+      "field": "",
+      "before": null,
+      "after": null
+    },
+    "populated": {
+      "field": "sample",
+      "before": {
+        "sample": "value"
+      },
+      "after": {
+        "sample": "value"
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.HistoryEntry",
+    "zero": {
+      "analysisId": "",
+      "actorId": "",
+      "actorName": "",
+      "filename": "",
+      "fileSha256": "",
+      "counts": null,
+      "diff": {
+        "added": null,
+        "updated": null,
+        "unchanged": null,
+        "rejected": null,
+        "orphaned": null
+      },
+      "responseSchemas": null,
+      "resultingRegistryHash": "",
+      "committedAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "analysisId": "",
+      "actorId": "",
+      "actorName": "",
+      "filename": "",
+      "fileSha256": "",
+      "counts": {},
+      "diff": {
+        "added": [],
+        "updated": [],
+        "unchanged": [],
+        "rejected": [],
+        "orphaned": []
+      },
+      "responseSchemas": {},
+      "resultingRegistryHash": "",
+      "committedAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "analysisId": "sample",
+      "actorId": "sample",
+      "actorName": "sample",
+      "filename": "sample",
+      "fileSha256": "sample",
+      "counts": {
+        "sample": 7
+      },
+      "diff": {
+        "added": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "updated": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "unchanged": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "rejected": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ],
+        "orphaned": [
+          {
+            "recordId": "sample",
+            "registryKind": "sample",
+            "sourceId": "sample",
+            "line": 7,
+            "index": 7,
+            "category": "sample",
+            "tool": {
+              "tool_id": "sample",
+              "name": "sample",
+              "display_name": "sample",
+              "erp_system": "sample",
+              "module": "sample",
+              "status": "sample",
+              "description": "sample",
+              "business_capability": "sample",
+              "bpi_process_alignment": [
+                ""
+              ],
+              "endpoint": "sample",
+              "http_method": "sample",
+              "mcp_tool_name": "sample",
+              "input_schema": {
+                "sample": null
+              },
+              "required_parameters": [
+                ""
+              ],
+              "optional_parameters": [
+                ""
+              ],
+              "allowed_roles": [
+                ""
+              ],
+              "risk_level": "sample",
+              "is_read_only": true,
+              "side_effects": [
+                ""
+              ],
+              "preconditions": [
+                ""
+              ],
+              "postconditions": [
+                ""
+              ],
+              "failure_modes": [
+                ""
+              ],
+              "validator_checks": [
+                ""
+              ],
+              "prompt_usage_guidance": "sample",
+              "semantic_search_keywords": [
+                ""
+              ],
+              "semantic_search_description": "sample",
+              "execution_notes": "sample",
+              "current_gaps": [
+                ""
+              ],
+              "source_file": "sample"
+            },
+            "rule": {
+              "rule_id": "sample",
+              "rule_name": "sample",
+              "rule_type": "sample",
+              "erp_system": "sample",
+              "domain": "sample",
+              "description": "sample",
+              "applies_to_tools": [
+                ""
+              ],
+              "applies_to_roles": [
+                ""
+              ],
+              "condition": {
+                "type": "",
+                "parameter": "",
+                "operator": "",
+                "value": null
+              },
+              "enforcement_action": "sample",
+              "severity": "sample",
+              "validator_message": "sample",
+              "llm_prompt_instruction": "sample",
+              "healing_guidance": "sample",
+              "bpi_alignment": [
+                ""
+              ],
+              "audit_fields_required": [
+                ""
+              ],
+              "enabled": true,
+              "source_file": "sample"
+            },
+            "changes": [
+              {
+                "field": "sample",
+                "before": {
+                  "sample": "value"
+                },
+                "after": {
+                  "sample": "value"
+                }
+              }
+            ],
+            "errors": [
+              {
+                "recordId": "sample",
+                "line": 7,
+                "index": 7,
+                "field": "sample",
+                "reason": "sample"
+              }
+            ],
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "requiresConfirmation": true
+          }
+        ]
+      },
+      "responseSchemas": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "resultingRegistryHash": "sample",
+      "committedAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.ImportRecord",
+    "zero": {
+      "recordId": "",
+      "registryKind": "",
+      "sourceId": "",
+      "index": 0,
+      "category": "",
+      "changes": null,
+      "errors": null,
+      "requiresConfirmation": false
+    },
+    "emptyCollections": {
+      "recordId": "",
+      "registryKind": "",
+      "sourceId": "",
+      "index": 0,
+      "category": "",
+      "changes": [],
+      "errors": [],
+      "requiresConfirmation": false
+    },
+    "populated": {
+      "recordId": "sample",
+      "registryKind": "sample",
+      "sourceId": "sample",
+      "line": 7,
+      "index": 7,
+      "category": "sample",
+      "tool": {
+        "tool_id": "sample",
+        "name": "sample",
+        "display_name": "sample",
+        "erp_system": "sample",
+        "module": "sample",
+        "status": "sample",
+        "description": "sample",
+        "business_capability": "sample",
+        "bpi_process_alignment": [
+          "sample"
+        ],
+        "endpoint": "sample",
+        "http_method": "sample",
+        "mcp_tool_name": "sample",
+        "input_schema": {
+          "sample": {
+            "sample": "value"
+          }
+        },
+        "required_parameters": [
+          "sample"
+        ],
+        "optional_parameters": [
+          "sample"
+        ],
+        "allowed_roles": [
+          "sample"
+        ],
+        "risk_level": "sample",
+        "is_read_only": true,
+        "side_effects": [
+          "sample"
+        ],
+        "preconditions": [
+          "sample"
+        ],
+        "postconditions": [
+          "sample"
+        ],
+        "failure_modes": [
+          "sample"
+        ],
+        "validator_checks": [
+          "sample"
+        ],
+        "prompt_usage_guidance": "sample",
+        "semantic_search_keywords": [
+          "sample"
+        ],
+        "semantic_search_description": "sample",
+        "execution_notes": "sample",
+        "current_gaps": [
+          "sample"
+        ],
+        "source_file": "sample"
+      },
+      "rule": {
+        "rule_id": "sample",
+        "rule_name": "sample",
+        "rule_type": "sample",
+        "erp_system": "sample",
+        "domain": "sample",
+        "description": "sample",
+        "applies_to_tools": [
+          "sample"
+        ],
+        "applies_to_roles": [
+          "sample"
+        ],
+        "condition": {
+          "type": "sample",
+          "parameter": "sample",
+          "operator": "sample",
+          "value": {
+            "sample": "value"
+          }
+        },
+        "enforcement_action": "sample",
+        "severity": "sample",
+        "validator_message": "sample",
+        "llm_prompt_instruction": "sample",
+        "healing_guidance": "sample",
+        "bpi_alignment": [
+          "sample"
+        ],
+        "audit_fields_required": [
+          "sample"
+        ],
+        "enabled": true,
+        "source_file": "sample"
+      },
+      "changes": [
+        {
+          "field": "sample",
+          "before": {
+            "sample": "value"
+          },
+          "after": {
+            "sample": "value"
+          }
+        }
+      ],
+      "errors": [
+        {
+          "recordId": "sample",
+          "line": 7,
+          "index": 7,
+          "field": "sample",
+          "reason": "sample"
+        }
+      ],
+      "metadata": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.Preview",
+    "zero": {
+      "added": null,
+      "updated": null,
+      "unchanged": null,
+      "rejected": null,
+      "orphaned": null
+    },
+    "emptyCollections": {
+      "added": [],
+      "updated": [],
+      "unchanged": [],
+      "rejected": [],
+      "orphaned": []
+    },
+    "populated": {
+      "added": [
+        {
+          "recordId": "sample",
+          "registryKind": "sample",
+          "sourceId": "sample",
+          "line": 7,
+          "index": 7,
+          "category": "sample",
+          "tool": {
+            "tool_id": "sample",
+            "name": "sample",
+            "display_name": "sample",
+            "erp_system": "sample",
+            "module": "sample",
+            "status": "sample",
+            "description": "sample",
+            "business_capability": "sample",
+            "bpi_process_alignment": [
+              "sample"
+            ],
+            "endpoint": "sample",
+            "http_method": "sample",
+            "mcp_tool_name": "sample",
+            "input_schema": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "required_parameters": [
+              "sample"
+            ],
+            "optional_parameters": [
+              "sample"
+            ],
+            "allowed_roles": [
+              "sample"
+            ],
+            "risk_level": "sample",
+            "is_read_only": true,
+            "side_effects": [
+              "sample"
+            ],
+            "preconditions": [
+              "sample"
+            ],
+            "postconditions": [
+              "sample"
+            ],
+            "failure_modes": [
+              "sample"
+            ],
+            "validator_checks": [
+              "sample"
+            ],
+            "prompt_usage_guidance": "sample",
+            "semantic_search_keywords": [
+              "sample"
+            ],
+            "semantic_search_description": "sample",
+            "execution_notes": "sample",
+            "current_gaps": [
+              "sample"
+            ],
+            "source_file": "sample"
+          },
+          "rule": {
+            "rule_id": "sample",
+            "rule_name": "sample",
+            "rule_type": "sample",
+            "erp_system": "sample",
+            "domain": "sample",
+            "description": "sample",
+            "applies_to_tools": [
+              "sample"
+            ],
+            "applies_to_roles": [
+              "sample"
+            ],
+            "condition": {
+              "type": "sample",
+              "parameter": "sample",
+              "operator": "sample",
+              "value": {
+                "sample": "value"
+              }
+            },
+            "enforcement_action": "sample",
+            "severity": "sample",
+            "validator_message": "sample",
+            "llm_prompt_instruction": "sample",
+            "healing_guidance": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "audit_fields_required": [
+              "sample"
+            ],
+            "enabled": true,
+            "source_file": "sample"
+          },
+          "changes": [
+            {
+              "field": "sample",
+              "before": {
+                "sample": "value"
+              },
+              "after": {
+                "sample": "value"
+              }
+            }
+          ],
+          "errors": [
+            {
+              "recordId": "sample",
+              "line": 7,
+              "index": 7,
+              "field": "sample",
+              "reason": "sample"
+            }
+          ],
+          "metadata": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "requiresConfirmation": true
+        }
+      ],
+      "updated": [
+        {
+          "recordId": "sample",
+          "registryKind": "sample",
+          "sourceId": "sample",
+          "line": 7,
+          "index": 7,
+          "category": "sample",
+          "tool": {
+            "tool_id": "sample",
+            "name": "sample",
+            "display_name": "sample",
+            "erp_system": "sample",
+            "module": "sample",
+            "status": "sample",
+            "description": "sample",
+            "business_capability": "sample",
+            "bpi_process_alignment": [
+              "sample"
+            ],
+            "endpoint": "sample",
+            "http_method": "sample",
+            "mcp_tool_name": "sample",
+            "input_schema": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "required_parameters": [
+              "sample"
+            ],
+            "optional_parameters": [
+              "sample"
+            ],
+            "allowed_roles": [
+              "sample"
+            ],
+            "risk_level": "sample",
+            "is_read_only": true,
+            "side_effects": [
+              "sample"
+            ],
+            "preconditions": [
+              "sample"
+            ],
+            "postconditions": [
+              "sample"
+            ],
+            "failure_modes": [
+              "sample"
+            ],
+            "validator_checks": [
+              "sample"
+            ],
+            "prompt_usage_guidance": "sample",
+            "semantic_search_keywords": [
+              "sample"
+            ],
+            "semantic_search_description": "sample",
+            "execution_notes": "sample",
+            "current_gaps": [
+              "sample"
+            ],
+            "source_file": "sample"
+          },
+          "rule": {
+            "rule_id": "sample",
+            "rule_name": "sample",
+            "rule_type": "sample",
+            "erp_system": "sample",
+            "domain": "sample",
+            "description": "sample",
+            "applies_to_tools": [
+              "sample"
+            ],
+            "applies_to_roles": [
+              "sample"
+            ],
+            "condition": {
+              "type": "sample",
+              "parameter": "sample",
+              "operator": "sample",
+              "value": {
+                "sample": "value"
+              }
+            },
+            "enforcement_action": "sample",
+            "severity": "sample",
+            "validator_message": "sample",
+            "llm_prompt_instruction": "sample",
+            "healing_guidance": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "audit_fields_required": [
+              "sample"
+            ],
+            "enabled": true,
+            "source_file": "sample"
+          },
+          "changes": [
+            {
+              "field": "sample",
+              "before": {
+                "sample": "value"
+              },
+              "after": {
+                "sample": "value"
+              }
+            }
+          ],
+          "errors": [
+            {
+              "recordId": "sample",
+              "line": 7,
+              "index": 7,
+              "field": "sample",
+              "reason": "sample"
+            }
+          ],
+          "metadata": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "requiresConfirmation": true
+        }
+      ],
+      "unchanged": [
+        {
+          "recordId": "sample",
+          "registryKind": "sample",
+          "sourceId": "sample",
+          "line": 7,
+          "index": 7,
+          "category": "sample",
+          "tool": {
+            "tool_id": "sample",
+            "name": "sample",
+            "display_name": "sample",
+            "erp_system": "sample",
+            "module": "sample",
+            "status": "sample",
+            "description": "sample",
+            "business_capability": "sample",
+            "bpi_process_alignment": [
+              "sample"
+            ],
+            "endpoint": "sample",
+            "http_method": "sample",
+            "mcp_tool_name": "sample",
+            "input_schema": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "required_parameters": [
+              "sample"
+            ],
+            "optional_parameters": [
+              "sample"
+            ],
+            "allowed_roles": [
+              "sample"
+            ],
+            "risk_level": "sample",
+            "is_read_only": true,
+            "side_effects": [
+              "sample"
+            ],
+            "preconditions": [
+              "sample"
+            ],
+            "postconditions": [
+              "sample"
+            ],
+            "failure_modes": [
+              "sample"
+            ],
+            "validator_checks": [
+              "sample"
+            ],
+            "prompt_usage_guidance": "sample",
+            "semantic_search_keywords": [
+              "sample"
+            ],
+            "semantic_search_description": "sample",
+            "execution_notes": "sample",
+            "current_gaps": [
+              "sample"
+            ],
+            "source_file": "sample"
+          },
+          "rule": {
+            "rule_id": "sample",
+            "rule_name": "sample",
+            "rule_type": "sample",
+            "erp_system": "sample",
+            "domain": "sample",
+            "description": "sample",
+            "applies_to_tools": [
+              "sample"
+            ],
+            "applies_to_roles": [
+              "sample"
+            ],
+            "condition": {
+              "type": "sample",
+              "parameter": "sample",
+              "operator": "sample",
+              "value": {
+                "sample": "value"
+              }
+            },
+            "enforcement_action": "sample",
+            "severity": "sample",
+            "validator_message": "sample",
+            "llm_prompt_instruction": "sample",
+            "healing_guidance": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "audit_fields_required": [
+              "sample"
+            ],
+            "enabled": true,
+            "source_file": "sample"
+          },
+          "changes": [
+            {
+              "field": "sample",
+              "before": {
+                "sample": "value"
+              },
+              "after": {
+                "sample": "value"
+              }
+            }
+          ],
+          "errors": [
+            {
+              "recordId": "sample",
+              "line": 7,
+              "index": 7,
+              "field": "sample",
+              "reason": "sample"
+            }
+          ],
+          "metadata": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "requiresConfirmation": true
+        }
+      ],
+      "rejected": [
+        {
+          "recordId": "sample",
+          "registryKind": "sample",
+          "sourceId": "sample",
+          "line": 7,
+          "index": 7,
+          "category": "sample",
+          "tool": {
+            "tool_id": "sample",
+            "name": "sample",
+            "display_name": "sample",
+            "erp_system": "sample",
+            "module": "sample",
+            "status": "sample",
+            "description": "sample",
+            "business_capability": "sample",
+            "bpi_process_alignment": [
+              "sample"
+            ],
+            "endpoint": "sample",
+            "http_method": "sample",
+            "mcp_tool_name": "sample",
+            "input_schema": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "required_parameters": [
+              "sample"
+            ],
+            "optional_parameters": [
+              "sample"
+            ],
+            "allowed_roles": [
+              "sample"
+            ],
+            "risk_level": "sample",
+            "is_read_only": true,
+            "side_effects": [
+              "sample"
+            ],
+            "preconditions": [
+              "sample"
+            ],
+            "postconditions": [
+              "sample"
+            ],
+            "failure_modes": [
+              "sample"
+            ],
+            "validator_checks": [
+              "sample"
+            ],
+            "prompt_usage_guidance": "sample",
+            "semantic_search_keywords": [
+              "sample"
+            ],
+            "semantic_search_description": "sample",
+            "execution_notes": "sample",
+            "current_gaps": [
+              "sample"
+            ],
+            "source_file": "sample"
+          },
+          "rule": {
+            "rule_id": "sample",
+            "rule_name": "sample",
+            "rule_type": "sample",
+            "erp_system": "sample",
+            "domain": "sample",
+            "description": "sample",
+            "applies_to_tools": [
+              "sample"
+            ],
+            "applies_to_roles": [
+              "sample"
+            ],
+            "condition": {
+              "type": "sample",
+              "parameter": "sample",
+              "operator": "sample",
+              "value": {
+                "sample": "value"
+              }
+            },
+            "enforcement_action": "sample",
+            "severity": "sample",
+            "validator_message": "sample",
+            "llm_prompt_instruction": "sample",
+            "healing_guidance": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "audit_fields_required": [
+              "sample"
+            ],
+            "enabled": true,
+            "source_file": "sample"
+          },
+          "changes": [
+            {
+              "field": "sample",
+              "before": {
+                "sample": "value"
+              },
+              "after": {
+                "sample": "value"
+              }
+            }
+          ],
+          "errors": [
+            {
+              "recordId": "sample",
+              "line": 7,
+              "index": 7,
+              "field": "sample",
+              "reason": "sample"
+            }
+          ],
+          "metadata": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "requiresConfirmation": true
+        }
+      ],
+      "orphaned": [
+        {
+          "recordId": "sample",
+          "registryKind": "sample",
+          "sourceId": "sample",
+          "line": 7,
+          "index": 7,
+          "category": "sample",
+          "tool": {
+            "tool_id": "sample",
+            "name": "sample",
+            "display_name": "sample",
+            "erp_system": "sample",
+            "module": "sample",
+            "status": "sample",
+            "description": "sample",
+            "business_capability": "sample",
+            "bpi_process_alignment": [
+              "sample"
+            ],
+            "endpoint": "sample",
+            "http_method": "sample",
+            "mcp_tool_name": "sample",
+            "input_schema": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "required_parameters": [
+              "sample"
+            ],
+            "optional_parameters": [
+              "sample"
+            ],
+            "allowed_roles": [
+              "sample"
+            ],
+            "risk_level": "sample",
+            "is_read_only": true,
+            "side_effects": [
+              "sample"
+            ],
+            "preconditions": [
+              "sample"
+            ],
+            "postconditions": [
+              "sample"
+            ],
+            "failure_modes": [
+              "sample"
+            ],
+            "validator_checks": [
+              "sample"
+            ],
+            "prompt_usage_guidance": "sample",
+            "semantic_search_keywords": [
+              "sample"
+            ],
+            "semantic_search_description": "sample",
+            "execution_notes": "sample",
+            "current_gaps": [
+              "sample"
+            ],
+            "source_file": "sample"
+          },
+          "rule": {
+            "rule_id": "sample",
+            "rule_name": "sample",
+            "rule_type": "sample",
+            "erp_system": "sample",
+            "domain": "sample",
+            "description": "sample",
+            "applies_to_tools": [
+              "sample"
+            ],
+            "applies_to_roles": [
+              "sample"
+            ],
+            "condition": {
+              "type": "sample",
+              "parameter": "sample",
+              "operator": "sample",
+              "value": {
+                "sample": "value"
+              }
+            },
+            "enforcement_action": "sample",
+            "severity": "sample",
+            "validator_message": "sample",
+            "llm_prompt_instruction": "sample",
+            "healing_guidance": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "audit_fields_required": [
+              "sample"
+            ],
+            "enabled": true,
+            "source_file": "sample"
+          },
+          "changes": [
+            {
+              "field": "sample",
+              "before": {
+                "sample": "value"
+              },
+              "after": {
+                "sample": "value"
+              }
+            }
+          ],
+          "errors": [
+            {
+              "recordId": "sample",
+              "line": 7,
+              "index": 7,
+              "field": "sample",
+              "reason": "sample"
+            }
+          ],
+          "metadata": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "requiresConfirmation": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.RecordError",
+    "zero": {
+      "index": 0,
+      "field": "",
+      "reason": ""
+    },
+    "emptyCollections": {
+      "index": 0,
+      "field": "",
+      "reason": ""
+    },
+    "populated": {
+      "recordId": "sample",
+      "line": 7,
+      "index": 7,
+      "field": "sample",
+      "reason": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/importer.StageResult",
+    "zero": {
+      "name": "",
+      "status": ""
+    },
+    "emptyCollections": {
+      "name": "",
+      "status": ""
+    },
+    "populated": {
+      "name": "sample",
+      "status": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator.CandidateReport",
+    "zero": {
+      "candidate_id": "",
+      "yaml": "",
+      "generation_metadata": null,
+      "validation": {
+        "candidate_id": "",
+        "passed": false,
+        "score": 0,
+        "schema_ok": false,
+        "tool_validity_ok": false,
+        "parameters_ok": false,
+        "rbac_ok": false,
+        "policy_ok": false,
+        "process_order_ok": false,
+        "risk_ok": false,
+        "errors": null,
+        "warnings": null,
+        "failed_rules": null,
+        "registry_versions": {
+          "tools": "",
+          "rules": ""
+        },
+        "estimated_risk_level": "",
+        "step_count": 0
+      }
+    },
+    "emptyCollections": {
+      "candidate_id": "",
+      "yaml": "",
+      "generation_metadata": {},
+      "validation": {
+        "candidate_id": "",
+        "passed": false,
+        "score": 0,
+        "schema_ok": false,
+        "tool_validity_ok": false,
+        "parameters_ok": false,
+        "rbac_ok": false,
+        "policy_ok": false,
+        "process_order_ok": false,
+        "risk_ok": false,
+        "errors": [],
+        "warnings": [],
+        "failed_rules": [],
+        "registry_versions": {
+          "tools": "",
+          "rules": ""
+        },
+        "estimated_risk_level": "",
+        "step_count": 0
+      }
+    },
+    "populated": {
+      "candidate_id": "sample",
+      "yaml": "sample",
+      "generation_metadata": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "validation": {
+        "candidate_id": "sample",
+        "passed": true,
+        "score": 7.5,
+        "schema_ok": true,
+        "tool_validity_ok": true,
+        "parameters_ok": true,
+        "rbac_ok": true,
+        "policy_ok": true,
+        "process_order_ok": true,
+        "risk_ok": true,
+        "errors": [
+          "sample"
+        ],
+        "warnings": [
+          "sample"
+        ],
+        "failed_rules": [
+          "sample"
+        ],
+        "registry_versions": {
+          "tools": "sample",
+          "rules": "sample",
+          "templates": "sample",
+          "examples": "sample"
+        },
+        "estimated_risk_level": "sample",
+        "step_count": 7,
+        "tool_risks": {
+          "sample": "sample"
+        },
+        "metadata": {
+          "sample": {
+            "sample": "value"
+          }
+        },
+        "deferred_checks": [
+          {
+            "step_index": 7,
+            "param_key": "sample",
+            "rule_ids": [
+              "sample"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator.ChatResponse",
+    "zero": {
+      "session_id": "",
+      "assistant_message": "",
+      "retrieval": {
+        "tools": null,
+        "rules": null,
+        "global_rules": null,
+        "templates": null,
+        "examples": null,
+        "query": "",
+        "user_role": "",
+        "retrieval_method": ""
+      },
+      "candidates": null,
+      "selected_candidate_id": "",
+      "selected_workflow_yaml": "",
+      "can_execute": false,
+      "validation_summary": {
+        "passed_candidates": 0,
+        "blocked_candidates": 0,
+        "best_score": 0
+      }
+    },
+    "emptyCollections": {
+      "session_id": "",
+      "assistant_message": "",
+      "retrieval": {
+        "tools": [],
+        "rules": [],
+        "global_rules": [],
+        "templates": [],
+        "examples": [],
+        "query": "",
+        "user_role": "",
+        "retrieval_method": ""
+      },
+      "candidates": [],
+      "selected_candidate_id": "",
+      "selected_workflow_yaml": "",
+      "can_execute": false,
+      "validation_summary": {
+        "passed_candidates": 0,
+        "blocked_candidates": 0,
+        "best_score": 0
+      }
+    },
+    "populated": {
+      "session_id": "sample",
+      "assistant_message": "sample",
+      "retrieval": {
+        "tools": [
+          {
+            "tool_id": "sample",
+            "name": "sample",
+            "display_name": "sample",
+            "erp_system": "sample",
+            "module": "sample",
+            "status": "sample",
+            "description": "sample",
+            "business_capability": "sample",
+            "bpi_process_alignment": [
+              "sample"
+            ],
+            "endpoint": "sample",
+            "http_method": "sample",
+            "mcp_tool_name": "sample",
+            "input_schema": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "required_parameters": [
+              "sample"
+            ],
+            "optional_parameters": [
+              "sample"
+            ],
+            "allowed_roles": [
+              "sample"
+            ],
+            "risk_level": "sample",
+            "is_read_only": true,
+            "side_effects": [
+              "sample"
+            ],
+            "preconditions": [
+              "sample"
+            ],
+            "postconditions": [
+              "sample"
+            ],
+            "failure_modes": [
+              "sample"
+            ],
+            "validator_checks": [
+              "sample"
+            ],
+            "prompt_usage_guidance": "sample",
+            "semantic_search_keywords": [
+              "sample"
+            ],
+            "semantic_search_description": "sample",
+            "execution_notes": "sample",
+            "current_gaps": [
+              "sample"
+            ],
+            "source_file": "sample",
+            "score": 7.5,
+            "match_reason": "sample"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "sample",
+            "rule_name": "sample",
+            "rule_type": "sample",
+            "erp_system": "sample",
+            "domain": "sample",
+            "description": "sample",
+            "applies_to_tools": [
+              "sample"
+            ],
+            "applies_to_roles": [
+              "sample"
+            ],
+            "condition": {
+              "type": "sample",
+              "parameter": "sample",
+              "operator": "sample",
+              "value": {
+                "sample": "value"
+              }
+            },
+            "enforcement_action": "sample",
+            "severity": "sample",
+            "validator_message": "sample",
+            "llm_prompt_instruction": "sample",
+            "healing_guidance": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "audit_fields_required": [
+              "sample"
+            ],
+            "enabled": true,
+            "source_file": "sample",
+            "score": 7.5,
+            "match_reason": "sample"
+          }
+        ],
+        "global_rules": [
+          {
+            "rule_id": "sample",
+            "rule_name": "sample",
+            "rule_type": "sample",
+            "erp_system": "sample",
+            "domain": "sample",
+            "description": "sample",
+            "applies_to_tools": [
+              "sample"
+            ],
+            "applies_to_roles": [
+              "sample"
+            ],
+            "condition": {
+              "type": "sample",
+              "parameter": "sample",
+              "operator": "sample",
+              "value": {
+                "sample": "value"
+              }
+            },
+            "enforcement_action": "sample",
+            "severity": "sample",
+            "validator_message": "sample",
+            "llm_prompt_instruction": "sample",
+            "healing_guidance": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "audit_fields_required": [
+              "sample"
+            ],
+            "enabled": true,
+            "source_file": "sample",
+            "score": 7.5,
+            "match_reason": "sample"
+          }
+        ],
+        "templates": [
+          {
+            "template_id": "sample",
+            "template_name": "sample",
+            "erp_systems_involved": [
+              "sample"
+            ],
+            "bpi_alignment": "sample",
+            "description": "sample",
+            "required_tools": [
+              "sample"
+            ],
+            "required_rules": [
+              "sample"
+            ],
+            "normal_flow": [
+              {
+                "sample": "value"
+              }
+            ],
+            "exception_flows": [
+              {
+                "sample": "value"
+              }
+            ],
+            "approval_points": [
+              {
+                "sample": "value"
+              }
+            ],
+            "validation_focus": [
+              "sample"
+            ],
+            "sample_user_intents": [
+              "sample"
+            ],
+            "source_file": "sample",
+            "score": 7.5,
+            "match_reason": "sample"
+          }
+        ],
+        "examples": [
+          {
+            "scenario_id": "sample",
+            "user_role": "sample",
+            "user_request": "sample",
+            "expected_domain": "sample",
+            "expected_intent": "sample",
+            "expected_tools": [
+              "sample"
+            ],
+            "expected_rules": [
+              "sample"
+            ],
+            "expected_decision": "sample",
+            "risk_level": "sample",
+            "bpi_alignment": [
+              "sample"
+            ],
+            "notes": "sample",
+            "source_file": "sample",
+            "score": 7.5,
+            "match_reason": "sample"
+          }
+        ],
+        "query": "sample",
+        "user_role": "sample",
+        "method": "sample",
+        "retrieval_method": "sample"
+      },
+      "candidates": [
+        {
+          "candidate_id": "sample",
+          "yaml": "sample",
+          "generation_metadata": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "validation": {
+            "candidate_id": "sample",
+            "passed": true,
+            "score": 7.5,
+            "schema_ok": true,
+            "tool_validity_ok": true,
+            "parameters_ok": true,
+            "rbac_ok": true,
+            "policy_ok": true,
+            "process_order_ok": true,
+            "risk_ok": true,
+            "errors": [
+              "sample"
+            ],
+            "warnings": [
+              "sample"
+            ],
+            "failed_rules": [
+              "sample"
+            ],
+            "registry_versions": {
+              "tools": "sample",
+              "rules": "sample",
+              "templates": "sample",
+              "examples": "sample"
+            },
+            "estimated_risk_level": "sample",
+            "step_count": 7,
+            "tool_risks": {
+              "sample": "sample"
+            },
+            "metadata": {
+              "sample": {
+                "sample": "value"
+              }
+            },
+            "deferred_checks": [
+              {
+                "step_index": 7,
+                "param_key": "sample",
+                "rule_ids": [
+                  ""
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "selected_candidate_id": "sample",
+      "selected_workflow_yaml": "sample",
+      "can_execute": true,
+      "validation_summary": {
+        "passed_candidates": 7,
+        "blocked_candidates": 7,
+        "best_score": 7.5
+      },
+      "blocking_errors": [
+        "sample"
+      ],
+      "next_action": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/orchestrator.ValidationSummary",
+    "zero": {
+      "passed_candidates": 0,
+      "blocked_candidates": 0,
+      "best_score": 0
+    },
+    "emptyCollections": {
+      "passed_candidates": 0,
+      "blocked_candidates": 0,
+      "best_score": 0
+    },
+    "populated": {
+      "passed_candidates": 7,
+      "blocked_candidates": 7,
+      "best_score": 7.5
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/registry.FewShotExample",
+    "zero": {
+      "scenario_id": "",
+      "user_role": "",
+      "user_request": "",
+      "expected_domain": "",
+      "expected_intent": "",
+      "expected_tools": null,
+      "expected_rules": null,
+      "expected_decision": "",
+      "risk_level": "",
+      "bpi_alignment": null,
+      "notes": ""
+    },
+    "emptyCollections": {
+      "scenario_id": "",
+      "user_role": "",
+      "user_request": "",
+      "expected_domain": "",
+      "expected_intent": "",
+      "expected_tools": [],
+      "expected_rules": [],
+      "expected_decision": "",
+      "risk_level": "",
+      "bpi_alignment": [],
+      "notes": ""
+    },
+    "populated": {
+      "scenario_id": "sample",
+      "user_role": "sample",
+      "user_request": "sample",
+      "expected_domain": "sample",
+      "expected_intent": "sample",
+      "expected_tools": [
+        "sample"
+      ],
+      "expected_rules": [
+        "sample"
+      ],
+      "expected_decision": "sample",
+      "risk_level": "sample",
+      "bpi_alignment": [
+        "sample"
+      ],
+      "notes": "sample",
+      "source_file": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/registry.ProcessTemplate",
+    "zero": {
+      "template_id": "",
+      "template_name": "",
+      "erp_systems_involved": null,
+      "bpi_alignment": "",
+      "description": "",
+      "required_tools": null,
+      "required_rules": null,
+      "normal_flow": null,
+      "exception_flows": null,
+      "approval_points": null,
+      "validation_focus": null,
+      "sample_user_intents": null
+    },
+    "emptyCollections": {
+      "template_id": "",
+      "template_name": "",
+      "erp_systems_involved": [],
+      "bpi_alignment": "",
+      "description": "",
+      "required_tools": [],
+      "required_rules": [],
+      "normal_flow": [],
+      "exception_flows": [],
+      "approval_points": [],
+      "validation_focus": [],
+      "sample_user_intents": []
+    },
+    "populated": {
+      "template_id": "sample",
+      "template_name": "sample",
+      "erp_systems_involved": [
+        "sample"
+      ],
+      "bpi_alignment": "sample",
+      "description": "sample",
+      "required_tools": [
+        "sample"
+      ],
+      "required_rules": [
+        "sample"
+      ],
+      "normal_flow": [
+        {
+          "sample": "value"
+        }
+      ],
+      "exception_flows": [
+        {
+          "sample": "value"
+        }
+      ],
+      "approval_points": [
+        {
+          "sample": "value"
+        }
+      ],
+      "validation_focus": [
+        "sample"
+      ],
+      "sample_user_intents": [
+        "sample"
+      ],
+      "source_file": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/registry.RegistryVersions",
+    "zero": {
+      "tools": "",
+      "rules": ""
+    },
+    "emptyCollections": {
+      "tools": "",
+      "rules": ""
+    },
+    "populated": {
+      "tools": "sample",
+      "rules": "sample",
+      "templates": "sample",
+      "examples": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/registry.Rule",
+    "zero": {
+      "rule_id": "",
+      "rule_name": "",
+      "rule_type": "",
+      "domain": "",
+      "description": "",
+      "applies_to_tools": null,
+      "applies_to_roles": null,
+      "condition": {
+        "type": "",
+        "parameter": "",
+        "operator": "",
+        "value": null
+      },
+      "enforcement_action": "",
+      "severity": "",
+      "validator_message": "",
+      "llm_prompt_instruction": "",
+      "healing_guidance": "",
+      "bpi_alignment": null,
+      "audit_fields_required": null,
+      "enabled": false
+    },
+    "emptyCollections": {
+      "rule_id": "",
+      "rule_name": "",
+      "rule_type": "",
+      "domain": "",
+      "description": "",
+      "applies_to_tools": [],
+      "applies_to_roles": [],
+      "condition": {
+        "type": "",
+        "parameter": "",
+        "operator": "",
+        "value": null
+      },
+      "enforcement_action": "",
+      "severity": "",
+      "validator_message": "",
+      "llm_prompt_instruction": "",
+      "healing_guidance": "",
+      "bpi_alignment": [],
+      "audit_fields_required": [],
+      "enabled": false
+    },
+    "populated": {
+      "rule_id": "sample",
+      "rule_name": "sample",
+      "rule_type": "sample",
+      "erp_system": "sample",
+      "domain": "sample",
+      "description": "sample",
+      "applies_to_tools": [
+        "sample"
+      ],
+      "applies_to_roles": [
+        "sample"
+      ],
+      "condition": {
+        "type": "sample",
+        "parameter": "sample",
+        "operator": "sample",
+        "value": {
+          "sample": "value"
+        }
+      },
+      "enforcement_action": "sample",
+      "severity": "sample",
+      "validator_message": "sample",
+      "llm_prompt_instruction": "sample",
+      "healing_guidance": "sample",
+      "bpi_alignment": [
+        "sample"
+      ],
+      "audit_fields_required": [
+        "sample"
+      ],
+      "enabled": true,
+      "source_file": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/registry.RuleCondition",
+    "zero": {
+      "type": "",
+      "parameter": "",
+      "operator": "",
+      "value": null
+    },
+    "emptyCollections": {
+      "type": "",
+      "parameter": "",
+      "operator": "",
+      "value": null
+    },
+    "populated": {
+      "type": "sample",
+      "parameter": "sample",
+      "operator": "sample",
+      "value": {
+        "sample": "value"
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/registry.Tool",
+    "zero": {
+      "tool_id": "",
+      "name": "",
+      "display_name": "",
+      "module": "",
+      "status": "",
+      "description": "",
+      "business_capability": "",
+      "bpi_process_alignment": null,
+      "endpoint": "",
+      "http_method": "",
+      "mcp_tool_name": "",
+      "input_schema": null,
+      "required_parameters": null,
+      "optional_parameters": null,
+      "allowed_roles": null,
+      "risk_level": "",
+      "is_read_only": false,
+      "side_effects": null,
+      "preconditions": null,
+      "postconditions": null,
+      "failure_modes": null,
+      "validator_checks": null,
+      "prompt_usage_guidance": "",
+      "semantic_search_keywords": null,
+      "semantic_search_description": "",
+      "execution_notes": "",
+      "current_gaps": null
+    },
+    "emptyCollections": {
+      "tool_id": "",
+      "name": "",
+      "display_name": "",
+      "module": "",
+      "status": "",
+      "description": "",
+      "business_capability": "",
+      "bpi_process_alignment": [],
+      "endpoint": "",
+      "http_method": "",
+      "mcp_tool_name": "",
+      "input_schema": {},
+      "required_parameters": [],
+      "optional_parameters": [],
+      "allowed_roles": [],
+      "risk_level": "",
+      "is_read_only": false,
+      "side_effects": [],
+      "preconditions": [],
+      "postconditions": [],
+      "failure_modes": [],
+      "validator_checks": [],
+      "prompt_usage_guidance": "",
+      "semantic_search_keywords": [],
+      "semantic_search_description": "",
+      "execution_notes": "",
+      "current_gaps": []
+    },
+    "populated": {
+      "tool_id": "sample",
+      "name": "sample",
+      "display_name": "sample",
+      "erp_system": "sample",
+      "module": "sample",
+      "status": "sample",
+      "description": "sample",
+      "business_capability": "sample",
+      "bpi_process_alignment": [
+        "sample"
+      ],
+      "endpoint": "sample",
+      "http_method": "sample",
+      "mcp_tool_name": "sample",
+      "input_schema": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "required_parameters": [
+        "sample"
+      ],
+      "optional_parameters": [
+        "sample"
+      ],
+      "allowed_roles": [
+        "sample"
+      ],
+      "risk_level": "sample",
+      "is_read_only": true,
+      "side_effects": [
+        "sample"
+      ],
+      "preconditions": [
+        "sample"
+      ],
+      "postconditions": [
+        "sample"
+      ],
+      "failure_modes": [
+        "sample"
+      ],
+      "validator_checks": [
+        "sample"
+      ],
+      "prompt_usage_guidance": "sample",
+      "semantic_search_keywords": [
+        "sample"
+      ],
+      "semantic_search_description": "sample",
+      "execution_notes": "sample",
+      "current_gaps": [
+        "sample"
+      ],
+      "source_file": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch.ExampleResult",
+    "zero": {
+      "scenario_id": "",
+      "user_role": "",
+      "user_request": "",
+      "expected_domain": "",
+      "expected_intent": "",
+      "expected_tools": null,
+      "expected_rules": null,
+      "expected_decision": "",
+      "risk_level": "",
+      "bpi_alignment": null,
+      "notes": "",
+      "score": 0,
+      "match_reason": ""
+    },
+    "emptyCollections": {
+      "scenario_id": "",
+      "user_role": "",
+      "user_request": "",
+      "expected_domain": "",
+      "expected_intent": "",
+      "expected_tools": [],
+      "expected_rules": [],
+      "expected_decision": "",
+      "risk_level": "",
+      "bpi_alignment": [],
+      "notes": "",
+      "score": 0,
+      "match_reason": ""
+    },
+    "populated": {
+      "scenario_id": "sample",
+      "user_role": "sample",
+      "user_request": "sample",
+      "expected_domain": "sample",
+      "expected_intent": "sample",
+      "expected_tools": [
+        "sample"
+      ],
+      "expected_rules": [
+        "sample"
+      ],
+      "expected_decision": "sample",
+      "risk_level": "sample",
+      "bpi_alignment": [
+        "sample"
+      ],
+      "notes": "sample",
+      "source_file": "sample",
+      "score": 7.5,
+      "match_reason": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch.Result",
+    "zero": {
+      "tools": null,
+      "rules": null,
+      "global_rules": null,
+      "templates": null,
+      "examples": null,
+      "query": "",
+      "user_role": "",
+      "retrieval_method": ""
+    },
+    "emptyCollections": {
+      "tools": [],
+      "rules": [],
+      "global_rules": [],
+      "templates": [],
+      "examples": [],
+      "query": "",
+      "user_role": "",
+      "retrieval_method": ""
+    },
+    "populated": {
+      "tools": [
+        {
+          "tool_id": "sample",
+          "name": "sample",
+          "display_name": "sample",
+          "erp_system": "sample",
+          "module": "sample",
+          "status": "sample",
+          "description": "sample",
+          "business_capability": "sample",
+          "bpi_process_alignment": [
+            "sample"
+          ],
+          "endpoint": "sample",
+          "http_method": "sample",
+          "mcp_tool_name": "sample",
+          "input_schema": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "required_parameters": [
+            "sample"
+          ],
+          "optional_parameters": [
+            "sample"
+          ],
+          "allowed_roles": [
+            "sample"
+          ],
+          "risk_level": "sample",
+          "is_read_only": true,
+          "side_effects": [
+            "sample"
+          ],
+          "preconditions": [
+            "sample"
+          ],
+          "postconditions": [
+            "sample"
+          ],
+          "failure_modes": [
+            "sample"
+          ],
+          "validator_checks": [
+            "sample"
+          ],
+          "prompt_usage_guidance": "sample",
+          "semantic_search_keywords": [
+            "sample"
+          ],
+          "semantic_search_description": "sample",
+          "execution_notes": "sample",
+          "current_gaps": [
+            "sample"
+          ],
+          "source_file": "sample",
+          "score": 7.5,
+          "match_reason": "sample"
+        }
+      ],
+      "rules": [
+        {
+          "rule_id": "sample",
+          "rule_name": "sample",
+          "rule_type": "sample",
+          "erp_system": "sample",
+          "domain": "sample",
+          "description": "sample",
+          "applies_to_tools": [
+            "sample"
+          ],
+          "applies_to_roles": [
+            "sample"
+          ],
+          "condition": {
+            "type": "sample",
+            "parameter": "sample",
+            "operator": "sample",
+            "value": {
+              "sample": "value"
+            }
+          },
+          "enforcement_action": "sample",
+          "severity": "sample",
+          "validator_message": "sample",
+          "llm_prompt_instruction": "sample",
+          "healing_guidance": "sample",
+          "bpi_alignment": [
+            "sample"
+          ],
+          "audit_fields_required": [
+            "sample"
+          ],
+          "enabled": true,
+          "source_file": "sample",
+          "score": 7.5,
+          "match_reason": "sample"
+        }
+      ],
+      "global_rules": [
+        {
+          "rule_id": "sample",
+          "rule_name": "sample",
+          "rule_type": "sample",
+          "erp_system": "sample",
+          "domain": "sample",
+          "description": "sample",
+          "applies_to_tools": [
+            "sample"
+          ],
+          "applies_to_roles": [
+            "sample"
+          ],
+          "condition": {
+            "type": "sample",
+            "parameter": "sample",
+            "operator": "sample",
+            "value": {
+              "sample": "value"
+            }
+          },
+          "enforcement_action": "sample",
+          "severity": "sample",
+          "validator_message": "sample",
+          "llm_prompt_instruction": "sample",
+          "healing_guidance": "sample",
+          "bpi_alignment": [
+            "sample"
+          ],
+          "audit_fields_required": [
+            "sample"
+          ],
+          "enabled": true,
+          "source_file": "sample",
+          "score": 7.5,
+          "match_reason": "sample"
+        }
+      ],
+      "templates": [
+        {
+          "template_id": "sample",
+          "template_name": "sample",
+          "erp_systems_involved": [
+            "sample"
+          ],
+          "bpi_alignment": "sample",
+          "description": "sample",
+          "required_tools": [
+            "sample"
+          ],
+          "required_rules": [
+            "sample"
+          ],
+          "normal_flow": [
+            {
+              "sample": "value"
+            }
+          ],
+          "exception_flows": [
+            {
+              "sample": "value"
+            }
+          ],
+          "approval_points": [
+            {
+              "sample": "value"
+            }
+          ],
+          "validation_focus": [
+            "sample"
+          ],
+          "sample_user_intents": [
+            "sample"
+          ],
+          "source_file": "sample",
+          "score": 7.5,
+          "match_reason": "sample"
+        }
+      ],
+      "examples": [
+        {
+          "scenario_id": "sample",
+          "user_role": "sample",
+          "user_request": "sample",
+          "expected_domain": "sample",
+          "expected_intent": "sample",
+          "expected_tools": [
+            "sample"
+          ],
+          "expected_rules": [
+            "sample"
+          ],
+          "expected_decision": "sample",
+          "risk_level": "sample",
+          "bpi_alignment": [
+            "sample"
+          ],
+          "notes": "sample",
+          "source_file": "sample",
+          "score": 7.5,
+          "match_reason": "sample"
+        }
+      ],
+      "query": "sample",
+      "user_role": "sample",
+      "method": "sample",
+      "retrieval_method": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch.RuleResult",
+    "zero": {
+      "rule_id": "",
+      "rule_name": "",
+      "rule_type": "",
+      "domain": "",
+      "description": "",
+      "applies_to_tools": null,
+      "applies_to_roles": null,
+      "condition": {
+        "type": "",
+        "parameter": "",
+        "operator": "",
+        "value": null
+      },
+      "enforcement_action": "",
+      "severity": "",
+      "validator_message": "",
+      "llm_prompt_instruction": "",
+      "healing_guidance": "",
+      "bpi_alignment": null,
+      "audit_fields_required": null,
+      "enabled": false,
+      "score": 0,
+      "match_reason": ""
+    },
+    "emptyCollections": {
+      "rule_id": "",
+      "rule_name": "",
+      "rule_type": "",
+      "domain": "",
+      "description": "",
+      "applies_to_tools": [],
+      "applies_to_roles": [],
+      "condition": {
+        "type": "",
+        "parameter": "",
+        "operator": "",
+        "value": null
+      },
+      "enforcement_action": "",
+      "severity": "",
+      "validator_message": "",
+      "llm_prompt_instruction": "",
+      "healing_guidance": "",
+      "bpi_alignment": [],
+      "audit_fields_required": [],
+      "enabled": false,
+      "score": 0,
+      "match_reason": ""
+    },
+    "populated": {
+      "rule_id": "sample",
+      "rule_name": "sample",
+      "rule_type": "sample",
+      "erp_system": "sample",
+      "domain": "sample",
+      "description": "sample",
+      "applies_to_tools": [
+        "sample"
+      ],
+      "applies_to_roles": [
+        "sample"
+      ],
+      "condition": {
+        "type": "sample",
+        "parameter": "sample",
+        "operator": "sample",
+        "value": {
+          "sample": "value"
+        }
+      },
+      "enforcement_action": "sample",
+      "severity": "sample",
+      "validator_message": "sample",
+      "llm_prompt_instruction": "sample",
+      "healing_guidance": "sample",
+      "bpi_alignment": [
+        "sample"
+      ],
+      "audit_fields_required": [
+        "sample"
+      ],
+      "enabled": true,
+      "source_file": "sample",
+      "score": 7.5,
+      "match_reason": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch.TemplateResult",
+    "zero": {
+      "template_id": "",
+      "template_name": "",
+      "erp_systems_involved": null,
+      "bpi_alignment": "",
+      "description": "",
+      "required_tools": null,
+      "required_rules": null,
+      "normal_flow": null,
+      "exception_flows": null,
+      "approval_points": null,
+      "validation_focus": null,
+      "sample_user_intents": null,
+      "score": 0,
+      "match_reason": ""
+    },
+    "emptyCollections": {
+      "template_id": "",
+      "template_name": "",
+      "erp_systems_involved": [],
+      "bpi_alignment": "",
+      "description": "",
+      "required_tools": [],
+      "required_rules": [],
+      "normal_flow": [],
+      "exception_flows": [],
+      "approval_points": [],
+      "validation_focus": [],
+      "sample_user_intents": [],
+      "score": 0,
+      "match_reason": ""
+    },
+    "populated": {
+      "template_id": "sample",
+      "template_name": "sample",
+      "erp_systems_involved": [
+        "sample"
+      ],
+      "bpi_alignment": "sample",
+      "description": "sample",
+      "required_tools": [
+        "sample"
+      ],
+      "required_rules": [
+        "sample"
+      ],
+      "normal_flow": [
+        {
+          "sample": "value"
+        }
+      ],
+      "exception_flows": [
+        {
+          "sample": "value"
+        }
+      ],
+      "approval_points": [
+        {
+          "sample": "value"
+        }
+      ],
+      "validation_focus": [
+        "sample"
+      ],
+      "sample_user_intents": [
+        "sample"
+      ],
+      "source_file": "sample",
+      "score": 7.5,
+      "match_reason": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/semanticsearch.ToolResult",
+    "zero": {
+      "tool_id": "",
+      "name": "",
+      "display_name": "",
+      "module": "",
+      "status": "",
+      "description": "",
+      "business_capability": "",
+      "bpi_process_alignment": null,
+      "endpoint": "",
+      "http_method": "",
+      "mcp_tool_name": "",
+      "input_schema": null,
+      "required_parameters": null,
+      "optional_parameters": null,
+      "allowed_roles": null,
+      "risk_level": "",
+      "is_read_only": false,
+      "side_effects": null,
+      "preconditions": null,
+      "postconditions": null,
+      "failure_modes": null,
+      "validator_checks": null,
+      "prompt_usage_guidance": "",
+      "semantic_search_keywords": null,
+      "semantic_search_description": "",
+      "execution_notes": "",
+      "current_gaps": null,
+      "score": 0,
+      "match_reason": ""
+    },
+    "emptyCollections": {
+      "tool_id": "",
+      "name": "",
+      "display_name": "",
+      "module": "",
+      "status": "",
+      "description": "",
+      "business_capability": "",
+      "bpi_process_alignment": [],
+      "endpoint": "",
+      "http_method": "",
+      "mcp_tool_name": "",
+      "input_schema": {},
+      "required_parameters": [],
+      "optional_parameters": [],
+      "allowed_roles": [],
+      "risk_level": "",
+      "is_read_only": false,
+      "side_effects": [],
+      "preconditions": [],
+      "postconditions": [],
+      "failure_modes": [],
+      "validator_checks": [],
+      "prompt_usage_guidance": "",
+      "semantic_search_keywords": [],
+      "semantic_search_description": "",
+      "execution_notes": "",
+      "current_gaps": [],
+      "score": 0,
+      "match_reason": ""
+    },
+    "populated": {
+      "tool_id": "sample",
+      "name": "sample",
+      "display_name": "sample",
+      "erp_system": "sample",
+      "module": "sample",
+      "status": "sample",
+      "description": "sample",
+      "business_capability": "sample",
+      "bpi_process_alignment": [
+        "sample"
+      ],
+      "endpoint": "sample",
+      "http_method": "sample",
+      "mcp_tool_name": "sample",
+      "input_schema": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "required_parameters": [
+        "sample"
+      ],
+      "optional_parameters": [
+        "sample"
+      ],
+      "allowed_roles": [
+        "sample"
+      ],
+      "risk_level": "sample",
+      "is_read_only": true,
+      "side_effects": [
+        "sample"
+      ],
+      "preconditions": [
+        "sample"
+      ],
+      "postconditions": [
+        "sample"
+      ],
+      "failure_modes": [
+        "sample"
+      ],
+      "validator_checks": [
+        "sample"
+      ],
+      "prompt_usage_guidance": "sample",
+      "semantic_search_keywords": [
+        "sample"
+      ],
+      "semantic_search_description": "sample",
+      "execution_notes": "sample",
+      "current_gaps": [
+        "sample"
+      ],
+      "source_file": "sample",
+      "score": 7.5,
+      "match_reason": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/validator.CandidateValidationResult",
+    "zero": {
+      "candidate_id": "",
+      "passed": false,
+      "score": 0,
+      "schema_ok": false,
+      "tool_validity_ok": false,
+      "parameters_ok": false,
+      "rbac_ok": false,
+      "policy_ok": false,
+      "process_order_ok": false,
+      "risk_ok": false,
+      "errors": null,
+      "warnings": null,
+      "failed_rules": null,
+      "registry_versions": {
+        "tools": "",
+        "rules": ""
+      },
+      "estimated_risk_level": "",
+      "step_count": 0
+    },
+    "emptyCollections": {
+      "candidate_id": "",
+      "passed": false,
+      "score": 0,
+      "schema_ok": false,
+      "tool_validity_ok": false,
+      "parameters_ok": false,
+      "rbac_ok": false,
+      "policy_ok": false,
+      "process_order_ok": false,
+      "risk_ok": false,
+      "errors": [],
+      "warnings": [],
+      "failed_rules": [],
+      "registry_versions": {
+        "tools": "",
+        "rules": ""
+      },
+      "estimated_risk_level": "",
+      "step_count": 0
+    },
+    "populated": {
+      "candidate_id": "sample",
+      "passed": true,
+      "score": 7.5,
+      "schema_ok": true,
+      "tool_validity_ok": true,
+      "parameters_ok": true,
+      "rbac_ok": true,
+      "policy_ok": true,
+      "process_order_ok": true,
+      "risk_ok": true,
+      "errors": [
+        "sample"
+      ],
+      "warnings": [
+        "sample"
+      ],
+      "failed_rules": [
+        "sample"
+      ],
+      "registry_versions": {
+        "tools": "sample",
+        "rules": "sample",
+        "templates": "sample",
+        "examples": "sample"
+      },
+      "estimated_risk_level": "sample",
+      "step_count": 7,
+      "tool_risks": {
+        "sample": "sample"
+      },
+      "metadata": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "deferred_checks": [
+        {
+          "step_index": 7,
+          "param_key": "sample",
+          "rule_ids": [
+            "sample"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/validator.DispatchCapability",
+    "zero": {},
+    "emptyCollections": {},
+    "populated": {}
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/validator.ResolvedPolicyViolation",
+    "zero": {
+      "StepIndex": 0,
+      "ParamKey": "",
+      "RuleID": "",
+      "Value": null,
+      "Reason": ""
+    },
+    "emptyCollections": {
+      "StepIndex": 0,
+      "ParamKey": "",
+      "RuleID": "",
+      "Value": null,
+      "Reason": ""
+    },
+    "populated": {
+      "StepIndex": 7,
+      "ParamKey": "sample",
+      "RuleID": "sample",
+      "Value": {
+        "sample": "value"
+      },
+      "Reason": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/core/validator.UnevaluatedRule",
+    "zero": {
+      "rule_id": "",
+      "family": ""
+    },
+    "emptyCollections": {
+      "rule_id": "",
+      "family": ""
+    },
+    "populated": {
+      "rule_id": "sample",
+      "family": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.APIKey",
+    "zero": {
+      "id": "",
+      "name": "",
+      "maskedKey": "",
+      "scopes": null,
+      "createdAt": "0001-01-01T00:00:00Z",
+      "expiresAt": null
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "maskedKey": "",
+      "scopes": [],
+      "createdAt": "0001-01-01T00:00:00Z",
+      "expiresAt": null
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "maskedKey": "sample",
+      "scopes": [
+        "sample"
+      ],
+      "createdAt": "2026-08-22T10:00:00Z",
+      "expiresAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.APIResponse",
+    "zero": {
+      "success": false,
+      "data": null,
+      "message": "",
+      "meta": null
+    },
+    "emptyCollections": {
+      "success": false,
+      "data": null,
+      "message": "",
+      "meta": null
+    },
+    "populated": {
+      "success": true,
+      "data": {
+        "sample": "value"
+      },
+      "message": "sample",
+      "meta": {
+        "sample": "value"
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.AuditLog",
+    "zero": {
+      "id": "",
+      "actor": {
+        "id": "",
+        "name": ""
+      },
+      "action": "",
+      "resource": {
+        "type": "",
+        "id": ""
+      },
+      "ipAddress": "",
+      "userAgent": "",
+      "before": null,
+      "after": null,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "actor": {
+        "id": "",
+        "name": ""
+      },
+      "action": "",
+      "resource": {
+        "type": "",
+        "id": ""
+      },
+      "ipAddress": "",
+      "userAgent": "",
+      "before": {},
+      "after": {},
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "actor": {
+        "id": "sample",
+        "name": "sample"
+      },
+      "action": "sample",
+      "resource": {
+        "type": "sample",
+        "id": "sample"
+      },
+      "ipAddress": "sample",
+      "userAgent": "sample",
+      "before": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "after": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.AuthSession",
+    "zero": {
+      "accessToken": "",
+      "refreshToken": "",
+      "expiresIn": 0,
+      "user": null
+    },
+    "emptyCollections": {
+      "accessToken": "",
+      "refreshToken": "",
+      "expiresIn": 0,
+      "user": null
+    },
+    "populated": {
+      "accessToken": "sample",
+      "refreshToken": "sample",
+      "expiresIn": 7,
+      "user": {
+        "sample": "value"
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.BlueprintTrigger",
+    "zero": {
+      "type": ""
+    },
+    "emptyCollections": {
+      "type": ""
+    },
+    "populated": {
+      "type": "sample",
+      "displayName": "sample",
+      "config": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ChatMessage",
+    "zero": {
+      "id": "",
+      "role": "",
+      "text": "",
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "role": "",
+      "text": "",
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "role": "sample",
+      "text": "sample",
+      "artifacts": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ChatSession",
+    "zero": {
+      "id": "",
+      "ownerId": "",
+      "title": "",
+      "createdAt": "0001-01-01T00:00:00Z",
+      "updatedAt": "0001-01-01T00:00:00Z",
+      "messageCount": 0
+    },
+    "emptyCollections": {
+      "id": "",
+      "ownerId": "",
+      "title": "",
+      "createdAt": "0001-01-01T00:00:00Z",
+      "updatedAt": "0001-01-01T00:00:00Z",
+      "messageCount": 0
+    },
+    "populated": {
+      "id": "sample",
+      "ownerId": "sample",
+      "title": "sample",
+      "createdAt": "2026-08-22T10:00:00Z",
+      "updatedAt": "2026-08-22T10:00:00Z",
+      "messageCount": 7
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ChatSessionDetail",
+    "zero": {
+      "id": "",
+      "ownerId": "",
+      "title": "",
+      "createdAt": "0001-01-01T00:00:00Z",
+      "updatedAt": "0001-01-01T00:00:00Z",
+      "messageCount": 0,
+      "messages": null
+    },
+    "emptyCollections": {
+      "id": "",
+      "ownerId": "",
+      "title": "",
+      "createdAt": "0001-01-01T00:00:00Z",
+      "updatedAt": "0001-01-01T00:00:00Z",
+      "messageCount": 0,
+      "messages": []
+    },
+    "populated": {
+      "id": "sample",
+      "ownerId": "sample",
+      "title": "sample",
+      "createdAt": "2026-08-22T10:00:00Z",
+      "updatedAt": "2026-08-22T10:00:00Z",
+      "messageCount": 7,
+      "messages": [
+        {
+          "id": "sample",
+          "role": "sample",
+          "text": "sample",
+          "artifacts": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "createdAt": "2026-08-22T10:00:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.CreateWorkflowRequest",
+    "zero": {
+      "name": "",
+      "description": "",
+      "ownerId": "",
+      "trigger": null,
+      "yaml": "",
+      "tags": null
+    },
+    "emptyCollections": {
+      "name": "",
+      "description": "",
+      "ownerId": "",
+      "trigger": {},
+      "yaml": "",
+      "tags": []
+    },
+    "populated": {
+      "name": "sample",
+      "description": "sample",
+      "ownerId": "sample",
+      "trigger": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "yaml": "sample",
+      "tags": [
+        "sample"
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.DeferredCheck",
+    "zero": {
+      "step_index": 0,
+      "param_key": "",
+      "rule_ids": null
+    },
+    "emptyCollections": {
+      "step_index": 0,
+      "param_key": "",
+      "rule_ids": []
+    },
+    "populated": {
+      "step_index": 7,
+      "param_key": "sample",
+      "rule_ids": [
+        "sample"
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Execution",
+    "zero": {
+      "id": "",
+      "workflowId": "",
+      "workflowName": "",
+      "status": "",
+      "startedAt": "0001-01-01T00:00:00Z",
+      "completedAt": null,
+      "durationMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0,
+      "startedBy": {
+        "id": "",
+        "name": ""
+      }
+    },
+    "emptyCollections": {
+      "id": "",
+      "workflowId": "",
+      "workflowName": "",
+      "status": "",
+      "startedAt": "0001-01-01T00:00:00Z",
+      "completedAt": null,
+      "durationMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0,
+      "startedBy": {
+        "id": "",
+        "name": ""
+      }
+    },
+    "populated": {
+      "id": "sample",
+      "workflowId": "sample",
+      "workflowName": "sample",
+      "status": "sample",
+      "startedAt": "2026-08-22T10:00:00Z",
+      "completedAt": "2026-08-22T10:00:00Z",
+      "durationMs": 7,
+      "tokens": {
+        "input": 7,
+        "output": 7,
+        "total": 7
+      },
+      "costUsd": 7.5,
+      "startedBy": {
+        "id": "sample",
+        "name": "sample"
+      },
+      "failure": {
+        "failureCategory": "sample",
+        "failedStepId": "sample",
+        "failedToolName": "sample",
+        "ruleId": "sample",
+        "ruleMessage": "sample",
+        "blockedParameter": "sample",
+        "toolWasCalled": true
+      },
+      "stepOutputs": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "finalOutput": {
+        "sample": "value"
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ExecutionFailure",
+    "zero": {
+      "failureCategory": "",
+      "failedStepId": "",
+      "failedToolName": "",
+      "toolWasCalled": false
+    },
+    "emptyCollections": {
+      "failureCategory": "",
+      "failedStepId": "",
+      "failedToolName": "",
+      "toolWasCalled": false
+    },
+    "populated": {
+      "failureCategory": "sample",
+      "failedStepId": "sample",
+      "failedToolName": "sample",
+      "ruleId": "sample",
+      "ruleMessage": "sample",
+      "blockedParameter": "sample",
+      "toolWasCalled": true
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ExecutionLog",
+    "zero": {
+      "id": "",
+      "executionId": "",
+      "timestamp": "0001-01-01T00:00:00Z",
+      "level": "",
+      "nodeId": "",
+      "message": "",
+      "metadata": null
+    },
+    "emptyCollections": {
+      "id": "",
+      "executionId": "",
+      "timestamp": "0001-01-01T00:00:00Z",
+      "level": "",
+      "nodeId": "",
+      "message": "",
+      "metadata": {}
+    },
+    "populated": {
+      "id": "sample",
+      "executionId": "sample",
+      "timestamp": "2026-08-22T10:00:00Z",
+      "level": "sample",
+      "nodeId": "sample",
+      "message": "sample",
+      "metadata": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ExecutionStep",
+    "zero": {
+      "id": "",
+      "nodeId": "",
+      "label": "",
+      "status": "",
+      "startedAt": "0001-01-01T00:00:00Z",
+      "completedAt": null,
+      "durationMs": null
+    },
+    "emptyCollections": {
+      "id": "",
+      "nodeId": "",
+      "label": "",
+      "status": "",
+      "startedAt": "0001-01-01T00:00:00Z",
+      "completedAt": null,
+      "durationMs": null
+    },
+    "populated": {
+      "id": "sample",
+      "nodeId": "sample",
+      "label": "sample",
+      "status": "sample",
+      "startedAt": "2026-08-22T10:00:00Z",
+      "completedAt": "2026-08-22T10:00:00Z",
+      "durationMs": 7,
+      "failure": {
+        "failureCategory": "sample",
+        "failedStepId": "sample",
+        "failedToolName": "sample",
+        "ruleId": "sample",
+        "ruleMessage": "sample",
+        "blockedParameter": "sample",
+        "toolWasCalled": true
+      },
+      "sideEffect": true,
+      "output": {
+        "sample": "value"
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.HealingReport",
+    "zero": {
+      "executionId": "",
+      "workflowId": "",
+      "status": "",
+      "summary": "",
+      "events": null,
+      "metrics": null
+    },
+    "emptyCollections": {
+      "executionId": "",
+      "workflowId": "",
+      "status": "",
+      "summary": "",
+      "events": [],
+      "metrics": {}
+    },
+    "populated": {
+      "executionId": "sample",
+      "workflowId": "sample",
+      "status": "sample",
+      "summary": "sample",
+      "events": [
+        {
+          "sample": {
+            "sample": "value"
+          }
+        }
+      ],
+      "metrics": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Integration",
+    "zero": {
+      "id": "",
+      "name": "",
+      "type": "",
+      "status": "",
+      "icon": "",
+      "config": null,
+      "lastTestedAt": null,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "type": "",
+      "status": "",
+      "icon": "",
+      "config": {},
+      "lastTestedAt": null,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "type": "sample",
+      "status": "sample",
+      "icon": "sample",
+      "config": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "lastTestedAt": "2026-08-22T10:00:00Z",
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.LoginRequest",
+    "zero": {
+      "email": "",
+      "password": "",
+      "rememberMe": false
+    },
+    "emptyCollections": {
+      "email": "",
+      "password": "",
+      "rememberMe": false
+    },
+    "populated": {
+      "email": "sample",
+      "password": "sample",
+      "rememberMe": true
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Notification",
+    "zero": {
+      "id": "",
+      "message": "",
+      "tone": "",
+      "type": "",
+      "read": false,
+      "resource": null,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "message": "",
+      "tone": "",
+      "type": "",
+      "read": false,
+      "resource": {},
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "message": "sample",
+      "tone": "sample",
+      "type": "sample",
+      "read": true,
+      "resource": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.NotificationPreferences",
+    "zero": {
+      "executionFailures": false,
+      "healingEvents": false,
+      "budgetWarnings": false,
+      "weeklyReports": false,
+      "channels": null
+    },
+    "emptyCollections": {
+      "executionFailures": false,
+      "healingEvents": false,
+      "budgetWarnings": false,
+      "weeklyReports": false,
+      "channels": {}
+    },
+    "populated": {
+      "executionFailures": true,
+      "healingEvents": true,
+      "budgetWarnings": true,
+      "weeklyReports": true,
+      "channels": {
+        "sample": true
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.PaginationMeta",
+    "zero": {
+      "page": 0,
+      "limit": 0,
+      "total": 0,
+      "totalPages": 0
+    },
+    "emptyCollections": {
+      "page": 0,
+      "limit": 0,
+      "total": 0,
+      "totalPages": 0
+    },
+    "populated": {
+      "page": 7,
+      "limit": 7,
+      "total": 7,
+      "totalPages": 7,
+      "sort": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Permission",
+    "zero": {
+      "key": "",
+      "name": "",
+      "description": "",
+      "group": ""
+    },
+    "emptyCollections": {
+      "key": "",
+      "name": "",
+      "description": "",
+      "group": ""
+    },
+    "populated": {
+      "key": "sample",
+      "name": "sample",
+      "description": "sample",
+      "group": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Principal",
+    "zero": {
+      "id": "",
+      "name": ""
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": ""
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Profile",
+    "zero": {
+      "id": "",
+      "name": "",
+      "email": "",
+      "role": "",
+      "timezone": "",
+      "avatarUrl": null,
+      "twoFactorEnabled": false
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "email": "",
+      "role": "",
+      "timezone": "",
+      "avatarUrl": null,
+      "twoFactorEnabled": false
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "email": "sample",
+      "role": "sample",
+      "timezone": "sample",
+      "avatarUrl": "sample",
+      "twoFactorEnabled": true
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ProviderConfig",
+    "zero": {
+      "id": "",
+      "name": "",
+      "type": "",
+      "model": "",
+      "temperature": 0,
+      "active": false,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "type": "",
+      "model": "",
+      "temperature": 0,
+      "active": false,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "type": "sample",
+      "baseUrl": "sample",
+      "model": "sample",
+      "temperature": 7.5,
+      "active": true,
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.RegisterRequest",
+    "zero": {
+      "name": "",
+      "email": "",
+      "password": "",
+      "organizationName": ""
+    },
+    "emptyCollections": {
+      "name": "",
+      "email": "",
+      "password": "",
+      "organizationName": ""
+    },
+    "populated": {
+      "name": "sample",
+      "email": "sample",
+      "password": "sample",
+      "organizationName": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ResourceRef",
+    "zero": {
+      "type": "",
+      "id": ""
+    },
+    "emptyCollections": {
+      "type": "",
+      "id": ""
+    },
+    "populated": {
+      "type": "sample",
+      "id": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Role",
+    "zero": {
+      "id": "",
+      "name": "",
+      "description": "",
+      "permissions": null,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "description": "",
+      "permissions": [],
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "description": "sample",
+      "permissions": [
+        "sample"
+      ],
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.RoleRef",
+    "zero": {
+      "id": "",
+      "name": ""
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": ""
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.RunWorkflowRequest",
+    "zero": {
+      "input": null,
+      "mode": "",
+      "dryRun": false,
+      "idempotencyKey": ""
+    },
+    "emptyCollections": {
+      "input": {},
+      "mode": "",
+      "dryRun": false,
+      "idempotencyKey": ""
+    },
+    "populated": {
+      "input": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "mode": "sample",
+      "dryRun": true,
+      "idempotencyKey": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.RunnerState",
+    "zero": {
+      "workflowId": "",
+      "executionId": "",
+      "variables": null,
+      "startedAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "workflowId": "",
+      "executionId": "",
+      "variables": {},
+      "startedAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "workflowId": "sample",
+      "executionId": "sample",
+      "variables": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "startedAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.SettingsBundle",
+    "zero": {
+      "general": null,
+      "llm": null,
+      "rbac": null
+    },
+    "emptyCollections": {
+      "general": {},
+      "llm": {},
+      "rbac": {}
+    },
+    "populated": {
+      "general": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "llm": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "rbac": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.TokenPair",
+    "zero": {
+      "accessToken": "",
+      "refreshToken": "",
+      "expiresIn": 0
+    },
+    "emptyCollections": {
+      "accessToken": "",
+      "refreshToken": "",
+      "expiresIn": 0
+    },
+    "populated": {
+      "accessToken": "sample",
+      "refreshToken": "sample",
+      "expiresIn": 7
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Tokens",
+    "zero": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "emptyCollections": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "populated": {
+      "input": 7,
+      "output": 7,
+      "total": 7
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.UpdateWorkflowRequest",
+    "zero": {
+      "name": null,
+      "description": null,
+      "status": null,
+      "trigger": null,
+      "tags": null
+    },
+    "emptyCollections": {
+      "name": null,
+      "description": null,
+      "status": null,
+      "trigger": {},
+      "tags": []
+    },
+    "populated": {
+      "name": "sample",
+      "description": "sample",
+      "status": "sample",
+      "trigger": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "tags": [
+        "sample"
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.UploadedFile",
+    "zero": {
+      "id": "",
+      "name": "",
+      "mimeType": "",
+      "sizeBytes": 0,
+      "url": "",
+      "checksum": "",
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "mimeType": "",
+      "sizeBytes": 0,
+      "url": "",
+      "checksum": "",
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "mimeType": "sample",
+      "sizeBytes": 7,
+      "url": "sample",
+      "checksum": "sample",
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Usage",
+    "zero": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "costUsd": 0
+    },
+    "emptyCollections": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "costUsd": 0
+    },
+    "populated": {
+      "inputTokens": 7,
+      "outputTokens": 7,
+      "totalTokens": 7,
+      "costUsd": 7.5
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.User",
+    "zero": {
+      "id": "",
+      "name": "",
+      "email": "",
+      "roleId": "",
+      "permissionOverrides": null,
+      "status": "",
+      "initials": "",
+      "departmentId": null,
+      "lastLoginAt": null,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "email": "",
+      "roleId": "",
+      "permissionOverrides": [],
+      "status": "",
+      "initials": "",
+      "departmentId": null,
+      "lastLoginAt": null,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "email": "sample",
+      "roleId": "sample",
+      "permissionOverrides": [
+        "sample"
+      ],
+      "status": "sample",
+      "initials": "sample",
+      "timezone": "sample",
+      "departmentId": "sample",
+      "lastLoginAt": "2026-08-22T10:00:00Z",
+      "createdAt": "2026-08-22T10:00:00Z",
+      "twoFactorEnabled": true,
+      "emailVerified": true
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ValidationCheck",
+    "zero": {
+      "name": "",
+      "passed": false
+    },
+    "emptyCollections": {
+      "name": "",
+      "passed": false
+    },
+    "populated": {
+      "name": "sample",
+      "passed": true
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ValidationIssue",
+    "zero": {
+      "code": "",
+      "message": ""
+    },
+    "emptyCollections": {
+      "code": "",
+      "message": ""
+    },
+    "populated": {
+      "code": "sample",
+      "message": "sample",
+      "nodeId": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ValidationResult",
+    "zero": {
+      "valid": false,
+      "score": 0,
+      "errors": null,
+      "warnings": null,
+      "checks": null
+    },
+    "emptyCollections": {
+      "valid": false,
+      "score": 0,
+      "errors": [],
+      "warnings": [],
+      "checks": []
+    },
+    "populated": {
+      "valid": true,
+      "score": 7.5,
+      "errors": [
+        {
+          "code": "sample",
+          "message": "sample",
+          "nodeId": "sample"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "sample",
+          "message": "sample",
+          "nodeId": "sample"
+        }
+      ],
+      "checks": [
+        {
+          "name": "sample",
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.ValidationToken",
+    "zero": {
+      "workflow_content_hash": "",
+      "registry_hash": "",
+      "passed_at": "0001-01-01T00:00:00Z",
+      "deferred_checks": null
+    },
+    "emptyCollections": {
+      "workflow_content_hash": "",
+      "registry_hash": "",
+      "passed_at": "0001-01-01T00:00:00Z",
+      "deferred_checks": []
+    },
+    "populated": {
+      "workflow_content_hash": "sample",
+      "registry_hash": "sample",
+      "passed_at": "2026-08-22T10:00:00Z",
+      "deferred_checks": [
+        {
+          "step_index": 7,
+          "param_key": "sample",
+          "rule_ids": [
+            "sample"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Webhook",
+    "zero": {
+      "id": "",
+      "name": "",
+      "url": "",
+      "events": null,
+      "enabled": false,
+      "secretPreview": "",
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "url": "",
+      "events": [],
+      "enabled": false,
+      "secretPreview": "",
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "url": "sample",
+      "events": [
+        "sample"
+      ],
+      "enabled": true,
+      "secretPreview": "sample",
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.Workflow",
+    "zero": {
+      "id": "",
+      "name": "",
+      "description": "",
+      "owner": {
+        "id": "",
+        "name": ""
+      },
+      "assignedUserIds": null,
+      "status": "",
+      "trigger": null,
+      "steps": 0,
+      "successRate": 0,
+      "lastRunAt": null,
+      "publishedVersion": 0,
+      "draftVersion": 0,
+      "tags": null,
+      "domainTags": null,
+      "canRun": false,
+      "createdAt": "0001-01-01T00:00:00Z",
+      "updatedAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "description": "",
+      "owner": {
+        "id": "",
+        "name": ""
+      },
+      "assignedUserIds": [],
+      "status": "",
+      "trigger": {},
+      "steps": 0,
+      "successRate": 0,
+      "lastRunAt": null,
+      "publishedVersion": 0,
+      "draftVersion": 0,
+      "tags": [],
+      "domainTags": [],
+      "canRun": false,
+      "createdAt": "0001-01-01T00:00:00Z",
+      "updatedAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "description": "sample",
+      "owner": {
+        "id": "sample",
+        "name": "sample"
+      },
+      "assignedUserIds": [
+        "sample"
+      ],
+      "status": "sample",
+      "trigger": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "steps": 7,
+      "successRate": 7.5,
+      "lastRunAt": "2026-08-22T10:00:00Z",
+      "publishedVersion": 7,
+      "draftVersion": 7,
+      "tags": [
+        "sample"
+      ],
+      "domainTags": [
+        "sample"
+      ],
+      "canRun": true,
+      "createdAt": "2026-08-22T10:00:00Z",
+      "updatedAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowBlueprint",
+    "zero": {
+      "name": "",
+      "trigger": {
+        "type": ""
+      },
+      "steps": null
+    },
+    "emptyCollections": {
+      "name": "",
+      "trigger": {
+        "type": ""
+      },
+      "steps": []
+    },
+    "populated": {
+      "name": "sample",
+      "description": "sample",
+      "trigger": {
+        "type": "sample",
+        "displayName": "sample",
+        "config": {
+          "sample": {
+            "sample": "value"
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "sample",
+          "kind": "sample",
+          "type": "sample",
+          "action": "sample",
+          "parameters": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "instruction": "sample",
+          "input": "sample",
+          "output_schema": {
+            "sample": {
+              "sample": "value"
+            }
+          },
+          "max_input_items": 7,
+          "max_input_chars": 7,
+          "condition": "sample",
+          "onError": "sample",
+          "retryCount": 7,
+          "description": "sample"
+        }
+      ],
+      "metadata": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowCanvas",
+    "zero": {
+      "workflowId": "",
+      "nodes": null,
+      "edges": null,
+      "viewport": null
+    },
+    "emptyCollections": {
+      "workflowId": "",
+      "nodes": [],
+      "edges": [],
+      "viewport": {}
+    },
+    "populated": {
+      "workflowId": "sample",
+      "nodes": [
+        {
+          "id": "sample",
+          "label": "sample",
+          "type": "sample",
+          "icon": "sample",
+          "position": {
+            "sample": 7.5
+          },
+          "status": "sample",
+          "config": {
+            "sample": {
+              "sample": "value"
+            }
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "sample",
+          "source": "sample",
+          "target": "sample",
+          "type": "sample",
+          "label": "sample"
+        }
+      ],
+      "viewport": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowEdge",
+    "zero": {
+      "id": "",
+      "source": "",
+      "target": "",
+      "type": "",
+      "label": null
+    },
+    "emptyCollections": {
+      "id": "",
+      "source": "",
+      "target": "",
+      "type": "",
+      "label": null
+    },
+    "populated": {
+      "id": "sample",
+      "source": "sample",
+      "target": "sample",
+      "type": "sample",
+      "label": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowNode",
+    "zero": {
+      "id": "",
+      "label": "",
+      "type": "",
+      "position": null,
+      "status": "",
+      "config": null
+    },
+    "emptyCollections": {
+      "id": "",
+      "label": "",
+      "type": "",
+      "position": {},
+      "status": "",
+      "config": {}
+    },
+    "populated": {
+      "id": "sample",
+      "label": "sample",
+      "type": "sample",
+      "icon": "sample",
+      "position": {
+        "sample": 7.5
+      },
+      "status": "sample",
+      "config": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowStepBlueprint",
+    "zero": {
+      "id": ""
+    },
+    "emptyCollections": {
+      "id": ""
+    },
+    "populated": {
+      "id": "sample",
+      "kind": "sample",
+      "type": "sample",
+      "action": "sample",
+      "parameters": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "instruction": "sample",
+      "input": "sample",
+      "output_schema": {
+        "sample": {
+          "sample": "value"
+        }
+      },
+      "max_input_items": 7,
+      "max_input_chars": 7,
+      "condition": "sample",
+      "onError": "sample",
+      "retryCount": 7,
+      "description": "sample"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowTemplate",
+    "zero": {
+      "id": "",
+      "name": "",
+      "description": "",
+      "category": "",
+      "tags": null,
+      "yaml": "",
+      "steps": 0,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "id": "",
+      "name": "",
+      "description": "",
+      "category": "",
+      "tags": [],
+      "yaml": "",
+      "steps": 0,
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "id": "sample",
+      "name": "sample",
+      "description": "sample",
+      "category": "sample",
+      "tags": [
+        "sample"
+      ],
+      "yaml": "sample",
+      "steps": 7,
+      "createdAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowVersion",
+    "zero": {
+      "id": "",
+      "workflowId": "",
+      "version": 0,
+      "versionNote": "",
+      "createdAt": "0001-01-01T00:00:00Z",
+      "createdBy": {
+        "id": "",
+        "name": ""
+      }
+    },
+    "emptyCollections": {
+      "id": "",
+      "workflowId": "",
+      "version": 0,
+      "versionNote": "",
+      "createdAt": "0001-01-01T00:00:00Z",
+      "createdBy": {
+        "id": "",
+        "name": ""
+      }
+    },
+    "populated": {
+      "id": "sample",
+      "workflowId": "sample",
+      "version": 7,
+      "versionNote": "sample",
+      "yaml": "sample",
+      "createdAt": "2026-08-22T10:00:00Z",
+      "createdBy": {
+        "id": "sample",
+        "name": "sample"
+      }
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/models.WorkflowYAML",
+    "zero": {
+      "workflowId": "",
+      "version": 0,
+      "yaml": "",
+      "checksum": "",
+      "updatedAt": "0001-01-01T00:00:00Z"
+    },
+    "emptyCollections": {
+      "workflowId": "",
+      "version": 0,
+      "yaml": "",
+      "checksum": "",
+      "updatedAt": "0001-01-01T00:00:00Z"
+    },
+    "populated": {
+      "workflowId": "sample",
+      "version": 7,
+      "yaml": "sample",
+      "checksum": "sample",
+      "updatedAt": "2026-08-22T10:00:00Z"
+    }
+  },
+  {
+    "type": "github.com/sanjeewa/agentic-orchestrator/internal/tools.ToolResult",
+    "zero": {
+      "action": "",
+      "result": null
+    },
+    "emptyCollections": {
+      "action": "",
+      "result": {}
+    },
+    "populated": {
+      "action": "sample",
+      "result": {
+        "sample": {
+          "sample": "value"
+        }
+      }
+    }
+  }
+]

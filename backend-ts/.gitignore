@@ -1,0 +1,5 @@
+node_modules/
+dist/
+coverage/
+*.log
+fixtures/capture-go/capture-go.exe

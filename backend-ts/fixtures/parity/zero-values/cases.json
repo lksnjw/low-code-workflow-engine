@@ -1,0 +1,87 @@
+[
+  {
+    "id": "blank-step-kind",
+    "input": "",
+    "output": "tool"
+  },
+  {
+    "id": "empty-tool-status",
+    "input": "",
+    "output": {
+      "passed": true
+    }
+  },
+  {
+    "id": "empty-allowed-roles",
+    "input": [],
+    "output": {
+      "passed": true
+    }
+  },
+  {
+    "id": "zero-analysis-limits",
+    "input": {
+      "id": "",
+      "kind": "analysis"
+    },
+    "output": {
+      "effectiveMaxInputChars": 20000,
+      "effectiveMaxInputItems": 200,
+      "source": "runner execution constants"
+    }
+  },
+  {
+    "id": "zero-retry",
+    "input": 0,
+    "output": {
+      "valid": true,
+      "score": 0.86,
+      "errors": [],
+      "warnings": [
+        {
+          "code": "RETRY_BUDGET_LOW",
+          "message": "External write action should include a retry budget for self-healing.",
+          "nodeId": "write"
+        }
+      ],
+      "checks": [
+        {
+          "name": "Schema valid",
+          "passed": true
+        },
+        {
+          "name": "RBAC policy attached",
+          "passed": true
+        },
+        {
+          "name": "Retry budget configured",
+          "passed": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "nil-persistence-backend",
+    "input": "memory",
+    "output": {
+      "error": "",
+      "isNil": true
+    }
+  },
+  {
+    "id": "all-zero-capability",
+    "input": {},
+    "output": {
+      "mintedTokenPresent": true,
+      "usable": false
+    }
+  },
+  {
+    "id": "empty-permissions",
+    "input": [],
+    "output": {
+      "preliminaryGateTreatsAsRunPermission": true,
+      "serialized": []
+    }
+  }
+]

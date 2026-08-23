@@ -1,0 +1,175 @@
+[
+  {
+    "id": "resolved-embedded",
+    "kind": "template-resolution",
+    "input": {
+      "value": "Hello {{input.name}}"
+    },
+    "output": {
+      "value": "Hello Ada"
+    }
+  },
+  {
+    "id": "unresolved",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{input.missing}}"
+    },
+    "output": {
+      "value": "{{input.missing}}"
+    }
+  },
+  {
+    "id": "nested",
+    "kind": "template-resolution",
+    "input": {
+      "value": {
+        "items": [
+          "{{input.name}}",
+          {
+            "summary": "{{prior.output.summary}}"
+          }
+        ]
+      }
+    },
+    "output": {
+      "value": {
+        "items": [
+          "Ada",
+          {
+            "summary": "done"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "type-preserving-number",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{input.count}}"
+    },
+    "output": {
+      "value": 7
+    }
+  },
+  {
+    "id": "type-preserving-boolean",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{input.enabled}}"
+    },
+    "output": {
+      "value": false
+    }
+  },
+  {
+    "id": "type-preserving-null",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{input.nothing}}"
+    },
+    "output": {
+      "value": null
+    }
+  },
+  {
+    "id": "type-preserving-object",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{input.object}}"
+    },
+    "output": {
+      "value": {
+        "key": "value"
+      }
+    }
+  },
+  {
+    "id": "type-preserving-list",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{input.items}}"
+    },
+    "output": {
+      "value": [
+        1,
+        "two"
+      ]
+    }
+  },
+  {
+    "id": "rejected-unsupported-array-index",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{input.items.0}}"
+    },
+    "output": {
+      "value": "{{input.items.0}}"
+    }
+  },
+  {
+    "id": "rejected-unsupported-expression",
+    "kind": "template-resolution",
+    "input": {
+      "value": "{{ input.count + 1 }}"
+    },
+    "output": {
+      "value": "{{ input.count + 1 }}"
+    }
+  },
+  {
+    "id": "strict-valid",
+    "kind": "strict-yaml",
+    "input": "name: valid\ndescription: Valid fixture.\ntrigger:\n  type: manual\nsteps:\n  - id: one\n    action: demo.echo\n",
+    "output": {
+      "name": "valid",
+      "description": "Valid fixture.",
+      "trigger": {
+        "type": "manual"
+      },
+      "steps": [
+        {
+          "id": "one",
+          "action": "demo.echo"
+        }
+      ]
+    }
+  },
+  {
+    "id": "strict-fenced",
+    "kind": "strict-yaml",
+    "input": "```yaml\nname: fenced\ndescription: Fenced fixture.\ntrigger:\n  type: manual\nsteps:\n  - id: one\n    action: demo.echo\n```",
+    "output": {
+      "name": "fenced",
+      "description": "Fenced fixture.",
+      "trigger": {
+        "type": "manual"
+      },
+      "steps": [
+        {
+          "id": "one",
+          "action": "demo.echo"
+        }
+      ]
+    }
+  },
+  {
+    "id": "strict-unknown-field",
+    "kind": "strict-yaml",
+    "input": "name: invalid\ndescription: Unknown field.\nunknown: true\ntrigger:\n  type: manual\nsteps: []\n",
+    "error": "parse workflow yaml: yaml: unmarshal errors:\n  line 3: field unknown not found in type models.WorkflowBlueprint"
+  },
+  {
+    "id": "strict-multiple-documents",
+    "kind": "strict-yaml",
+    "input": "name: first\n---\nname: second\n",
+    "error": "parse workflow yaml: multiple YAML documents are not allowed"
+  },
+  {
+    "id": "strict-type-mismatch",
+    "kind": "strict-yaml",
+    "input": "name: invalid\ntrigger: 7\nsteps: []\n",
+    "error": "parse workflow yaml: yaml: unmarshal errors:\n  line 2: cannot unmarshal !!int `7` into models.BlueprintTrigger"
+  }
+]
