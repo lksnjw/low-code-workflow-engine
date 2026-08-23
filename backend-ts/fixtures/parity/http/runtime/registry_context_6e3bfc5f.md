@@ -1,13 +1,13 @@
 ---
-registry_hash: sha256:b97e02928fdfe1c4403488a48cc86a2557cd77e461aa02bbfe017318218152ca
-tool_registry_sha256: b52580de94d9d3e73414398c313847942925c5ff2613e470d2cca27d14ee83cc
-rule_registry_sha256: 00850f19cfd8b29cb9dbe4aa820c474eae9a2bbc7f6fd710ba4b686c65c83a26
-generated_at: "2026-08-21T03:39:40Z"
-tool_count: 22
-rule_count: 12
+registry_hash: sha256:6e3bfc5f87cd6e11370cbecfeb18b85c285f9dd872ccd4287728522a5eddfe8b
+tool_registry_sha256: cca3d30f1043f3590d0fe6434e27ea83fd78d6a7e8e7e8cae90055fbb1eef81f
+rule_registry_sha256: e689e1176f117b0f5ba05a113739211dca411c6902b5ca6ead798947157fb5dc
+generated_at: "2026-08-23T15:59:50Z"
+tool_count: 17
+rule_count: 10
 generator_version: 1
 ---
-<!-- registry_sha256: sha256:b97e02928fdfe1c4403488a48cc86a2557cd77e461aa02bbfe017318218152ca -->
+<!-- registry_sha256: sha256:6e3bfc5f87cd6e11370cbecfeb18b85c285f9dd872ccd4287728522a5eddfe8b -->
 
 # Runtime Registry Generation Context
 
@@ -16,13 +16,12 @@ generator_version: 1
 - **approval** — 1 active tool(s)
 - **audit** — 1 active tool(s)
 - **capability** — 1 active tool(s)
-- **demo** — 4 active tool(s)
+- **demo** — 1 active tool(s)
 - **finance** — 3 active tool(s)
 - **governance** — 1 active tool(s)
 - **hr** — 2 active tool(s)
 - **integration** — 2 active tool(s)
 - **inventory** — 1 active tool(s)
-- **logistics** — 2 active tool(s)
 - **notification** — 1 active tool(s)
 - **policy** — 1 active tool(s)
 - **procurement** — 2 active tool(s)
@@ -79,20 +78,6 @@ generator_version: 1
 
 ### demo
 
-#### `demo.context.generate`
-
-- **DisplayName:** Registry Context Generation Demo
-- **Description:** Verifies that a successful runtime import regenerates the Markdown generation context.
-- **BusinessCapability:** Generation context lifecycle verification
-- **InputSchema parameters:** `message` ("string")
-- **RequiredParameters:** `message`
-- **OptionalParameters:** none
-- **AllowedRoles:** `Platform Admin`
-- **RiskLevel:** low
-- **IsReadOnly:** true
-- **SideEffects:** none
-- **PromptUsageGuidance:** Provide a short verification message.
-
 #### `demo.echo`
 
 - **DisplayName:** Demo Echo
@@ -106,34 +91,6 @@ generator_version: 1
 - **IsReadOnly:** true
 - **SideEffects:** none
 - **PromptUsageGuidance:** Use only for the documented local demo workflow.
-
-#### `demo.ping`
-
-- **DisplayName:** Demo Ping
-- **Description:** Acceptance-run read-only ping tool.
-- **BusinessCapability:** Safe local demonstration
-- **InputSchema parameters:** `amount` ("number"), `message` ("string")
-- **RequiredParameters:** `amount`, `message`
-- **OptionalParameters:** none
-- **AllowedRoles:** `Client`, `Platform Admin`, `Workflow Builder`
-- **RiskLevel:** low
-- **IsReadOnly:** true
-- **SideEffects:** none
-- **PromptUsageGuidance:** Use only for the documented local demo workflow.
-
-#### `demo.registry.import`
-
-- **DisplayName:** Runtime Registry Import Demo
-- **Description:** Small deterministic tool used to verify runtime-only registry imports.
-- **BusinessCapability:** Registry boundary demonstration
-- **InputSchema parameters:** `message` ("string")
-- **RequiredParameters:** `message`
-- **OptionalParameters:** none
-- **AllowedRoles:** `Platform Admin`
-- **RiskLevel:** low
-- **IsReadOnly:** false
-- **SideEffects:** `Writes a demonstration record`
-- **PromptUsageGuidance:** Provide a short message.
 
 ### finance
 
@@ -271,36 +228,6 @@ generator_version: 1
 - **SideEffects:** `Records goods receipt.`
 - **PromptUsageGuidance:** 
 
-### logistics
-
-#### `logistics.shipment.createshipment`
-
-- **DisplayName:** Create Shipment
-- **Description:** Creates a shipment record.
-- **BusinessCapability:** Create Shipment
-- **InputSchema parameters:** `carrier` ("string"), `weight_kg` ("number")
-- **RequiredParameters:** `carrier`, `weight_kg`
-- **OptionalParameters:** none
-- **AllowedRoles:** `Client`, `Platform Admin`, `System Admin`, `Workflow Builder`
-- **RiskLevel:** medium
-- **IsReadOnly:** false
-- **SideEffects:** `May change external state through POST /shipments.`
-- **PromptUsageGuidance:** Use this operation only with the parameters declared by the imported OpenAPI contract.
-
-#### `logistics.shipment.getshipment`
-
-- **DisplayName:** Get Shipment
-- **Description:** Reads one shipment by id.
-- **BusinessCapability:** Get Shipment
-- **InputSchema parameters:** `id` ("string")
-- **RequiredParameters:** `id`
-- **OptionalParameters:** none
-- **AllowedRoles:** `Client`, `Platform Admin`, `System Admin`, `Workflow Builder`
-- **RiskLevel:** low
-- **IsReadOnly:** true
-- **SideEffects:** none
-- **PromptUsageGuidance:** Use this operation only with the parameters declared by the imported OpenAPI contract.
-
 ### notification
 
 #### `notify_finance`
@@ -366,10 +293,6 @@ generator_version: 1
 
 ## 3. POLICY CONSTRAINTS
 
-### `demo.echo`
-
-- `demo.echo` — amount greater than 100 requires block (rule `DEMO-AMOUNT-001`, severity high). Keep demo.echo amount at or below 100.
-
 ### `finance.clear_invoice`
 
 - `finance.clear_invoice` — user_role equal to "employee" is subject to block (rule `FIN-RBAC-001`, severity critical). Do not generate finance.clear_invoice for employee role.
@@ -379,8 +302,6 @@ generator_version: 1
 - `global` — is_read_only equal to false requires write_audit_log (rule `GLOBAL-AUDIT-001`, severity high). Add audit.write_audit_log for write, high-risk, or critical workflows.
 - `global` — parameters must not contain ["password","token","api_key","secret","authorization","auth_header","private_key"] (rule `GLOBAL-SAFETY-002`, severity critical). Do not include API keys, tokens, passwords, auth headers, private keys, or secrets.
 - `global` — risk_level must trigger require_human_approval when it is greater than or equal to "high" (rule `GLOBAL-SAFETY-003`, severity high). Include approval.request_human_approval for high-risk or critical workflows.
-- `global` — status not equal to "active_mcp_schema_present" requires require_schema_generation (rule `CAP-GAP-001`, severity high). If a tool is not active, use capability.create_capability_request instead of executing it.
-- `global` — step.action must reference a registered tool (rule `GLOBAL-SAFETY-001`, severity critical). Use only tools listed in AVAILABLE TOOLS. Do not invent actions.
 
 ### `procurement.create_purchase_order`
 
@@ -390,6 +311,7 @@ generator_version: 1
 
 ## 4. PROCESS CONSTRAINTS
 
+- `approval.request_human_approval` — requester_id,approver_id must identify different authorized people (rule `GLOBAL-SOD-001`, severity critical). Ensure requester_id and approver_id refer to different people.
 - `finance.record_invoice_receipt` — workflow.steps must preserve this order: ["finance.record_invoice_receipt","finance.clear_invoice"] (rule `FIN-PROC-002`, severity critical). Place finance.record_invoice_receipt before finance.clear_invoice.
 - `inventory.record_goods_receipt` — workflow.steps must preserve this order: ["inventory.record_goods_receipt","finance.clear_invoice"] (rule `FIN-PROC-001`, severity critical). Place inventory.record_goods_receipt before finance.clear_invoice.
 - `procurement.create_purchase_order` — workflow.steps must preserve this order: ["procurement.validate_vendor","procurement.create_purchase_order"] (rule `PROC-POLICY-001`, severity high). Run procurement.validate_vendor before creating a purchase order.
