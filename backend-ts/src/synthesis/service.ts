@@ -3,6 +3,7 @@ import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import { CANDIDATE_PROMPT_VERSION, type ProviderRuntime } from "../providers/runtime.js";
 import type { RegistryService } from "../registry/service.js";
 import type { CandidateValidationResult, RegistryValidator } from "../validator/registry-validator.js";
+import type { GovernanceUser, ValidationGate } from "../governance/gate.js";
 
 export type SynthesisResult = {
   candidate: CandidateReport;
@@ -43,16 +44,22 @@ export class SynthesisFailure extends Error {
 }
 
 export class SynthesisService {
-  constructor(readonly providers: ProviderRuntime, readonly registries: RegistryService, readonly validator: RegistryValidator) {}
+  constructor(readonly providers: ProviderRuntime, readonly registries: RegistryService, readonly validator: RegistryValidator, readonly validationGate?: ValidationGate) {}
 
-  async synthesize(input: { prompt: string; userRole: string; model?: string; priorMessages?: string[]; signal?: AbortSignal }): Promise<SynthesisResult> {
+  async synthesize(input: { prompt: string; userRole: string; user?: GovernanceUser; model?: string; priorMessages?: string[]; caseContext?: Record<string, unknown>; signal?: AbortSignal }): Promise<SynthesisResult> {
     const prompt = assembleCandidatePrompt(input.prompt, input.userRole, this.registries, input.priorMessages ?? []);
     let generated;
     try { generated = await this.providers.generateCandidate(prompt, CANDIDATE_PROMPT_VERSION, (response) => { parseWorkflowYAMLStrict(response.text.trim()); }, input.signal); }
     catch (error) { throw new SynthesisFailure(`Candidate generation failed: ${errorText(error)}`); }
     const yaml = generated.text.trim();
     const candidateID = "candidate_1";
-    const gate = await this.validator.validateAndIssueToken(candidateID, yaml, input.userRole);
+    const gate = this.validationGate === undefined
+      ? await this.validator.validateAndIssueToken(candidateID, yaml, input.userRole)
+      : await this.validationGate.validateAndIssueToken(candidateID, yaml, input.user ?? { id: "anonymous", role: input.userRole, department: null }, {
+        intent: input.prompt,
+        caseContext: input.caseContext ?? { priorMessageCount: input.priorMessages?.length ?? 0 },
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
     const canExecute = gate.result.passed && gate.token !== null;
     const temperature = this.providers.configuration?.temperature ?? 0;
     const candidate: CandidateReport = {

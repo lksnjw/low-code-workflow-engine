@@ -7,6 +7,7 @@ import type { Executor } from "../../runner/executor.js";
 import type { ProviderRuntime } from "../../providers/runtime.js";
 import type { SynthesisService } from "../../synthesis/service.js";
 import type { RegistryValidator } from "../../validator/registry-validator.js";
+import type { GovernedValidationContext, ValidationGateResult } from "../../governance/gate.js";
 
 export type CurrentUser = User & { role: string; permissions: string[] };
 export type HandlerServices = {
@@ -14,11 +15,27 @@ export type HandlerServices = {
   repository: Repository;
   registries: RegistryService;
   validator: RegistryValidator;
+  validationGate?: import("../../governance/gate.js").ValidationGate;
   executor: Executor;
   providerRuntime?: ProviderRuntime;
   synthesis?: SynthesisService;
   contextAvailable?: boolean;
 };
+
+export async function validateWorkflow(
+  services: HandlerServices,
+  action: string,
+  rawYAML: string,
+  user: Pick<CurrentUser, "id" | "role" | "departmentId">,
+  context: GovernedValidationContext = {},
+): Promise<ValidationGateResult> {
+  if (services.validationGate === undefined) return services.validator.validateAndIssueToken(action, rawYAML, user.role);
+  return services.validationGate.validateAndIssueToken(action, rawYAML, {
+    id: user.id,
+    role: user.role,
+    department: user.departmentId,
+  }, context);
+}
 
 export function requestParam(request: FastifyRequest, name: string): string {
   return String((request.params as Record<string, unknown>)[name] ?? "");

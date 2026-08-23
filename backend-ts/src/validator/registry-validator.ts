@@ -60,6 +60,10 @@ const evaluatedFamilies = new Set(["rbac", "parameter_required", "amount_thresho
 const knownNoEvaluatorFamilies = new Set(["capability_gap", "cache_safety", "execution_safety"]);
 const riskRank: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
 
+export function hasDeterministicRuleEvaluator(family: string): boolean {
+  return evaluatedFamilies.has(normalize(family));
+}
+
 export class RegistryValidator {
   constructor(
     readonly registries: RegistryService,

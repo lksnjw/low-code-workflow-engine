@@ -13,6 +13,7 @@ import type { RegistryService } from "../registry/service.js";
 import type { Repository, User } from "../repository/store.js";
 import type { ProviderRuntime } from "../providers/runtime.js";
 import type { SynthesisService } from "../synthesis/service.js";
+import type { ValidationGate } from "../governance/gate.js";
 import { AsyncMutex } from "../repository/async-mutex.js";
 import { partialResult, type Executor } from "../runner/executor.js";
 import type { RegistryValidator } from "../validator/registry-validator.js";
@@ -23,13 +24,14 @@ import { REGISTRY_UNHANDLED, handleRegistryRoute } from "./handlers/registry.js"
 import { RESOURCE_UNHANDLED, handleResourceRoute } from "./handlers/resources.js";
 import { UPLOAD_EXECUTION_UNHANDLED, handleUploadExecutionRoute } from "./handlers/uploads-executions.js";
 import { WORKFLOW_UNHANDLED, handleWorkflowRoute } from "./handlers/workflows.js";
-import { HandlerFailure } from "./handlers/common.js";
+import { HandlerFailure, validateWorkflow as validateWithGovernance } from "./handlers/common.js";
 
 export type ApplicationServices = {
   config: AppConfig;
   repository: Repository;
   registries: RegistryService;
   validator: RegistryValidator;
+  validationGate?: ValidationGate;
   executor: Executor;
   providerRuntime?: ProviderRuntime;
   synthesis?: SynthesisService;
@@ -298,7 +300,7 @@ async function createWorkflow(request: FastifyRequest, reply: FastifyReply, user
   if (rawYAML.trim() === "") return reply.status(400).send(fail("Workflow YAML is required", null));
   let blueprint;
   try { blueprint = parseWorkflowYAMLStrict(rawYAML); } catch (error) { return reply.status(422).send(fail("Workflow validation failed", { error: errorText(error) })); }
-  const gate = await services.validator.validateAndIssueToken("CreateWorkflow", rawYAML, user.role);
+  const gate = await validateWithGovernance(services, "CreateWorkflow", rawYAML, user);
   if (!gate.result.passed) return reply.status(422).send(fail("Workflow validation failed", gate.result));
   const workflow = await services.repository.mutate((state) => {
     state.counter += 1;
@@ -330,7 +332,7 @@ async function validateWorkflow(request: FastifyRequest, reply: FastifyReply, us
   const item = await services.repository.read((state) => state.workflows[param(request, "id")] ?? null);
   if (item === null) return reply.status(404).send(fail("Workflow not found", null));
   const raw = isRecord(request.body) && typeof request.body.yaml === "string" ? request.body.yaml : item.yaml;
-  const gate = await services.validator.validateAndIssueToken("ValidateWorkflow", raw, user.role);
+  const gate = await validateWithGovernance(services, "ValidateWorkflow", raw, user);
   return reply.send(ok(gate.result, gate.result.passed ? "Workflow is valid" : "Workflow is invalid", null));
 }
 
@@ -340,7 +342,7 @@ async function runWorkflow(request: FastifyRequest, reply: FastifyReply, user: U
   const workflow = await services.repository.read((state) => state.workflows[param(request, "id")] ?? null);
   if (workflow === null) return reply.status(404).send(fail("Workflow not found", null));
   if (!user.permissions.includes("workflow:run") && workflow.owner.id !== user.id && !(workflow.assignedUserIds ?? []).includes(user.id)) return reply.status(403).send(fail("Workflow is not assigned to the current user", null));
-  const gate = await services.validator.validateAndIssueToken("RunWorkflow", workflow.yaml, user.role);
+  const gate = await validateWithGovernance(services, "RunWorkflow", workflow.yaml, user);
   if (!gate.result.passed || gate.token === null) return reply.status(422).send(fail("Workflow validation failed", gate.result));
   if (parsed.data.dryRun) return reply.send(ok({ can_execute: true, dry_run: true, validation: gate.result, planned_steps: parseWorkflowYAMLStrict(workflow.yaml).steps }, "Dry run validation passed", null));
   const execution = await services.repository.mutate((state) => {

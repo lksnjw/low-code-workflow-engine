@@ -14,6 +14,9 @@ import { hashPassword } from "../authn/password.js";
 import { PostgresPersistence } from "../storage/postgres.js";
 import { ProviderRuntime, type RuntimeProviderConfiguration } from "../providers/runtime.js";
 import { SynthesisService } from "../synthesis/service.js";
+import { GovernanceAdapter } from "../governance/adapter.js";
+import { GovernanceService } from "../governance/service.js";
+import { GovernedValidationGate } from "../governance/gate.js";
 
 if (process.env.LCWE_BUILD_MODE === "experiment") {
   throw new Error("the production entry point cannot run as an experiment artifact");
@@ -45,8 +48,23 @@ const executor = new Executor(toolRegistry, validator);
 const providerRuntime = new ProviderRuntime(repository, executor);
 const generationConfiguration = staticProviderConfiguration();
 if (generationConfiguration !== null) providerRuntime.activate(generationConfiguration);
-const synthesis = new SynthesisService(providerRuntime, registries, validator);
-const app = await buildApp({ config, repository, registries, validator, executor, providerRuntime, synthesis, contextAvailable: true });
+const governancePrimary = (config.governanceURL ?? "") === "" ? null : new GovernanceAdapter({
+  url: config.governanceURL!,
+  apiKey: config.governanceAPIKey ?? "",
+  timeoutMs: config.governanceTimeoutMs ?? 10_000,
+  source: "primary",
+});
+const governanceSecondary = (config.governanceSecondaryURL ?? "") === "" ? null : new GovernanceAdapter({
+  url: config.governanceSecondaryURL!,
+  apiKey: config.governanceAPIKey ?? "",
+  timeoutMs: config.governanceTimeoutMs ?? 10_000,
+  source: "secondary",
+});
+const governance = new GovernanceService(governancePrimary, governanceSecondary, config.governanceCacheTTLms ?? 0, registries, repository);
+await governance.initialize();
+const validationGate = new GovernedValidationGate(governance, validator, registries, repository);
+const synthesis = new SynthesisService(providerRuntime, registries, validator, validationGate);
+const app = await buildApp({ config, repository, registries, validator, validationGate, executor, providerRuntime, synthesis, contextAvailable: true });
 let shuttingDown = false;
 const shutdown = async () => {
   if (shuttingDown) return;

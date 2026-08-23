@@ -23,6 +23,11 @@ const environmentSchema = z.object({
   GENERATION_MODEL_FALLBACK: z.string().optional(),
   GENERATION_TEMPERATURE: z.string().optional(),
   GENERATION_TIMEOUT_MS: z.string().optional(),
+  GOVERNANCE_URL: z.string().optional(),
+  GOVERNANCE_API_KEY: z.string().optional(),
+  GOVERNANCE_TIMEOUT_MS: z.string().optional(),
+  GOVERNANCE_SECONDARY_URL: z.string().optional(),
+  GOVERNANCE_CACHE_TTL_MS: z.string().optional(),
   CORS_ORIGINS: z.string().optional(),
   PLATFORM_ADMIN_EMAIL: z.string().optional(),
   PLATFORM_ADMIN_PASSWORD: z.string().optional(),
@@ -50,6 +55,11 @@ export type AppConfig = {
   generationModelFallback?: string;
   generationTemperature?: number;
   generationTimeoutMs?: number;
+  governanceURL?: string;
+  governanceAPIKey?: string;
+  governanceTimeoutMs?: number;
+  governanceSecondaryURL?: string;
+  governanceCacheTTLms?: number;
   corsOrigins: string[];
   platformAdminEmail: string;
   platformAdminPassword: string;
@@ -62,6 +72,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, root = process.
   const mcpTimeoutMs = parseInteger(source.MCP_TIMEOUT_MS, 30_000, "MCP_TIMEOUT_MS");
   const generationTimeoutMs = parseInteger(source.GENERATION_TIMEOUT_MS, 30_000, "GENERATION_TIMEOUT_MS");
   const generationTemperature = parseNumber(source.GENERATION_TEMPERATURE, 0, "GENERATION_TEMPERATURE");
+  const governanceTimeoutMs = parseInteger(source.GOVERNANCE_TIMEOUT_MS, 10_000, "GOVERNANCE_TIMEOUT_MS");
+  const governanceCacheTTLMs = parseOptionalInteger(source.GOVERNANCE_CACHE_TTL_MS, "GOVERNANCE_CACHE_TTL_MS");
   const storageDriver = nonblank(source.STORAGE_DRIVER?.trim().toLowerCase(), "memory") as AppConfig["storageDriver"];
   if (storageDriver !== "memory" && storageDriver !== "postgres") throw new Error(`unsupported STORAGE_DRIVER ${JSON.stringify(storageDriver)} (allowed values: memory or postgres)`);
   const mcpMode = nonblank(source.MCP_MODE?.trim().toLowerCase(), "remote") as AppConfig["mcpMode"];
@@ -90,6 +102,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, root = process.
     generationModelFallback: source.GENERATION_MODEL_FALLBACK?.trim() ?? "",
     generationTemperature,
     generationTimeoutMs,
+    governanceURL: source.GOVERNANCE_URL?.trim() ?? "",
+    governanceAPIKey: source.GOVERNANCE_API_KEY?.trim() ?? "",
+    governanceTimeoutMs,
+    governanceSecondaryURL: source.GOVERNANCE_SECONDARY_URL?.trim() ?? "",
+    ...(governanceCacheTTLMs === undefined ? {} : { governanceCacheTTLms: governanceCacheTTLMs }),
     corsOrigins: nonblank(source.CORS_ORIGINS, "http://localhost:5173").split(",").map((item) => item.trim()).filter((item) => item !== ""),
     platformAdminEmail: nonblank(source.PLATFORM_ADMIN_EMAIL?.trim(), "admin@example.test"),
     platformAdminPassword: source.PLATFORM_ADMIN_PASSWORD ?? "change-me-development-password",
@@ -112,11 +129,25 @@ export function validateConfig(config: AppConfig): void {
     if ((config.generationModelPrimary ?? "").trim() === "") throw new Error("GENERATION_MODEL_PRIMARY is required when generation is configured");
     if ((config.generationModelPrimary ?? "").includes(":latest") || (config.generationModelFallback ?? "").includes(":latest")) throw new Error("generation model IDs must be pinned and cannot use :latest");
   }
+  const governanceConfigured = [config.governanceURL, config.governanceAPIKey, config.governanceSecondaryURL].some((value) => (value ?? "").trim() !== "") || config.governanceCacheTTLms !== undefined;
+  if (governanceConfigured) {
+    if ((config.governanceURL ?? "").trim() === "") throw new Error("GOVERNANCE_URL is required when governance is configured");
+    if ((config.governanceAPIKey ?? "").trim() === "") throw new Error("GOVERNANCE_API_KEY is required when governance is configured");
+    if (config.governanceCacheTTLms === undefined || config.governanceCacheTTLms <= 0) throw new Error("GOVERNANCE_CACHE_TTL_MS must be a positive integer when governance is configured");
+  }
+  if ((config.governanceSecondaryURL ?? "").trim() !== "" && (config.governanceURL ?? "").trim() === "") throw new Error("GOVERNANCE_SECONDARY_URL requires GOVERNANCE_URL");
+  if (!Number.isInteger(config.governanceTimeoutMs) || (config.governanceTimeoutMs ?? 0) <= 0) throw new Error("GOVERNANCE_TIMEOUT_MS must be a positive integer");
   if (config.environment === "production" && config.platformAdminPassword === "change-me-development-password") throw new Error("PLATFORM_ADMIN_PASSWORD must be configured in production");
 }
 
 function parseInteger(value: string | undefined, fallback: number, name: string): number {
   if (value === undefined || value.trim() === "") return fallback;
+  if (!/^-?\d+$/.test(value.trim())) throw new Error(`${name} must be an integer`);
+  return Number.parseInt(value, 10);
+}
+
+function parseOptionalInteger(value: string | undefined, name: string): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
   if (!/^-?\d+$/.test(value.trim())) throw new Error(`${name} must be an integer`);
   return Number.parseInt(value, 10);
 }
