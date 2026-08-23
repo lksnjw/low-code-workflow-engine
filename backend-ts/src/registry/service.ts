@@ -50,6 +50,12 @@ export class RegistryService {
     return this.#snapshot.rules.filter((rule) => rule.enabled);
   }
 
+  replaceRuleSnapshot(input: unknown, ruleVersion: string): void {
+    const rules = ruleArraySchema.parse(input);
+    if (ruleVersion.trim() === "") throw new Error("rule snapshot version is required");
+    this.#snapshot = freezeSnapshot([...this.#snapshot.tools], rules, this.#snapshot.versions.tools, ruleVersion);
+  }
+
   onToolUpsert(callback: (tool: ToolDefinition) => void): () => void {
     this.#toolUpsertCallbacks.add(callback);
     return () => this.#toolUpsertCallbacks.delete(callback);

@@ -3,7 +3,7 @@ import { fail, ok, type Workflow } from "../../models/schemas.js";
 import { workflowCanvasSchema } from "../../models/boundary.js";
 import { checksum, parseWorkflowYAMLStrict, workflowContentHash } from "../../parser/workflow.js";
 import type { RouteDefinition } from "../generated-routes.js";
-import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, publicUser, requestParam, stringValue } from "./common.js";
+import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, publicUser, requestParam, stringValue, validateWorkflow } from "./common.js";
 
 export const WORKFLOW_UNHANDLED = Symbol("workflow-unhandled");
 
@@ -66,7 +66,7 @@ async function useTemplate(request: FastifyRequest, reply: FastifyReply, user: C
   const yaml = stringValue(template.yaml);
   let blueprint;
   try { blueprint = parseWorkflowYAMLStrict(yaml); } catch (error) { throw new HandlerFailure(422, "Workflow validation failed", { error: errorText(error) }); }
-  const gate = await services.validator.validateAndIssueToken("UseTemplate", yaml, user.role);
+  const gate = await validateWorkflow(services, "UseTemplate", yaml, user);
   if (!gate.result.passed) throw new HandlerFailure(422, "Workflow validation failed", gate.result);
   const body = request.body === undefined ? {} : bodyRecord(request);
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
@@ -86,7 +86,7 @@ async function updateWorkflow(request: FastifyRequest, reply: FastifyReply, user
   const current = await services.repository.read((state) => state.workflows[id] ?? null);
   if (current === null) throw new HandlerFailure(404, "Workflow not found");
   const contentHash = workflowContentHash(current.yaml);
-  const gate = await services.validator.validateAndIssueToken("UpdateWorkflow", current.yaml, user.role);
+  const gate = await validateWorkflow(services, "UpdateWorkflow", current.yaml, user);
   if (!gate.result.passed) throw new HandlerFailure(422, "Workflow validation failed", gate.result);
   const updated = await services.repository.mutate((state) => {
     const item = state.workflows[id];
@@ -143,7 +143,7 @@ async function publishWorkflow(request: FastifyRequest, reply: FastifyReply, use
   if (current === null) throw new HandlerFailure(404, "Workflow not found");
   if (current.status === "draft-unvalidated") throw new HandlerFailure(422, "Workflow must be validated before publishing", { status: current.status });
   const expectedHash = workflowContentHash(current.yaml);
-  const gate = await services.validator.validateAndIssueToken("PublishWorkflow", current.yaml, user.role);
+  const gate = await validateWorkflow(services, "PublishWorkflow", current.yaml, user);
   if (!gate.result.passed) throw new HandlerFailure(422, "Workflow validation failed", gate.result);
   const version = await services.repository.mutate((state) => {
     const item = state.workflows[id];
@@ -203,7 +203,7 @@ async function putWorkflowYAML(request: FastifyRequest, reply: FastifyReply, use
   const body = bodyRecord(request); if (body === null) throw new HandlerFailure(400, "Invalid request body");
   const raw = stringValue(body.yaml);
   let blueprint; try { blueprint = parseWorkflowYAMLStrict(raw); } catch (error) { throw new HandlerFailure(422, "Workflow YAML failed validation", { error: errorText(error) }); }
-  const gate = await services.validator.validateAndIssueToken("PutWorkflowYAML", raw, user.role); if (!gate.result.passed) throw new HandlerFailure(422, "Workflow YAML failed validation", gate.result);
+  const gate = await validateWorkflow(services, "PutWorkflowYAML", raw, user); if (!gate.result.passed) throw new HandlerFailure(422, "Workflow YAML failed validation", gate.result);
   const id = requestParam(request, "id");
   const workflow = await services.repository.mutate((state) => {
     const item = state.workflows[id]; if (item === undefined) throw new HandlerFailure(404, "Workflow not found");
@@ -238,7 +238,7 @@ async function restoreWorkflowVersion(request: FastifyRequest, reply: FastifyRep
   const snapshot = await services.repository.read((state) => ({ workflow: state.workflows[id] ?? null, version: (state.versions[id] ?? []).find((item) => item.id === versionID) ?? null }));
   if (snapshot.workflow === null) throw new HandlerFailure(404, "Workflow not found"); if (snapshot.version === null) throw new HandlerFailure(404, "Workflow version not found");
   const raw = stringValue(snapshot.version.yaml); let blueprint; try { blueprint = parseWorkflowYAMLStrict(raw); } catch (error) { throw new HandlerFailure(422, "Workflow validation failed", { error: errorText(error) }); }
-  const expectedHash = workflowContentHash(raw); const gate = await services.validator.validateAndIssueToken("RestoreWorkflowVersion", raw, user.role); if (!gate.result.passed) throw new HandlerFailure(422, "Workflow validation failed", gate.result);
+  const expectedHash = workflowContentHash(raw); const gate = await validateWorkflow(services, "RestoreWorkflowVersion", raw, user); if (!gate.result.passed) throw new HandlerFailure(422, "Workflow validation failed", gate.result);
   const workflow = await services.repository.mutate((state) => { const item = state.workflows[id]; const version = (state.versions[id] ?? []).find((value) => value.id === versionID); if (item === undefined || version === undefined) throw new HandlerFailure(404, "Workflow version not found"); if (workflowContentHash(stringValue(version.yaml)) !== expectedHash) throw new HandlerFailure(409, "Workflow version content changed during validation"); item.yaml = raw; item.steps = blueprint.steps.length; item.draftVersion += 1; item.status = "PENDING"; item.updatedAt = now(); item.canvas = canvasFromBlueprint(id, blueprint); return structuredClone(item); });
   return reply.send(ok(publicWorkflow(workflow), "Workflow restored", null));
 }

@@ -148,7 +148,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   });
   if (services.synthesis === undefined) throw new HandlerFailure(502, "Chat orchestration is not configured");
   let result;
-  try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, model: stringValue(body.model), priorMessages: stored.priorMessages, signal: request.signal }); }
+  try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, user: { id: user.id, role: user.role, department: user.departmentId }, model: stringValue(body.model), priorMessages: stored.priorMessages, signal: request.signal }); }
   catch (error) { throw new HandlerFailure(502, `Chat orchestration failed: ${errorText(error)}`); }
   const assistantText = result.canExecute
     ? "I generated a workflow candidate that passed the deterministic validation gate."

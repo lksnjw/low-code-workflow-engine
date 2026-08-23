@@ -22,6 +22,11 @@ $env:GENERATION_MODEL_PRIMARY = "openai/gpt-4o-mini-2024-07-18"
 $env:GENERATION_MODEL_FALLBACK = ""
 $env:GENERATION_TIMEOUT_MS = "30000"
 $env:GENERATION_TEMPERATURE = "0"
+$env:GOVERNANCE_URL = "https://policy-source.example/evaluate"
+$env:GOVERNANCE_API_KEY = "[REDACTED]"
+$env:GOVERNANCE_TIMEOUT_MS = "10000"
+$env:GOVERNANCE_SECONDARY_URL = ""
+$env:GOVERNANCE_CACHE_TTL_MS = "60000"
 npm run dev
 ```
 

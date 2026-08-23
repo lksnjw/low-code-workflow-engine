@@ -79,6 +79,7 @@ export type RepositoryState = {
   healing: Record<string, StoredRecord>;
   chats: Record<string, ChatSessionRecord>;
   invocationProvenance: Record<string, InvocationProvenanceRecord>;
+  governancePolicy: StoredRecord | null;
   company: StoredRecord | null;
   providers: Record<string, StoredRecord>;
   integrations: Record<string, StoredRecord>;
@@ -196,6 +197,7 @@ function restoreState(payload: Uint8Array): RepositoryState {
   for (const key of ["users", "passwordHashes", "roles", "workflows", "versions", "templates", "executions", "executionLogs", "timelines", "healing", "chats", "invocationProvenance", "providers", "integrations", "webhooks", "refreshSessions", "notifications", "notificationPreferences", "apiKeys", "uploads", "uploadContents"] as const) {
     if (typeof restored[key] !== "object" || restored[key] === null || Array.isArray(restored[key])) restored[key] = defaults[key] as never;
   }
+  if (restored.governancePolicy !== null && (typeof restored.governancePolicy !== "object" || Array.isArray(restored.governancePolicy))) restored.governancePolicy = null;
   for (const role of Object.values(defaults.roles)) if (restored.roles[role.id] === undefined) restored.roles[role.id] = role;
   const knownPermissions = new Set(restored.permissions.map((item) => item.key));
   for (const permission of defaults.permissions) if (!knownPermissions.has(permission.key)) restored.permissions.push(permission);
@@ -222,6 +224,7 @@ export function initialState(): RepositoryState {
     healing: {},
     chats: {},
     invocationProvenance: {},
+    governancePolicy: null,
     company: null,
     providers: {},
     integrations: {},
