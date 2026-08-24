@@ -546,14 +546,12 @@ async function health(
   };
   return storage.healthy
     ? reply.send(ok(data, "OK", null))
-    : reply
-        .status(503)
-        .send({
-          success: false,
-          data,
-          message: "Storage persistence is degraded",
-          meta: null,
-        });
+    : reply.status(503).send({
+        success: false,
+        data,
+        message: "Storage persistence is degraded",
+        meta: null,
+      });
 }
 
 async function login(
@@ -1103,14 +1101,12 @@ async function runWorkflow(
       };
       return structuredClone(item);
     });
-    return reply
-      .status(422)
-      .send(
-        fail(`Workflow execution failed: ${errorText(error)}`, {
-          executionId: failed.id,
-          status: failed.status,
-        }),
-      );
+    return reply.status(422).send(
+      fail(`Workflow execution failed: ${errorText(error)}`, {
+        executionId: failed.id,
+        status: failed.status,
+      }),
+    );
   }
 }
 
@@ -1260,6 +1256,7 @@ function publicUser(
       ? {}
       : { emailVerified: user.emailVerified }),
     role: user.role ?? "",
+    permissions: user.permissions ?? [],
   };
 }
 function publicWorkflow(
