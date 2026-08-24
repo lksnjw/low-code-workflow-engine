@@ -73,10 +73,13 @@ The HTTP fixture manifest intentionally remains `complete: false`. It does not c
 - missing validation token;
 - workflow-content mismatch;
 - registry mismatch;
-- over-threshold resolved value; and
-- credential-shaped resolved key.
+- over-threshold resolved value;
+- credential-shaped resolved key; and
+- a capability used with another authenticated dispatch identity.
 
-The one unchanged capability case reaches the spy exactly once.
+The one unchanged capability case reaches the spy exactly once. The identity is included in the capability HMAC and the exact business parameter hash excludes the internal action marker, which is never sent to a remote tool.
+
+`tests/erpbridge-mcp-client.test.ts` additionally proves the private adapter uses the reviewed remote MCP name, injects the mapped role only for guarded tools, rejects caller-supplied roles, preserves successful MCP envelopes, fails `isError` envelopes, closes its session, and makes one SDK call after an ambiguous transport failure.
 
 ## Production artifact proof
 
@@ -120,7 +123,7 @@ No forbidden HTTP, provider, synthesizer, entrypoint, or experiment dependency i
 | `internal/redact` | `src/redact/secrets.ts` | Ported for recursive secret removal used by storage/log responses |
 | `internal/repository` | `src/repository/` | Async redesign with lock-through-save and rollback tests |
 | `internal/storage` | `src/storage/` | AES-GCM vector passes; PostgreSQL aggregate/advisory-lock adapter implemented, live failure fixture absent |
-| `internal/tools` and `impl` | `src/tools/` | Runtime-governed client and generic registry-backed delegates implemented; mock mode supports `demo.echo` and Go-shaped `fetch_attendance`, and is refused in production |
+| `internal/tools` and `impl` | `src/tools/` | Runtime-governed client and generic registry-backed delegates implemented; mock mode supports `demo.echo` and Go-shaped `fetch_attendance`, and is refused in production; ERPBridge MCP uses private `@erpbridge/sdk@1.1.0` with no retry |
 | `pkg/logger` | Fastify structured logger | Functional replacement, not a Zap wire/config clone |
 | `pkg/parser` | `src/parser/workflow.ts` | 15/15 parser fixtures pass |
 

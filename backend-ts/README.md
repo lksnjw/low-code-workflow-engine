@@ -32,6 +32,28 @@ npm run dev
 
 The model string is passed through unchanged. Do not use a floating alias such as `:latest`. Mock MCP mode supports `demo.echo` and the realistic read-only `fetch_attendance` demo action; configuration rejects mock mode when `APP_ENV=production`.
 
+## ERPBridge MCP transport
+
+The default `MCP_TRANSPORT=bridge-v1` preserves the existing bridge client. To use authenticated ERPBridge MCP, set `MCP_TRANSPORT=erpbridge-mcp` and provide a scoped `mcp` token. The engine calls ERPBridge `/mcp/` through its private SDK adapter; it does not use the admin-only `/api/tools/invoke` endpoint.
+
+```powershell
+$env:MCP_TRANSPORT = "erpbridge-mcp"
+$env:ERPBRIDGE_BASE_URL = "https://erpbridge.example"
+$env:ERPBRIDGE_MCP_TOKEN = "[REDACTED]"
+$env:ERPBRIDGE_ROLE_MAP = '{"Workflow Builder":"workflow_builder","Client":"client"}'
+npm run dev
+```
+
+Instead of putting the token in the process configuration value, select a secret-manager environment variable by name:
+
+```powershell
+$env:ERPBRIDGE_MCP_TOKEN_ENV = "WORKFLOW_ERPBRIDGE_TOKEN"
+```
+
+`ERPBRIDGE_MCP_TOKEN` and `ERPBRIDGE_MCP_TOKEN_ENV` are mutually exclusive. The role map is strict JSON, accepts the built-in local role names only, and rejects duplicate ERPBridge target roles. Non-development endpoints must use HTTPS. Do not include the token in logs, diagnostics, or public configuration responses.
+
+See [ERPBridge integration](docs/ERPBRIDGE_INTEGRATION.md) for the role matrix, token rotation, deployment checks, and audit boundary.
+
 ## Verify
 
 ```powershell

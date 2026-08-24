@@ -2,12 +2,24 @@ import { createHash, randomBytes } from "node:crypto";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type HTTPMethods } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+  type HTTPMethods,
+} from "fastify";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import type { AppConfig } from "../config/config.js";
 import { hashPassword, verifyPassword } from "../authn/password.js";
-import { fail, loginRequestSchema, ok, registerRequestSchema, runWorkflowRequestSchema, type Workflow } from "../models/schemas.js";
+import {
+  fail,
+  loginRequestSchema,
+  ok,
+  registerRequestSchema,
+  runWorkflowRequestSchema,
+  type Workflow,
+} from "../models/schemas.js";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import type { RegistryService } from "../registry/service.js";
 import type { Repository, User } from "../repository/store.js";
@@ -17,14 +29,36 @@ import type { ValidationGate } from "../governance/gate.js";
 import { AsyncMutex } from "../repository/async-mutex.js";
 import { partialResult, type Executor } from "../runner/executor.js";
 import type { RegistryValidator } from "../validator/registry-validator.js";
+import { createDispatchIdentity } from "../tools/registry.js";
 import { routeTable, type RouteDefinition } from "./generated-routes.js";
-import { ADMIN_UNHANDLED, handleAdministrationRoute } from "./handlers/administration.js";
-import { ANALYTICS_UNHANDLED, handleAnalyticsCatalogRoute } from "./handlers/analytics-catalog.js";
-import { REGISTRY_UNHANDLED, handleRegistryRoute } from "./handlers/registry.js";
-import { RESOURCE_UNHANDLED, handleResourceRoute } from "./handlers/resources.js";
-import { UPLOAD_EXECUTION_UNHANDLED, handleUploadExecutionRoute } from "./handlers/uploads-executions.js";
-import { WORKFLOW_UNHANDLED, handleWorkflowRoute } from "./handlers/workflows.js";
-import { HandlerFailure, validateWorkflow as validateWithGovernance } from "./handlers/common.js";
+import {
+  ADMIN_UNHANDLED,
+  handleAdministrationRoute,
+} from "./handlers/administration.js";
+import {
+  ANALYTICS_UNHANDLED,
+  handleAnalyticsCatalogRoute,
+} from "./handlers/analytics-catalog.js";
+import {
+  REGISTRY_UNHANDLED,
+  handleRegistryRoute,
+} from "./handlers/registry.js";
+import {
+  RESOURCE_UNHANDLED,
+  handleResourceRoute,
+} from "./handlers/resources.js";
+import {
+  UPLOAD_EXECUTION_UNHANDLED,
+  handleUploadExecutionRoute,
+} from "./handlers/uploads-executions.js";
+import {
+  WORKFLOW_UNHANDLED,
+  handleWorkflowRoute,
+} from "./handlers/workflows.js";
+import {
+  HandlerFailure,
+  validateWorkflow as validateWithGovernance,
+} from "./handlers/common.js";
 
 export type ApplicationServices = {
   config: AppConfig;
@@ -39,40 +73,102 @@ export type ApplicationServices = {
 };
 
 const publicRoutes = new Set([
-  "GET /healthz", "GET /api/health", "POST /api/auth/login", "POST /api/auth/register", "POST /api/auth/refresh",
-  "POST /api/auth/forgot-password", "POST /api/auth/reset-password", "POST /api/auth/verify-email",
-  "GET /api/auth/oauth/:provider/authorize", "GET /api/auth/oauth/:provider/callback",
+  "GET /healthz",
+  "GET /api/health",
+  "POST /api/auth/login",
+  "POST /api/auth/register",
+  "POST /api/auth/refresh",
+  "POST /api/auth/forgot-password",
+  "POST /api/auth/reset-password",
+  "POST /api/auth/verify-email",
+  "GET /api/auth/oauth/:provider/authorize",
+  "GET /api/auth/oauth/:provider/callback",
 ]);
 
 const malformedJSONMessages = new Map<string, string>([
   ...[
-    "POST /api/canvas/validate-workflow", "POST /api/chat/sessions", "PATCH /api/chat/sessions/:id", "POST /api/chat/sessions/:id/messages",
-    "POST /api/integrations", "PATCH /api/integrations/:id", "PATCH /api/profile", "POST /api/profile/api-keys",
-    "POST /api/roles", "PATCH /api/roles/:id", "PUT /api/roles/:id", "PATCH /api/settings", "PATCH /api/settings/general",
-    "PATCH /api/settings/llm", "PATCH /api/settings/rbac", "POST /api/settings/webhooks", "PATCH /api/settings/webhooks/:id",
-    "POST /api/synthesis", "POST /api/synthesis/explain", "POST /api/synthesis/preview-flow", "POST /api/synthesis/validate",
-    "POST /api/upload/workflow-import", "POST /api/users", "PATCH /api/users/:id", "PUT /api/users/:id/role", "PUT /api/users/:id/status",
-    "POST /api/workflows/:id/assign", "POST /api/workflows/:id/duplicate", "POST /api/workflows/:id/publish", "POST /api/workflows/templates",
+    "POST /api/canvas/validate-workflow",
+    "POST /api/chat/sessions",
+    "PATCH /api/chat/sessions/:id",
+    "POST /api/chat/sessions/:id/messages",
+    "POST /api/integrations",
+    "PATCH /api/integrations/:id",
+    "PATCH /api/profile",
+    "POST /api/profile/api-keys",
+    "POST /api/roles",
+    "PATCH /api/roles/:id",
+    "PUT /api/roles/:id",
+    "PATCH /api/settings",
+    "PATCH /api/settings/general",
+    "PATCH /api/settings/llm",
+    "PATCH /api/settings/rbac",
+    "POST /api/settings/webhooks",
+    "PATCH /api/settings/webhooks/:id",
+    "POST /api/synthesis",
+    "POST /api/synthesis/explain",
+    "POST /api/synthesis/preview-flow",
+    "POST /api/synthesis/validate",
+    "POST /api/upload/workflow-import",
+    "POST /api/users",
+    "PATCH /api/users/:id",
+    "PUT /api/users/:id/role",
+    "PUT /api/users/:id/status",
+    "POST /api/workflows/:id/assign",
+    "POST /api/workflows/:id/duplicate",
+    "POST /api/workflows/:id/publish",
+    "POST /api/workflows/templates",
     "POST /api/workflows/templates/:id/use",
   ].map((key) => [key, "Invalid JSON request body"] as const),
   ...[
-    "PUT /api/company", "POST /api/company/approval-tiers", "PUT /api/company/approval-tiers/:id", "POST /api/company/cost-centres",
-    "PUT /api/company/cost-centres/:id", "POST /api/company/departments", "PUT /api/company/departments/:id", "POST /api/import/commit",
-    "PATCH /api/profile/notifications", "POST /api/providers", "PUT /api/providers/:id", "POST /api/workflows", "PATCH /api/workflows/:id",
-    "PUT /api/workflows/:id/canvas", "POST /api/workflows/:id/run", "PUT /api/workflows/:id/yaml",
+    "PUT /api/company",
+    "POST /api/company/approval-tiers",
+    "PUT /api/company/approval-tiers/:id",
+    "POST /api/company/cost-centres",
+    "PUT /api/company/cost-centres/:id",
+    "POST /api/company/departments",
+    "PUT /api/company/departments/:id",
+    "POST /api/import/commit",
+    "PATCH /api/profile/notifications",
+    "POST /api/providers",
+    "PUT /api/providers/:id",
+    "POST /api/workflows",
+    "PATCH /api/workflows/:id",
+    "PUT /api/workflows/:id/canvas",
+    "POST /api/workflows/:id/run",
+    "PUT /api/workflows/:id/yaml",
   ].map((key) => [key, "Invalid request body"] as const),
 ]);
 
-export async function buildApp(services: ApplicationServices): Promise<FastifyInstance> {
+export async function buildApp(
+  services: ApplicationServices,
+): Promise<FastifyInstance> {
   assertApplicationServices(services);
-  const app = Fastify({ logger: process.env.NODE_ENV !== "test", bodyLimit: 10 * 1024 * 1024 });
+  const app = Fastify({
+    logger: process.env.NODE_ENV !== "test",
+    bodyLimit: 10 * 1024 * 1024,
+  });
   const mutationMutex = new AsyncMutex();
   app.removeContentTypeParser("application/json");
-  app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
-    try { done(null, JSON.parse(typeof body === "string" ? body : body.toString("utf8"))); }
-    catch { done(null, INVALID_JSON_BODY); }
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_request, body, done) => {
+      try {
+        done(
+          null,
+          JSON.parse(typeof body === "string" ? body : body.toString("utf8")),
+        );
+      } catch {
+        done(null, INVALID_JSON_BODY);
+      }
+    },
+  );
+  await app.register(cors, {
+    origin: services.config.corsOrigins,
+    credentials: true,
+    allowedHeaders: ["Origin", "Content-Type", "Accept", "Authorization"],
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   });
-  await app.register(cors, { origin: services.config.corsOrigins, credentials: true, allowedHeaders: ["Origin", "Content-Type", "Accept", "Authorization"], methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] });
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   await app.register(websocket);
 
@@ -81,163 +177,501 @@ export async function buildApp(services: ApplicationServices): Promise<FastifyIn
       void reply.status(error.status).send(fail(error.message, error.meta));
       return;
     }
-    const normalized = (error instanceof Error ? error : new Error(String(error))) as Error & { statusCode?: number; code?: string };
-    const status = normalized.statusCode !== undefined && normalized.statusCode >= 400 && normalized.statusCode < 600 ? normalized.statusCode : 500;
-    const message = status === 400 && normalized.code === "FST_ERR_CTP_INVALID_JSON_BODY" ? "Invalid request body" : status === 500 ? "Internal server error" : normalized.message;
+    const normalized = (
+      error instanceof Error ? error : new Error(String(error))
+    ) as Error & { statusCode?: number; code?: string };
+    const status =
+      normalized.statusCode !== undefined &&
+      normalized.statusCode >= 400 &&
+      normalized.statusCode < 600
+        ? normalized.statusCode
+        : 500;
+    const message =
+      status === 400 && normalized.code === "FST_ERR_CTP_INVALID_JSON_BODY"
+        ? "Invalid request body"
+        : status === 500
+          ? "Internal server error"
+          : normalized.message;
     void reply.status(status).send(fail(message, null));
   });
 
   for (const route of routeTable) {
     if (route.path === "/ws/*") {
-      app.get(route.path, {
-        websocket: true,
-        preValidation: async (request, reply) => { const auth = await authenticate(request, reply, services); if (auth === null) return reply; },
-      }, (socket, request) => {
-        const wildcard = (request.params as Record<string, unknown>)["*"];
-        const channel = typeof wildcard === "string" && wildcard.trim() !== "" ? wildcard : "system-health";
-        const interval = setInterval(() => { void sendWebsocketSnapshot(socket, channel, services); }, 5_000);
-        socket.once("close", () => clearInterval(interval));
-        socket.once("error", () => clearInterval(interval));
-      });
+      app.get(
+        route.path,
+        {
+          websocket: true,
+          preValidation: async (request, reply) => {
+            const auth = await authenticate(request, reply, services);
+            if (auth === null) return reply;
+          },
+        },
+        (socket, request) => {
+          const wildcard = (request.params as Record<string, unknown>)["*"];
+          const channel =
+            typeof wildcard === "string" && wildcard.trim() !== ""
+              ? wildcard
+              : "system-health";
+          const interval = setInterval(() => {
+            void sendWebsocketSnapshot(socket, channel, services);
+          }, 5_000);
+          socket.once("close", () => clearInterval(interval));
+          socket.once("error", () => clearInterval(interval));
+        },
+      );
       continue;
     }
     app.route({
       method: route.method as HTTPMethods,
       url: route.path,
-      handler: async (request, reply) => route.method === "GET"
-        ? handleRoute(route, request, reply, services)
-        : mutationMutex.runExclusive(() => handleRoute(route, request, reply, services)),
+      handler: async (request, reply) =>
+        route.method === "GET"
+          ? handleRoute(route, request, reply, services)
+          : mutationMutex.runExclusive(() =>
+              handleRoute(route, request, reply, services),
+            ),
     });
   }
-  if (routeTable.length !== 168) throw new Error(`route table has ${routeTable.length} routes, expected 168`);
+  if (routeTable.length !== 168)
+    throw new Error(
+      `route table has ${routeTable.length} routes, expected 168`,
+    );
   return app;
 }
 
 function assertApplicationServices(services: ApplicationServices): void {
-  if (services === null || services === undefined || typeof services !== "object") throw new Error("application services are required");
-  if (services.config === null || services.config === undefined) throw new Error("application config is required");
-  if (services.repository === null || services.repository === undefined || typeof services.repository.snapshot !== "function" || typeof services.repository.mutate !== "function") throw new Error("application repository is invalid");
-  if (services.registries === null || services.registries === undefined || typeof services.registries.snapshot !== "function") throw new Error("application registry service is invalid");
-  if (services.validator === null || services.validator === undefined || typeof services.validator.validateAndIssueToken !== "function") throw new Error("application validator is invalid");
-  if (services.executor === null || services.executor === undefined || typeof services.executor.run !== "function") throw new Error("application executor is invalid");
+  if (
+    services === null ||
+    services === undefined ||
+    typeof services !== "object"
+  )
+    throw new Error("application services are required");
+  if (services.config === null || services.config === undefined)
+    throw new Error("application config is required");
+  if (
+    services.repository === null ||
+    services.repository === undefined ||
+    typeof services.repository.snapshot !== "function" ||
+    typeof services.repository.mutate !== "function"
+  )
+    throw new Error("application repository is invalid");
+  if (
+    services.registries === null ||
+    services.registries === undefined ||
+    typeof services.registries.snapshot !== "function"
+  )
+    throw new Error("application registry service is invalid");
+  if (
+    services.validator === null ||
+    services.validator === undefined ||
+    typeof services.validator.validateAndIssueToken !== "function"
+  )
+    throw new Error("application validator is invalid");
+  if (
+    services.executor === null ||
+    services.executor === undefined ||
+    typeof services.executor.run !== "function"
+  )
+    throw new Error("application executor is invalid");
 }
 
 const INVALID_JSON_BODY = Object.freeze({ invalidJSONBody: true });
 
-async function sendWebsocketSnapshot(socket: { readyState: number; send(data: string): void }, channel: string, services: ApplicationServices): Promise<void> {
+async function sendWebsocketSnapshot(
+  socket: { readyState: number; send(data: string): void },
+  channel: string,
+  services: ApplicationServices,
+): Promise<void> {
   if (socket.readyState !== 1) return;
   const state = await services.repository.snapshot();
-  const workflows = Object.values(state.workflows).filter((item) => !item.archived).length;
+  const workflows = Object.values(state.workflows).filter(
+    (item) => !item.archived,
+  ).length;
   const executions = Object.values(state.executions);
-  const runningExecutions = executions.filter((item) => item.status === "RUNNING").length;
-  socket.send(JSON.stringify({ type: "system.health.snapshot", id: `event_${randomBytes(8).toString("hex")}`, timestamp: new Date().toISOString(), data: { channel, overall: "healthy", workflows, executions: executions.length, runningExecutions, mcpConfigured: services.config.mcpMode === "mock" || services.config.mcpBaseURL !== "" } }));
+  const runningExecutions = executions.filter(
+    (item) => item.status === "RUNNING",
+  ).length;
+  socket.send(
+    JSON.stringify({
+      type: "system.health.snapshot",
+      id: `event_${randomBytes(8).toString("hex")}`,
+      timestamp: new Date().toISOString(),
+      data: {
+        channel,
+        overall: "healthy",
+        workflows,
+        executions: executions.length,
+        runningExecutions,
+        mcpConfigured:
+          services.config.mcpMode === "mock" ||
+          services.config.mcpBaseURL !== "",
+      },
+    }),
+  );
 }
 
-async function handleRoute(route: RouteDefinition, request: FastifyRequest, reply: FastifyReply, services: ApplicationServices): Promise<unknown> {
+async function handleRoute(
+  route: RouteDefinition,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  services: ApplicationServices,
+): Promise<unknown> {
   const routeKey = `${route.method} ${route.path}`;
-  if (route.path === "/healthz" || route.path === `${services.config.apiBasePath}/health`) return health(reply, services);
-  if (route.path === `${services.config.apiBasePath}/auth/login`) return login(request, reply, services);
-  if (route.path === `${services.config.apiBasePath}/auth/register`) return register(request, reply, services);
-  if (route.path === `${services.config.apiBasePath}/auth/refresh`) return refresh(request, reply, services);
-  if (route.path.includes("/auth/oauth/")) return reply.status(501).send(fail("OAuth is not configured for this installation", null));
-  if (route.path.endsWith("/forgot-password") || route.path.endsWith("/reset-password")) return reply.status(501).send(fail("Password recovery is not configured for this installation", null));
-  if (route.path.endsWith("/verify-email")) return reply.status(501).send(fail("Email verification is not configured for this installation", null));
+  if (
+    route.path === "/healthz" ||
+    route.path === `${services.config.apiBasePath}/health`
+  )
+    return health(reply, services);
+  if (route.path === `${services.config.apiBasePath}/auth/login`)
+    return login(request, reply, services);
+  if (route.path === `${services.config.apiBasePath}/auth/register`)
+    return register(request, reply, services);
+  if (route.path === `${services.config.apiBasePath}/auth/refresh`)
+    return refresh(request, reply, services);
+  if (route.path.includes("/auth/oauth/"))
+    return reply
+      .status(501)
+      .send(fail("OAuth is not configured for this installation", null));
+  if (
+    route.path.endsWith("/forgot-password") ||
+    route.path.endsWith("/reset-password")
+  )
+    return reply
+      .status(501)
+      .send(
+        fail("Password recovery is not configured for this installation", null),
+      );
+  if (route.path.endsWith("/verify-email"))
+    return reply
+      .status(501)
+      .send(
+        fail(
+          "Email verification is not configured for this installation",
+          null,
+        ),
+      );
 
-  const auth = publicRoutes.has(routeKey) ? null : await authenticate(request, reply, services);
+  const auth = publicRoutes.has(routeKey)
+    ? null
+    : await authenticate(request, reply, services);
   if (!publicRoutes.has(routeKey) && auth === null) return;
   const current = auth?.user ?? null;
   if (current !== null) {
     const policy = routePolicy(route);
-    if (policy !== null && !policy.required.some((permission) => current.permissions.includes(permission))) {
-      const meta = policy.any ? { requiredAny: policy.required } : { required: policy.required[0] };
+    if (
+      policy !== null &&
+      !policy.required.some((permission) =>
+        current.permissions.includes(permission),
+      )
+    ) {
+      const meta = policy.any
+        ? { requiredAny: policy.required }
+        : { required: policy.required[0] };
       return reply.status(403).send(fail("Permission denied", meta));
     }
   }
 
-  if (route.path === `${services.config.apiBasePath}/auth/logout`) return logout(request, reply, services);
-  if (route.path === `${services.config.apiBasePath}/auth/me`) return reply.send(ok(publicUser(current!), "OK", null));
-  if (route.path.includes("/auth/2fa/")) return reply.status(501).send(fail("Two-factor authentication is not configured for this installation", null));
-  if (route.path === `${services.config.apiBasePath}/workflows` && route.method === "GET") return listWorkflows(request, reply, current!, services);
-  if (route.path === `${services.config.apiBasePath}/workflows` && route.method === "POST") return createWorkflow(request, reply, current!, services);
-  if (route.path === `${services.config.apiBasePath}/workflows/:id` && route.method === "GET") return getWorkflow(request, reply, current!, services);
-  if (route.path === `${services.config.apiBasePath}/workflows/:id/validate`) return validateWorkflow(request, reply, current!, services);
-  if (route.path === `${services.config.apiBasePath}/workflows/:id/run`) return runWorkflow(request, reply, current!, services);
-  if (route.path === `${services.config.apiBasePath}/registry/tools` && route.method === "GET") return reply.send(ok(services.registries.snapshot().tools, "Tool registry loaded", { count: services.registries.snapshot().tools.length, registryHash: services.registries.hash() }));
-  if (route.path === `${services.config.apiBasePath}/registry/rules` && route.method === "GET") return reply.send(ok(services.registries.snapshot().rules, "Rule registry loaded", { count: services.registries.snapshot().rules.length, registryHash: services.registries.hash() }));
-  if (route.path === `${services.config.apiBasePath}/executions` && route.method === "GET") return listExecutions(reply, current!, services);
-  if (route.path === `${services.config.apiBasePath}/executions/:id` && route.method === "GET") return getExecution(request, reply, current!, services);
-  if (route.path.endsWith("/cancel")) return reply.status(501).send(fail("Cancellation is unavailable while executions run synchronously", null));
-  if (route.path === `${services.config.apiBasePath}/profile` && route.method === "GET") return reply.send(ok(publicUser(current!), "OK", null));
-  if (route.path === `${services.config.apiBasePath}/users/invite`) return reply.status(501).send(fail("Email invitations is not configured for this installation", null));
-  if (route.path === `${services.config.apiBasePath}/profile/security`) return reply.status(501).send(fail("Security preference changes is not configured for this installation", null));
-  if (routeKey === "POST /api/import/analyse" && !request.isMultipart()) return reply.status(400).send(fail("Choose a registry file to analyse", null));
+  if (route.path === `${services.config.apiBasePath}/auth/logout`)
+    return logout(request, reply, services);
+  if (route.path === `${services.config.apiBasePath}/auth/me`)
+    return reply.send(ok(publicUser(current!), "OK", null));
+  if (route.path.includes("/auth/2fa/"))
+    return reply
+      .status(501)
+      .send(
+        fail(
+          "Two-factor authentication is not configured for this installation",
+          null,
+        ),
+      );
+  if (
+    route.path === `${services.config.apiBasePath}/workflows` &&
+    route.method === "GET"
+  )
+    return listWorkflows(request, reply, current!, services);
+  if (
+    route.path === `${services.config.apiBasePath}/workflows` &&
+    route.method === "POST"
+  )
+    return createWorkflow(request, reply, current!, services);
+  if (
+    route.path === `${services.config.apiBasePath}/workflows/:id` &&
+    route.method === "GET"
+  )
+    return getWorkflow(request, reply, current!, services);
+  if (route.path === `${services.config.apiBasePath}/workflows/:id/validate`)
+    return validateWorkflow(request, reply, current!, services);
+  if (route.path === `${services.config.apiBasePath}/workflows/:id/run`)
+    return runWorkflow(request, reply, current!, services);
+  if (
+    route.path === `${services.config.apiBasePath}/registry/tools` &&
+    route.method === "GET"
+  )
+    return reply.send(
+      ok(services.registries.snapshot().tools, "Tool registry loaded", {
+        count: services.registries.snapshot().tools.length,
+        registryHash: services.registries.hash(),
+      }),
+    );
+  if (
+    route.path === `${services.config.apiBasePath}/registry/rules` &&
+    route.method === "GET"
+  )
+    return reply.send(
+      ok(services.registries.snapshot().rules, "Rule registry loaded", {
+        count: services.registries.snapshot().rules.length,
+        registryHash: services.registries.hash(),
+      }),
+    );
+  if (
+    route.path === `${services.config.apiBasePath}/executions` &&
+    route.method === "GET"
+  )
+    return listExecutions(reply, current!, services);
+  if (
+    route.path === `${services.config.apiBasePath}/executions/:id` &&
+    route.method === "GET"
+  )
+    return getExecution(request, reply, current!, services);
+  if (route.path.endsWith("/cancel"))
+    return reply
+      .status(501)
+      .send(
+        fail(
+          "Cancellation is unavailable while executions run synchronously",
+          null,
+        ),
+      );
+  if (
+    route.path === `${services.config.apiBasePath}/profile` &&
+    route.method === "GET"
+  )
+    return reply.send(ok(publicUser(current!), "OK", null));
+  if (route.path === `${services.config.apiBasePath}/users/invite`)
+    return reply
+      .status(501)
+      .send(
+        fail("Email invitations is not configured for this installation", null),
+      );
+  if (route.path === `${services.config.apiBasePath}/profile/security`)
+    return reply
+      .status(501)
+      .send(
+        fail(
+          "Security preference changes is not configured for this installation",
+          null,
+        ),
+      );
+  if (routeKey === "POST /api/import/analyse" && !request.isMultipart())
+    return reply
+      .status(400)
+      .send(fail("Choose a registry file to analyse", null));
   if (request.body === INVALID_JSON_BODY) {
     const message = malformedJSONMessages.get(routeKey);
-    if (message !== undefined) return reply.status(400).send(fail(message, null));
+    if (message !== undefined)
+      return reply.status(400).send(fail(message, null));
   }
 
-  const workflowResult = await handleWorkflowRoute(route, request, reply, current!, services);
+  const workflowResult = await handleWorkflowRoute(
+    route,
+    request,
+    reply,
+    current!,
+    services,
+  );
   if (workflowResult !== WORKFLOW_UNHANDLED) return workflowResult;
-  const adminResult = await handleAdministrationRoute(route, request, reply, current!, services);
+  const adminResult = await handleAdministrationRoute(
+    route,
+    request,
+    reply,
+    current!,
+    services,
+  );
   if (adminResult !== ADMIN_UNHANDLED) return adminResult;
-  const resourceResult = await handleResourceRoute(route, request, reply, current!, services);
+  const resourceResult = await handleResourceRoute(
+    route,
+    request,
+    reply,
+    current!,
+    services,
+  );
   if (resourceResult !== RESOURCE_UNHANDLED) return resourceResult;
-  const analyticsResult = await handleAnalyticsCatalogRoute(route, request, reply, current!, services);
+  const analyticsResult = await handleAnalyticsCatalogRoute(
+    route,
+    request,
+    reply,
+    current!,
+    services,
+  );
   if (analyticsResult !== ANALYTICS_UNHANDLED) return analyticsResult;
-  const registryResult = await handleRegistryRoute(route, request, reply, current!, services);
+  const registryResult = await handleRegistryRoute(
+    route,
+    request,
+    reply,
+    current!,
+    services,
+  );
   if (registryResult !== REGISTRY_UNHANDLED) return registryResult;
-  const uploadExecutionResult = await handleUploadExecutionRoute(route, request, reply, current!, services);
-  if (uploadExecutionResult !== UPLOAD_EXECUTION_UNHANDLED) return uploadExecutionResult;
+  const uploadExecutionResult = await handleUploadExecutionRoute(
+    route,
+    request,
+    reply,
+    current!,
+    services,
+  );
+  if (uploadExecutionResult !== UPLOAD_EXECUTION_UNHANDLED)
+    return uploadExecutionResult;
 
   return genericRoute(route, request, reply, current, services);
 }
 
-async function health(reply: FastifyReply, services: ApplicationServices): Promise<unknown> {
+async function health(
+  reply: FastifyReply,
+  services: ApplicationServices,
+): Promise<unknown> {
   const storage = await services.repository.persistenceStatus();
-  const data = { service: services.config.appName, environment: services.config.environment, status: storage.healthy ? "healthy" : "degraded", storage: { driver: services.config.storageDriver, durable: storage.durable, status: storage.healthy ? "healthy" : "unhealthy" }, mcpMode: services.config.mcpMode, mcpBackend: services.config.mcpBaseURL === "" ? "unconfigured" : "configured", time: new Date().toISOString() };
-  return storage.healthy ? reply.send(ok(data, "OK", null)) : reply.status(503).send({ success: false, data, message: "Storage persistence is degraded", meta: null });
+  const data = {
+    service: services.config.appName,
+    environment: services.config.environment,
+    status: storage.healthy ? "healthy" : "degraded",
+    storage: {
+      driver: services.config.storageDriver,
+      durable: storage.durable,
+      status: storage.healthy ? "healthy" : "unhealthy",
+    },
+    mcpMode: services.config.mcpMode,
+    mcpBackend:
+      services.config.mcpBaseURL === "" ? "unconfigured" : "configured",
+    time: new Date().toISOString(),
+  };
+  return storage.healthy
+    ? reply.send(ok(data, "OK", null))
+    : reply
+        .status(503)
+        .send({
+          success: false,
+          data,
+          message: "Storage persistence is degraded",
+          meta: null,
+        });
 }
 
-async function login(request: FastifyRequest, reply: FastifyReply, services: ApplicationServices): Promise<unknown> {
-  if (request.body === INVALID_JSON_BODY) return reply.status(400).send(fail("Invalid request body", null));
+async function login(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  services: ApplicationServices,
+): Promise<unknown> {
+  if (request.body === INVALID_JSON_BODY)
+    return reply.status(400).send(fail("Invalid request body", null));
   const parsed = loginRequestSchema.safeParse(request.body);
-  if (!parsed.success) return reply.status(400).send(fail("Email and password are required", null));
+  if (!parsed.success)
+    return reply
+      .status(400)
+      .send(fail("Email and password are required", null));
   const email = parsed.data.email.trim().toLowerCase();
   const state = await services.repository.snapshot();
-  const user = Object.values(state.users).find((item) => item.email.toLowerCase() === email);
-  const hash = user === undefined ? "$2b$10$C6UzMDM.H6dfI/f/IKcEe.3n4Qj06DNMo2n7ixfV7t9lU8vNzeW.u" : state.passwordHashes[user.id] ?? "";
+  const user = Object.values(state.users).find(
+    (item) => item.email.toLowerCase() === email,
+  );
+  const hash =
+    user === undefined
+      ? "$2b$10$C6UzMDM.H6dfI/f/IKcEe.3n4Qj06DNMo2n7ixfV7t9lU8vNzeW.u"
+      : (state.passwordHashes[user.id] ?? "");
   const valid = await verifyPassword(hash, parsed.data.password);
-  if (user === undefined || !valid) return reply.status(401).send(fail("Invalid email or password", null));
-  if (user.status.toLowerCase() !== "active") return reply.status(403).send(fail("User account is not active", null));
+  if (user === undefined || !valid)
+    return reply.status(401).send(fail("Invalid email or password", null));
+  if (user.status.toLowerCase() !== "active")
+    return reply.status(403).send(fail("User account is not active", null));
   const session = await issueSession(user, parsed.data.rememberMe, services);
-  await services.repository.mutate((draft) => { const current = draft.users[user.id]; if (current !== undefined) current.lastLoginAt = new Date().toISOString(); });
+  await services.repository.mutate((draft) => {
+    const current = draft.users[user.id];
+    if (current !== undefined) current.lastLoginAt = new Date().toISOString();
+  });
   return reply.send(ok(session, "Login successful", null));
 }
 
-async function register(request: FastifyRequest, reply: FastifyReply, services: ApplicationServices): Promise<unknown> {
-  if (request.body === INVALID_JSON_BODY) return reply.status(400).send(fail("Invalid request body", null));
+async function register(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  services: ApplicationServices,
+): Promise<unknown> {
+  if (request.body === INVALID_JSON_BODY)
+    return reply.status(400).send(fail("Invalid request body", null));
   const parsed = registerRequestSchema.safeParse(request.body);
-  if (!parsed.success || parsed.data.name.trim() === "" || parsed.data.email.trim() === "" || parsed.data.password.length < 8) return reply.status(400).send(fail("Name, a valid email, and a password of at least 8 characters are required", null));
-  if (!services.config.allowPublicRegistration) return reply.status(403).send(fail("Public registration is disabled", null));
+  if (
+    !parsed.success ||
+    parsed.data.name.trim() === "" ||
+    parsed.data.email.trim() === "" ||
+    parsed.data.password.length < 8
+  )
+    return reply
+      .status(400)
+      .send(
+        fail(
+          "Name, a valid email, and a password of at least 8 characters are required",
+          null,
+        ),
+      );
+  if (!services.config.allowPublicRegistration)
+    return reply
+      .status(403)
+      .send(fail("Public registration is disabled", null));
   const passwordHash = await hashPassword(parsed.data.password);
-  const user = await services.repository.mutate((state) => {
-    if (Object.values(state.users).some((item) => item.email.toLowerCase() === parsed.data.email.trim().toLowerCase())) throw new HTTPFailure(409, "A user with this email already exists");
-    state.counter += 1;
-    const id = `usr_${state.counter}_${randomBytes(4).toString("hex")}`;
-    const created: User = { id, name: parsed.data.name.trim(), email: parsed.data.email.trim().toLowerCase(), roleId: "role_client", permissionOverrides: [], status: "Active", initials: initials(parsed.data.name), departmentId: null, lastLoginAt: null, createdAt: new Date().toISOString() };
-    state.users[id] = created;
-    state.passwordHashes[id] = passwordHash;
-    return created;
-  }).catch((error: unknown) => { if (error instanceof HTTPFailure) return error; throw error; });
-  if (user instanceof HTTPFailure) return reply.status(user.status).send(fail(user.message, null));
-  return reply.status(201).send(ok(await issueSession(user, false, services), "Registration successful", null));
+  const user = await services.repository
+    .mutate((state) => {
+      if (
+        Object.values(state.users).some(
+          (item) =>
+            item.email.toLowerCase() === parsed.data.email.trim().toLowerCase(),
+        )
+      )
+        throw new HTTPFailure(409, "A user with this email already exists");
+      state.counter += 1;
+      const id = `usr_${state.counter}_${randomBytes(4).toString("hex")}`;
+      const created: User = {
+        id,
+        name: parsed.data.name.trim(),
+        email: parsed.data.email.trim().toLowerCase(),
+        roleId: "role_client",
+        permissionOverrides: [],
+        status: "Active",
+        initials: initials(parsed.data.name),
+        departmentId: null,
+        lastLoginAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      state.users[id] = created;
+      state.passwordHashes[id] = passwordHash;
+      return created;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof HTTPFailure) return error;
+      throw error;
+    });
+  if (user instanceof HTTPFailure)
+    return reply.status(user.status).send(fail(user.message, null));
+  return reply
+    .status(201)
+    .send(
+      ok(
+        await issueSession(user, false, services),
+        "Registration successful",
+        null,
+      ),
+    );
 }
 
-async function refresh(request: FastifyRequest, reply: FastifyReply, services: ApplicationServices): Promise<unknown> {
-  if (request.body === INVALID_JSON_BODY) return reply.status(400).send(fail("Invalid request body", null));
+async function refresh(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  services: ApplicationServices,
+): Promise<unknown> {
+  if (request.body === INVALID_JSON_BODY)
+    return reply.status(400).send(fail("Invalid request body", null));
   const schema = z.object({ refreshToken: z.string() }).strict();
   const parsed = schema.safeParse(request.body);
-  if (!parsed.success || parsed.data.refreshToken === "") return reply.status(400).send(fail("Refresh token is required", null));
+  if (!parsed.success || parsed.data.refreshToken === "")
+    return reply.status(400).send(fail("Refresh token is required", null));
   const digest = sha256(parsed.data.refreshToken);
   const user = await services.repository.mutate((state) => {
     const session = state.refreshSessions[digest];
@@ -246,28 +680,74 @@ async function refresh(request: FastifyRequest, reply: FastifyReply, services: A
     if (new Date(session.expiresAt).getTime() <= Date.now()) return null;
     return state.users[session.userId] ?? null;
   });
-  if (user === null || user.status.toLowerCase() !== "active") return reply.status(401).send(fail("Invalid or expired refresh token", null));
-  return reply.send(ok(await issueSession(user, false, services), "Token refreshed", null));
+  if (user === null || user.status.toLowerCase() !== "active")
+    return reply
+      .status(401)
+      .send(fail("Invalid or expired refresh token", null));
+  return reply.send(
+    ok(await issueSession(user, false, services), "Token refreshed", null),
+  );
 }
 
-async function logout(request: FastifyRequest, reply: FastifyReply, services: ApplicationServices): Promise<unknown> {
-  const token = isRecord(request.body) && typeof request.body.refreshToken === "string" ? request.body.refreshToken : "";
-  if (token !== "") await services.repository.mutate((state) => { delete state.refreshSessions[sha256(token)]; });
+async function logout(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  services: ApplicationServices,
+): Promise<unknown> {
+  const token =
+    isRecord(request.body) && typeof request.body.refreshToken === "string"
+      ? request.body.refreshToken
+      : "";
+  if (token !== "")
+    await services.repository.mutate((state) => {
+      delete state.refreshSessions[sha256(token)];
+    });
   return reply.send(ok({ loggedOut: true }, "Logged out", null));
 }
 
-async function authenticate(request: FastifyRequest, reply: FastifyReply, services: ApplicationServices): Promise<{ user: User & { role: string; permissions: string[] } } | null> {
+async function authenticate(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  services: ApplicationServices,
+): Promise<{ user: User & { role: string; permissions: string[] } } | null> {
   let token = "";
   const header = request.headers.authorization;
-  if (typeof header === "string" && header.startsWith("Bearer ")) token = header.slice(7).trim();
-  if (token === "" && request.url.startsWith("/ws/") && isRecord(request.query) && typeof request.query.token === "string") token = request.query.token;
-  if (token === "") { await reply.status(401).send(fail("Missing access token", null)); return null; }
+  if (typeof header === "string" && header.startsWith("Bearer "))
+    token = header.slice(7).trim();
+  if (
+    token === "" &&
+    request.url.startsWith("/ws/") &&
+    isRecord(request.query) &&
+    typeof request.query.token === "string"
+  )
+    token = request.query.token;
+  if (token === "") {
+    await reply.status(401).send(fail("Missing access token", null));
+    return null;
+  }
   try {
-    const claims = jwt.verify(token, services.config.jwtSecret, { algorithms: ["HS256"] });
-    if (typeof claims === "string" || typeof claims.sub !== "string" || claims.sub.trim() === "") { await reply.status(401).send(fail("Invalid token subject", null)); return null; }
+    const claims = jwt.verify(token, services.config.jwtSecret, {
+      algorithms: ["HS256"],
+    });
+    if (
+      typeof claims === "string" ||
+      typeof claims.sub !== "string" ||
+      claims.sub.trim() === ""
+    ) {
+      await reply.status(401).send(fail("Invalid token subject", null));
+      return null;
+    }
     const user = await services.repository.effectiveUser(claims.sub);
-    if (user === null) { await reply.status(401).send(fail("Authenticated user no longer exists", null)); return null; }
-    if (user.status.toLowerCase() !== "active") { await reply.status(403).send(fail("User account is not active", null)); return null; }
+    if (user === null) {
+      await reply
+        .status(401)
+        .send(fail("Authenticated user no longer exists", null));
+      return null;
+    }
+    if (user.status.toLowerCase() !== "active") {
+      await reply.status(403).send(fail("User account is not active", null));
+      return null;
+    }
     return { user };
   } catch {
     await reply.status(401).send(fail("Invalid or expired access token", null));
@@ -275,33 +755,108 @@ async function authenticate(request: FastifyRequest, reply: FastifyReply, servic
   }
 }
 
-async function issueSession(user: User, remember: boolean, services: ApplicationServices): Promise<Record<string, unknown>> {
-  const accessToken = jwt.sign({}, services.config.jwtSecret, { algorithm: "HS256", subject: user.id, expiresIn: services.config.tokenTTLSeconds });
+async function issueSession(
+  user: User,
+  remember: boolean,
+  services: ApplicationServices,
+): Promise<Record<string, unknown>> {
+  const accessToken = jwt.sign({}, services.config.jwtSecret, {
+    algorithm: "HS256",
+    subject: user.id,
+    expiresIn: services.config.tokenTTLSeconds,
+  });
   const refreshToken = `refresh_${randomBytes(24).toString("hex")}`;
   const days = remember ? 30 : 7;
-  await services.repository.mutate((state) => { state.refreshSessions[sha256(refreshToken)] = { userId: user.id, expiresAt: new Date(Date.now() + days * 86_400_000).toISOString() }; });
+  await services.repository.mutate((state) => {
+    state.refreshSessions[sha256(refreshToken)] = {
+      userId: user.id,
+      expiresAt: new Date(Date.now() + days * 86_400_000).toISOString(),
+    };
+  });
   const effective = await services.repository.effectiveUser(user.id);
-  return { accessToken, refreshToken, expiresIn: services.config.tokenTTLSeconds, user: publicUser(effective!) };
+  return {
+    accessToken,
+    refreshToken,
+    expiresIn: services.config.tokenTTLSeconds,
+    user: publicUser(effective!),
+  };
 }
 
-async function listWorkflows(_request: FastifyRequest, reply: FastifyReply, user: User & { permissions: string[] }, services: ApplicationServices): Promise<unknown> {
+async function listWorkflows(
+  _request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
   const state = await services.repository.snapshot();
   const all = Object.values(state.workflows).filter((item) => !item.archived);
-  const visible = user.permissions.includes("workflow:read") ? all : all.filter((item) => item.owner.id === user.id || (item.assignedUserIds ?? []).includes(user.id));
-  return reply.send(ok(visible.map(publicWorkflow), "OK", { page: 1, limit: 20, total: visible.length, totalPages: visible.length === 0 ? 0 : 1, sort: "updatedAt", relevance: "relevant" }));
+  const visible = user.permissions.includes("workflow:read")
+    ? all
+    : all.filter(
+        (item) =>
+          item.owner.id === user.id ||
+          (item.assignedUserIds ?? []).includes(user.id),
+      );
+  return reply.send(
+    ok(visible.map(publicWorkflow), "OK", {
+      page: 1,
+      limit: 20,
+      total: visible.length,
+      totalPages: visible.length === 0 ? 0 : 1,
+      sort: "updatedAt",
+      relevance: "relevant",
+    }),
+  );
 }
 
-async function createWorkflow(request: FastifyRequest, reply: FastifyReply, user: User & { role: string }, services: ApplicationServices): Promise<unknown> {
-  if (request.body === INVALID_JSON_BODY) return reply.status(400).send(fail("Invalid request body", null));
-  const schema = z.object({ name: z.string().default(""), description: z.string().default(""), yaml: z.string().optional(), candidate: z.object({ yaml: z.string(), candidate_id: z.string().optional(), id: z.string().optional() }).passthrough().optional(), tags: z.array(z.string()).optional() }).strict();
+async function createWorkflow(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { role: string },
+  services: ApplicationServices,
+): Promise<unknown> {
+  if (request.body === INVALID_JSON_BODY)
+    return reply.status(400).send(fail("Invalid request body", null));
+  const schema = z
+    .object({
+      name: z.string().default(""),
+      description: z.string().default(""),
+      yaml: z.string().optional(),
+      candidate: z
+        .object({
+          yaml: z.string(),
+          candidate_id: z.string().optional(),
+          id: z.string().optional(),
+        })
+        .passthrough()
+        .optional(),
+      tags: z.array(z.string()).optional(),
+    })
+    .strict();
   const parsed = schema.safeParse(request.body);
-  if (!parsed.success) return reply.status(400).send(fail("Workflow YAML is required", null));
+  if (!parsed.success)
+    return reply.status(400).send(fail("Workflow YAML is required", null));
   const rawYAML = parsed.data.candidate?.yaml ?? parsed.data.yaml ?? "";
-  if (rawYAML.trim() === "") return reply.status(400).send(fail("Workflow YAML is required", null));
+  if (rawYAML.trim() === "")
+    return reply.status(400).send(fail("Workflow YAML is required", null));
   let blueprint;
-  try { blueprint = parseWorkflowYAMLStrict(rawYAML); } catch (error) { return reply.status(422).send(fail("Workflow validation failed", { error: errorText(error) })); }
-  const gate = await validateWithGovernance(services, "CreateWorkflow", rawYAML, user);
-  if (!gate.result.passed) return reply.status(422).send(fail("Workflow validation failed", gate.result));
+  try {
+    blueprint = parseWorkflowYAMLStrict(rawYAML);
+  } catch (error) {
+    return reply
+      .status(422)
+      .send(fail("Workflow validation failed", { error: errorText(error) }));
+  }
+  const gate = await validateWithGovernance(
+    services,
+    "CreateWorkflow",
+    rawYAML,
+    user,
+  );
+  if (!gate.result.passed)
+    return reply
+      .status(422)
+      .send(fail("Workflow validation failed", gate.result));
   const workflow = await services.repository.mutate((state) => {
     state.counter += 1;
     const id = `wf_${state.counter}_${randomBytes(4).toString("hex")}`;
@@ -310,120 +865,434 @@ async function createWorkflow(request: FastifyRequest, reply: FastifyReply, user
     const requestedDescription = parsed.data.description.trim();
     const blueprintDescription = blueprint.description ?? "";
     const fromCandidate = parsed.data.candidate !== undefined;
-    const item: Workflow = { id, name: requestedName === "" ? blueprint.name : requestedName, description: requestedDescription === "" ? blueprintDescription : requestedDescription, owner: { id: user.id, name: user.name }, assignedUserIds: [], status: "PENDING", trigger: blueprint.trigger as unknown as Record<string, unknown>, steps: blueprint.steps.length, successRate: 0, lastRunAt: null, publishedVersion: fromCandidate ? 1 : 0, draftVersion: 1, tags: parsed.data.tags ?? [], domainTags: [], canRun: true, createdAt: now, updatedAt: now, yaml: rawYAML, archived: false };
+    // SAFETY: the strict workflow parser guarantees trigger.config is JSON-compatible; Workflow stores the same value as a generic object.
+    const item: Workflow = {
+      id,
+      name: requestedName === "" ? blueprint.name : requestedName,
+      description:
+        requestedDescription === ""
+          ? blueprintDescription
+          : requestedDescription,
+      owner: { id: user.id, name: user.name },
+      assignedUserIds: [],
+      status: "PENDING",
+      trigger: blueprint.trigger as unknown as Record<string, unknown>,
+      steps: blueprint.steps.length,
+      successRate: 0,
+      lastRunAt: null,
+      publishedVersion: fromCandidate ? 1 : 0,
+      draftVersion: 1,
+      tags: parsed.data.tags ?? [],
+      domainTags: [],
+      canRun: true,
+      createdAt: now,
+      updatedAt: now,
+      yaml: rawYAML,
+      archived: false,
+    };
     state.workflows[id] = item;
     if (fromCandidate) {
       state.counter += 1;
-      state.versions[id] = [{ id: `ver_${state.counter}_${randomBytes(4).toString("hex")}`, workflowId: id, version: 1, versionNote: "Validated generated candidate", yaml: rawYAML, sourceCandidateId: parsed.data.candidate?.candidate_id ?? parsed.data.candidate?.id ?? "", createdAt: now, createdBy: { id: user.id, name: user.name } }];
+      state.versions[id] = [
+        {
+          id: `ver_${state.counter}_${randomBytes(4).toString("hex")}`,
+          workflowId: id,
+          version: 1,
+          versionNote: "Validated generated candidate",
+          yaml: rawYAML,
+          sourceCandidateId:
+            parsed.data.candidate?.candidate_id ??
+            parsed.data.candidate?.id ??
+            "",
+          createdAt: now,
+          createdBy: { id: user.id, name: user.name },
+        },
+      ];
     }
     return item;
   });
-  return reply.status(201).send(ok(publicWorkflow(workflow), "Workflow created", null));
+  return reply
+    .status(201)
+    .send(ok(publicWorkflow(workflow), "Workflow created", null));
 }
 
-async function getWorkflow(request: FastifyRequest, reply: FastifyReply, user: User & { permissions: string[] }, services: ApplicationServices): Promise<unknown> {
+async function getWorkflow(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
   const id = param(request, "id");
-  const item = await services.repository.read((state) => state.workflows[id] ?? null);
-  if (item === null || (!user.permissions.includes("workflow:read") && item.owner.id !== user.id && !(item.assignedUserIds ?? []).includes(user.id))) return reply.status(404).send(fail("Workflow not found", null));
+  const item = await services.repository.read(
+    (state) => state.workflows[id] ?? null,
+  );
+  if (
+    item === null ||
+    (!user.permissions.includes("workflow:read") &&
+      item.owner.id !== user.id &&
+      !(item.assignedUserIds ?? []).includes(user.id))
+  )
+    return reply.status(404).send(fail("Workflow not found", null));
   return reply.send(ok(publicWorkflow(item), "OK", null));
 }
 
-async function validateWorkflow(request: FastifyRequest, reply: FastifyReply, user: User & { role: string }, services: ApplicationServices): Promise<unknown> {
-  const item = await services.repository.read((state) => state.workflows[param(request, "id")] ?? null);
-  if (item === null) return reply.status(404).send(fail("Workflow not found", null));
-  const raw = isRecord(request.body) && typeof request.body.yaml === "string" ? request.body.yaml : item.yaml;
-  const gate = await validateWithGovernance(services, "ValidateWorkflow", raw, user);
-  return reply.send(ok(gate.result, gate.result.passed ? "Workflow is valid" : "Workflow is invalid", null));
+async function validateWorkflow(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { role: string },
+  services: ApplicationServices,
+): Promise<unknown> {
+  const item = await services.repository.read(
+    (state) => state.workflows[param(request, "id")] ?? null,
+  );
+  if (item === null)
+    return reply.status(404).send(fail("Workflow not found", null));
+  const raw =
+    isRecord(request.body) && typeof request.body.yaml === "string"
+      ? request.body.yaml
+      : item.yaml;
+  const gate = await validateWithGovernance(
+    services,
+    "ValidateWorkflow",
+    raw,
+    user,
+  );
+  return reply.send(
+    ok(
+      gate.result,
+      gate.result.passed ? "Workflow is valid" : "Workflow is invalid",
+      null,
+    ),
+  );
 }
 
-async function runWorkflow(request: FastifyRequest, reply: FastifyReply, user: User & { role: string; permissions: string[] }, services: ApplicationServices): Promise<unknown> {
+async function runWorkflow(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { role: string; permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
   const parsed = runWorkflowRequestSchema.safeParse(request.body ?? {});
-  if (!parsed.success) return reply.status(400).send(fail("Invalid request body", null));
-  const workflow = await services.repository.read((state) => state.workflows[param(request, "id")] ?? null);
-  if (workflow === null) return reply.status(404).send(fail("Workflow not found", null));
-  if (!user.permissions.includes("workflow:run") && workflow.owner.id !== user.id && !(workflow.assignedUserIds ?? []).includes(user.id)) return reply.status(403).send(fail("Workflow is not assigned to the current user", null));
-  const gate = await validateWithGovernance(services, "RunWorkflow", workflow.yaml, user);
-  if (!gate.result.passed || gate.token === null) return reply.status(422).send(fail("Workflow validation failed", gate.result));
-  if (parsed.data.dryRun) return reply.send(ok({ can_execute: true, dry_run: true, validation: gate.result, planned_steps: parseWorkflowYAMLStrict(workflow.yaml).steps }, "Dry run validation passed", null));
+  if (!parsed.success)
+    return reply.status(400).send(fail("Invalid request body", null));
+  const workflow = await services.repository.read(
+    (state) => state.workflows[param(request, "id")] ?? null,
+  );
+  if (workflow === null)
+    return reply.status(404).send(fail("Workflow not found", null));
+  if (
+    !user.permissions.includes("workflow:run") &&
+    workflow.owner.id !== user.id &&
+    !(workflow.assignedUserIds ?? []).includes(user.id)
+  )
+    return reply
+      .status(403)
+      .send(fail("Workflow is not assigned to the current user", null));
+  const gate = await validateWithGovernance(
+    services,
+    "RunWorkflow",
+    workflow.yaml,
+    user,
+  );
+  if (!gate.result.passed || gate.token === null)
+    return reply
+      .status(422)
+      .send(fail("Workflow validation failed", gate.result));
+  if (parsed.data.dryRun)
+    return reply.send(
+      ok(
+        {
+          can_execute: true,
+          dry_run: true,
+          validation: gate.result,
+          planned_steps: parseWorkflowYAMLStrict(workflow.yaml).steps,
+        },
+        "Dry run validation passed",
+        null,
+      ),
+    );
   const execution = await services.repository.mutate((state) => {
     state.counter += 1;
     const id = `run-${randomBytes(4).toString("hex")}`;
-    const item = { id, workflowId: workflow.id, workflowName: workflow.name, status: "RUNNING", startedAt: new Date().toISOString(), completedAt: null, durationMs: 0, tokens: { input: 0, output: 0, total: 0 }, costUsd: 0, startedBy: { id: user.id, name: user.name } };
+    const item = {
+      id,
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      status: "RUNNING",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      durationMs: 0,
+      tokens: { input: 0, output: 0, total: 0 },
+      costUsd: 0,
+      startedBy: { id: user.id, name: user.name },
+    };
     state.executions[id] = item;
     return item;
   });
   try {
-    const result = await services.executor.run(execution.id, workflow, parsed.data.input ?? {}, gate.token);
+    const dispatchIdentity = createDispatchIdentity(
+      user,
+      services.config.erpbridgeRoleMap,
+    );
+    const result = await services.executor.run(
+      execution.id,
+      workflow,
+      parsed.data.input ?? {},
+      gate.token,
+      dispatchIdentity,
+    );
     const completed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
-      item.status = "DONE"; item.completedAt = new Date().toISOString(); item.durationMs = Date.now() - new Date(item.startedAt).getTime(); item.tokens = result.tokens; item.stepOutputs = Object.fromEntries(Object.entries(result.state).filter(([key]) => key !== "input")); item.finalOutput = result.timeline.at(-1)?.output;
-      state.executionLogs[item.id] = result.logs.map((log, index) => ({ id: `log_${index + 1}`, executionId: item.id, ...log }));
+      item.status = "DONE";
+      item.completedAt = new Date().toISOString();
+      item.durationMs = Date.now() - new Date(item.startedAt).getTime();
+      item.tokens = result.tokens;
+      item.stepOutputs = Object.fromEntries(
+        Object.entries(result.state).filter(([key]) => key !== "input"),
+      );
+      item.finalOutput = result.timeline.at(-1)?.output;
+      state.executionLogs[item.id] = result.logs.map((log, index) => ({
+        id: `log_${index + 1}`,
+        executionId: item.id,
+        ...log,
+      }));
       state.timelines[item.id] = result.timeline;
       return structuredClone(item);
     });
-    return reply.send(ok(completed, `Workflow ${workflow.name} completed successfully in ${result.timeline.length} steps`, null));
+    return reply.send(
+      ok(
+        completed,
+        `Workflow ${workflow.name} completed successfully in ${result.timeline.length} steps`,
+        null,
+      ),
+    );
   } catch (error) {
     const partial = partialResult(error);
     const failed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
-      item.status = "FAILED"; item.completedAt = new Date().toISOString(); item.durationMs = Date.now() - new Date(item.startedAt).getTime(); item.stepOutputs = partial === null ? {} : Object.fromEntries(Object.entries(partial.state).filter(([key]) => key !== "input")); item.failure = { failureCategory: "TOOL_FAILURE", failedStepId: partial?.timeline.at(-1)?.nodeId ?? "unknown", failedToolName: "unknown", toolWasCalled: true };
-      state.executionLogs[item.id] = (partial?.logs ?? []).map((log, index) => ({ id: `log_${index + 1}`, executionId: item.id, ...log }));
+      item.status = "FAILED";
+      item.completedAt = new Date().toISOString();
+      item.durationMs = Date.now() - new Date(item.startedAt).getTime();
+      item.stepOutputs =
+        partial === null
+          ? {}
+          : Object.fromEntries(
+              Object.entries(partial.state).filter(([key]) => key !== "input"),
+            );
+      item.failure = {
+        failureCategory: "TOOL_FAILURE",
+        failedStepId: partial?.timeline.at(-1)?.nodeId ?? "unknown",
+        failedToolName: "unknown",
+        toolWasCalled: true,
+      };
+      state.executionLogs[item.id] = (partial?.logs ?? []).map(
+        (log, index) => ({
+          id: `log_${index + 1}`,
+          executionId: item.id,
+          ...log,
+        }),
+      );
       state.timelines[item.id] = partial?.timeline ?? [];
-      state.healing[item.id] = { executionId: item.id, workflowId: item.workflowId, status: "HEALING_NOT_ATTEMPTED", summary: "Automatic healing was not attempted", events: [], metrics: {} };
+      state.healing[item.id] = {
+        executionId: item.id,
+        workflowId: item.workflowId,
+        status: "HEALING_NOT_ATTEMPTED",
+        summary: "Automatic healing was not attempted",
+        events: [],
+        metrics: {},
+      };
       return structuredClone(item);
     });
-    return reply.status(422).send(fail(`Workflow execution failed: ${errorText(error)}`, { executionId: failed.id, status: failed.status }));
+    return reply
+      .status(422)
+      .send(
+        fail(`Workflow execution failed: ${errorText(error)}`, {
+          executionId: failed.id,
+          status: failed.status,
+        }),
+      );
   }
 }
 
-async function listExecutions(reply: FastifyReply, user: User & { permissions: string[] }, services: ApplicationServices): Promise<unknown> {
+async function listExecutions(
+  reply: FastifyReply,
+  user: User & { permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
   const state = await services.repository.snapshot();
   const all = Object.values(state.executions);
-  const visible = user.permissions.includes("workflow:read") ? all : all.filter((item) => item.startedBy.id === user.id);
-  return reply.send(ok(visible, "OK", { page: 1, limit: 20, total: visible.length, totalPages: visible.length === 0 ? 0 : 1 }));
+  const visible = user.permissions.includes("workflow:read")
+    ? all
+    : all.filter((item) => item.startedBy.id === user.id);
+  return reply.send(
+    ok(visible, "OK", {
+      page: 1,
+      limit: 20,
+      total: visible.length,
+      totalPages: visible.length === 0 ? 0 : 1,
+    }),
+  );
 }
 
-async function getExecution(request: FastifyRequest, reply: FastifyReply, user: User & { permissions: string[] }, services: ApplicationServices): Promise<unknown> {
-  const item = await services.repository.read((state) => state.executions[param(request, "id")] ?? null);
-  if (item === null || (!user.permissions.includes("workflow:read") && item.startedBy.id !== user.id)) return reply.status(404).send(fail("Execution not found", null));
+async function getExecution(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
+  const item = await services.repository.read(
+    (state) => state.executions[param(request, "id")] ?? null,
+  );
+  if (
+    item === null ||
+    (!user.permissions.includes("workflow:read") &&
+      item.startedBy.id !== user.id)
+  )
+    return reply.status(404).send(fail("Execution not found", null));
   return reply.send(ok(item, "OK", null));
 }
 
-async function genericRoute(route: RouteDefinition, _request: FastifyRequest, reply: FastifyReply, _user: User | null, services: ApplicationServices): Promise<unknown> {
+async function genericRoute(
+  route: RouteDefinition,
+  _request: FastifyRequest,
+  reply: FastifyReply,
+  _user: User | null,
+  services: ApplicationServices,
+): Promise<unknown> {
   if (route.method === "GET") {
-    if (route.path.endsWith("/:id") || route.path.includes(":id/")) return reply.status(404).send(fail("Resource not found", null));
+    if (route.path.endsWith("/:id") || route.path.includes(":id/"))
+      return reply.status(404).send(fail("Resource not found", null));
     return reply.send(ok([], "OK", { count: 0 }));
   }
-  if (route.method === "DELETE") return reply.status(404).send(fail("Resource not found", null));
-  if (route.path === `${services.config.apiBasePath}/semantic-index/rebuild`) return reply.status(503).send(fail("Semantic search service is unavailable", null));
+  if (route.method === "DELETE")
+    return reply.status(404).send(fail("Resource not found", null));
+  if (route.path === `${services.config.apiBasePath}/semantic-index/rebuild`)
+    return reply
+      .status(503)
+      .send(fail("Semantic search service is unavailable", null));
   throw new Error(`Missing route dispatch for ${route.method} ${route.path}`);
 }
 
-function routePolicy(route: RouteDefinition): { required: string[]; any: boolean } | null {
+function routePolicy(
+  route: RouteDefinition,
+): { required: string[]; any: boolean } | null {
   const path = route.path;
-  if (path.startsWith("/ws/") || path.startsWith("/api/auth/") || path.startsWith("/api/company") || path.startsWith("/api/profile") || path.startsWith("/api/notifications")) return null;
-  if (path.startsWith("/api/users") || path.startsWith("/api/roles") || path.startsWith("/api/permissions")) return { required: ["user:manage"], any: false };
-  if (path.startsWith("/api/audit")) return { required: ["audit:read"], any: false };
-  if (path.startsWith("/api/registry")) return { required: [route.method === "GET" ? "registry:read" : "registry:write"], any: false };
-  if (path.startsWith("/api/settings") || path.startsWith("/api/integrations") || path.includes("/api-keys")) return { required: ["settings:manage"], any: false };
-  if (path.startsWith("/api/providers")) return { required: ["provider:manage"], any: false };
-  if (path.startsWith("/api/executions")) return route.method === "GET" ? { required: ["workflow:read", "execution:read_own"], any: true } : { required: ["workflow:run", "workflow:run_own"], any: true };
-  if (path.startsWith("/api/chat")) return { required: route.method === "GET" ? ["workflow:read", "chat:use"] : ["workflow:write", "chat:use"], any: true };
-  if (path.startsWith("/api/workflows") && path.endsWith("/run")) return { required: ["workflow:run", "workflow:run_own"], any: true };
-  if (path.startsWith("/api/workflows") || path.startsWith("/api/synthesis") || path.startsWith("/api/tools") || path.startsWith("/api/rules") || path.startsWith("/api/semantic") || path.startsWith("/api/canvas") || path.startsWith("/api/dashboard") || path.startsWith("/api/analytics") || path.startsWith("/api/upload")) return route.method === "GET" ? { required: ["workflow:read", "workflow:read_own"], any: true } : { required: ["workflow:write"], any: false };
+  if (
+    path.startsWith("/ws/") ||
+    path.startsWith("/api/auth/") ||
+    path.startsWith("/api/company") ||
+    path.startsWith("/api/profile") ||
+    path.startsWith("/api/notifications")
+  )
+    return null;
+  if (
+    path.startsWith("/api/users") ||
+    path.startsWith("/api/roles") ||
+    path.startsWith("/api/permissions")
+  )
+    return { required: ["user:manage"], any: false };
+  if (path.startsWith("/api/audit"))
+    return { required: ["audit:read"], any: false };
+  if (path.startsWith("/api/registry"))
+    return {
+      required: [route.method === "GET" ? "registry:read" : "registry:write"],
+      any: false,
+    };
+  if (
+    path.startsWith("/api/settings") ||
+    path.startsWith("/api/integrations") ||
+    path.includes("/api-keys")
+  )
+    return { required: ["settings:manage"], any: false };
+  if (path.startsWith("/api/providers"))
+    return { required: ["provider:manage"], any: false };
+  if (path.startsWith("/api/executions"))
+    return route.method === "GET"
+      ? { required: ["workflow:read", "execution:read_own"], any: true }
+      : { required: ["workflow:run", "workflow:run_own"], any: true };
+  if (path.startsWith("/api/chat"))
+    return {
+      required:
+        route.method === "GET"
+          ? ["workflow:read", "chat:use"]
+          : ["workflow:write", "chat:use"],
+      any: true,
+    };
+  if (path.startsWith("/api/workflows") && path.endsWith("/run"))
+    return { required: ["workflow:run", "workflow:run_own"], any: true };
+  if (
+    path.startsWith("/api/workflows") ||
+    path.startsWith("/api/synthesis") ||
+    path.startsWith("/api/tools") ||
+    path.startsWith("/api/rules") ||
+    path.startsWith("/api/semantic") ||
+    path.startsWith("/api/canvas") ||
+    path.startsWith("/api/dashboard") ||
+    path.startsWith("/api/analytics") ||
+    path.startsWith("/api/upload")
+  )
+    return route.method === "GET"
+      ? { required: ["workflow:read", "workflow:read_own"], any: true }
+      : { required: ["workflow:write"], any: false };
   return null;
 }
 
-function publicUser(user: (User & { role?: string; permissions?: string[] }) | null): Record<string, unknown> {
+function publicUser(
+  user: (User & { role?: string; permissions?: string[] }) | null,
+): Record<string, unknown> {
   if (user === null) return {};
-  return { id: user.id, name: user.name, email: user.email, roleId: user.roleId, permissionOverrides: user.permissionOverrides, status: user.status, initials: user.initials, ...(user.timezone === undefined ? {} : { timezone: user.timezone }), departmentId: user.departmentId, lastLoginAt: user.lastLoginAt, createdAt: user.createdAt, ...(user.twoFactorEnabled === undefined ? {} : { twoFactorEnabled: user.twoFactorEnabled }), ...(user.emailVerified === undefined ? {} : { emailVerified: user.emailVerified }), role: user.role ?? "" };
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    roleId: user.roleId,
+    permissionOverrides: user.permissionOverrides,
+    status: user.status,
+    initials: user.initials,
+    ...(user.timezone === undefined ? {} : { timezone: user.timezone }),
+    departmentId: user.departmentId,
+    lastLoginAt: user.lastLoginAt,
+    createdAt: user.createdAt,
+    ...(user.twoFactorEnabled === undefined
+      ? {}
+      : { twoFactorEnabled: user.twoFactorEnabled }),
+    ...(user.emailVerified === undefined
+      ? {}
+      : { emailVerified: user.emailVerified }),
+    role: user.role ?? "",
+  };
 }
-function publicWorkflow(workflow: Workflow): Omit<Workflow, "yaml" | "archived"> { const { yaml: _yaml, archived: _archived, ...publicPart } = workflow; return publicPart; }
-function toolSummary(tool: RegistryService["snapshot"] extends () => infer S ? S extends { tools: readonly (infer T)[] } ? T : never : never): Record<string, unknown> { return { tool_id: (tool as { tool_id: string }).tool_id, name: (tool as { name: string }).name, display_name: (tool as { display_name: string }).display_name, module: (tool as { module: string }).module, status: (tool as { status: string }).status, risk_level: (tool as { risk_level: string }).risk_level }; }
-function ruleSummary(rule: RegistryService["snapshot"] extends () => infer S ? S extends { rules: readonly (infer T)[] } ? T : never : never): Record<string, unknown> { return { rule_id: (rule as { rule_id: string }).rule_id, rule_name: (rule as { rule_name: string }).rule_name, rule_type: (rule as { rule_type: string }).rule_type, domain: (rule as { domain: string }).domain, enabled: (rule as { enabled: boolean }).enabled }; }
-function param(request: FastifyRequest, name: string): string { return String((request.params as Record<string, unknown>)[name] ?? ""); }
-function initials(name: string): string { return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join(""); }
-function sha256(value: string): string { return createHash("sha256").update(value).digest("hex"); }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
-function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-class HTTPFailure extends Error { constructor(readonly status: number, message: string) { super(message); } }
+function publicWorkflow(
+  workflow: Workflow,
+): Omit<Workflow, "yaml" | "archived"> {
+  const { yaml: _yaml, archived: _archived, ...publicPart } = workflow;
+  return publicPart;
+}
+function param(request: FastifyRequest, name: string): string {
+  return String((request.params as Record<string, unknown>)[name] ?? "");
+}
+function initials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+class HTTPFailure extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
