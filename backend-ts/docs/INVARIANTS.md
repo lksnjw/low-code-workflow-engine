@@ -10,12 +10,17 @@ Production tool dispatch is runtime-enforced. A dispatch capability is accepted 
 2. Its closure-held payload has a valid process-keyed HMAC, compared with `timingSafeEqual`.
 3. It has not expired.
 4. It has not already been consumed.
-5. The canonical bytes of the exact parameters about to be sent have the bound hash.
+5. The canonical bytes of the exact business parameters about to be sent have the bound hash.
 6. The requested action equals the bound action.
+7. The immutable authenticated dispatch identity (`userId`, local role, and mapped ERPBridge role) equals the identity bound at mint time.
 
-Capabilities are frozen, short-lived, and single-use. The mint registry, payload map, signing key, and mint functions are not exported. The actual HTTP function is nested inside the governed MCP-client factory and is not exported. Rejection happens before the HTTP function is called. This is proved by `tests/capability.test.ts` and checked structurally by `scripts/analyze-boundary.mjs`.
+Capabilities are frozen, short-lived, and single-use. The mint registry, payload map, signing key, and mint functions are not exported. The legacy bridge HTTP function and the ERPBridge SDK client are reachable only through their governed adapters; the SDK client is private to `src/tools/erpbridge-mcp-client.ts`. Rejection happens before any HTTP or SDK request. This is proved by `tests/capability.test.ts`, `tests/erpbridge-mcp-client.test.ts`, and checked structurally by `scripts/analyze-boundary.mjs`.
 
 This is not compile-time enforcement. TypeScript types are erased, assertions can bypass type checking, and raw JavaScript executing with sufficient same-process/module-loader authority could subvert runtime state. Object identity, HMAC binding, expiry, single use, frozen objects, a non-exported mint, and a non-exported transport reduce that risk; they do not recreate Go's package-private compile-fail guarantee.
+
+## Authenticated ERPBridge MCP boundary
+
+`MCP_TRANSPORT=erpbridge-mcp` creates one private `@erpbridge/sdk@1.1.0` MCP session at production startup with the scoped token and `mcpRetryPolicy: "never"`. Local registry definitions remain authoritative: each registered tool supplies the reviewed remote name and input metadata, while `tools/list` is read-only. Guarded calls reject a workflow-provided `role` and inject only the capability-bound mapped ERPBridge role. MCP `isError` envelopes fail the step; successful envelopes are returned without global text parsing. Shutdown closes the private session.
 
 ## Deterministic validation boundary
 

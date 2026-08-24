@@ -15,6 +15,7 @@
     "scan:prod": "node scripts/scan-production.mjs",
     "analyze:boundary": "node scripts/analyze-boundary.mjs",
     "test:prod-inert": "node scripts/test-production-inert.mjs",
+    "verify:erpbridge-registry": "tsx scripts/verify-erpbridge-registry.mjs",
     "verify": "npm run typecheck && npm test && npm run build:prod && npm run scan:prod && npm run analyze:boundary && npm run test:prod-inert && npm run build:experiment",
     "generate:routes": "node scripts/generate-route-table.mjs",
     "typecheck": "tsc --noEmit",
@@ -22,6 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@erpbridge/sdk": "1.1.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/multipart": "^9.2.1",
     "@fastify/websocket": "^11.2.0",
