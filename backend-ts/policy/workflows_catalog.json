@@ -1,0 +1,119 @@
+{
+  "version": "1.0.0",
+  "description": "Doable workflows catalog — defines what can be automated in this ERP system and who is allowed to do it.",
+  "workflows": [
+    {
+      "id": "wf_warehouse_list",
+      "name": "List All Warehouses",
+      "description": "Fetches all warehouses and their details from the ERP system.",
+      "keywords": ["warehouse", "warehouses", "storage", "location", "stock location"],
+      "allowed_roles": ["Platform Admin", "System Admin", "Workflow Builder"],
+      "requires_write": false,
+      "domain": "inventory",
+      "doable": true
+    },
+    {
+      "id": "wf_purchase_orders",
+      "name": "Get Purchase Orders",
+      "description": "Retrieves all open or historical purchase orders from the ERP.",
+      "keywords": ["purchase order", "purchase orders", "po", "procurement", "orders"],
+      "allowed_roles": ["Platform Admin", "System Admin", "Workflow Builder"],
+      "requires_write": false,
+      "domain": "finance",
+      "doable": true
+    },
+    {
+      "id": "wf_vendor_list",
+      "name": "List Vendors / Suppliers",
+      "description": "Fetches all registered vendors and supplier details.",
+      "keywords": ["vendor", "vendors", "supplier", "suppliers"],
+      "allowed_roles": ["Platform Admin", "System Admin", "Workflow Builder"],
+      "requires_write": false,
+      "domain": "procurement",
+      "doable": true
+    },
+    {
+      "id": "wf_inventory_report",
+      "name": "Inventory Report",
+      "description": "Generates a report of inventory levels across all warehouses.",
+      "keywords": ["inventory", "stock", "stock level", "inventory level", "report", "stock report"],
+      "allowed_roles": ["Platform Admin", "System Admin", "Workflow Builder"],
+      "requires_write": false,
+      "domain": "inventory",
+      "doable": true
+    },
+    {
+      "id": "wf_employee_list",
+      "name": "List Employees",
+      "description": "Retrieves a list of all employees in the ERP HR module.",
+      "keywords": ["employee", "employees", "staff", "hr", "human resources", "people"],
+      "allowed_roles": ["Platform Admin", "System Admin"],
+      "requires_write": false,
+      "domain": "hr",
+      "doable": true
+    },
+    {
+      "id": "wf_invoice_list",
+      "name": "Get Invoices",
+      "description": "Lists all invoices, optionally filtered by status or date range.",
+      "keywords": ["invoice", "invoices", "billing", "bill", "payment due"],
+      "allowed_roles": ["Platform Admin", "System Admin", "Workflow Builder"],
+      "requires_write": false,
+      "domain": "finance",
+      "doable": true
+    },
+    {
+      "id": "wf_create_purchase_order",
+      "name": "Create Purchase Order",
+      "description": "Creates a new purchase order in the ERP for a given vendor and items.",
+      "keywords": ["create purchase order", "new purchase order", "raise po", "create po"],
+      "allowed_roles": ["Platform Admin", "System Admin"],
+      "requires_write": true,
+      "domain": "finance",
+      "doable": true
+    },
+    {
+      "id": "wf_update_inventory",
+      "name": "Update Inventory",
+      "description": "Updates stock levels for a specific product in a warehouse.",
+      "keywords": ["update inventory", "update stock", "adjust inventory", "adjust stock"],
+      "allowed_roles": ["Platform Admin", "System Admin"],
+      "requires_write": true,
+      "domain": "inventory",
+      "doable": true
+    },
+    {
+      "id": "wf_customer_list",
+      "name": "List Customers",
+      "description": "Fetches all customers registered in the ERP.",
+      "keywords": ["customer", "customers", "client", "clients", "accounts"],
+      "allowed_roles": ["Platform Admin", "System Admin", "Workflow Builder"],
+      "requires_write": false,
+      "domain": "crm",
+      "doable": true
+    },
+    {
+      "id": "wf_payment_report",
+      "name": "Payment Status Report",
+      "description": "Retrieves payment statuses across all outstanding invoices.",
+      "keywords": ["payment", "payments", "payment status", "outstanding", "overdue"],
+      "allowed_roles": ["Platform Admin", "System Admin", "Workflow Builder"],
+      "requires_write": false,
+      "domain": "finance",
+      "doable": true
+    }
+  ],
+  "globally_blocked": [
+    "delete all data",
+    "wipe database",
+    "drop tables",
+    "delete all users",
+    "bulk delete everything"
+  ],
+  "role_notes": {
+    "Platform Admin": "Full access to all doable workflows including write operations.",
+    "System Admin": "Full access to read workflows; write operations allowed except destructive ones.",
+    "Workflow Builder": "Read-only workflows only. Cannot create, update, or delete records.",
+    "Client": "View-only access to orders and reports. No ERP data modification."
+  }
+}

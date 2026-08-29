@@ -8,6 +8,7 @@ import type { CandidateValidationResult, RegistryValidator, ValidationToken } fr
 import type { GovernanceRequest } from "./adapter.js";
 import { GovernanceService, type GovernanceDecision } from "./service.js";
 import { attachValidationAuditTrace } from "../trace/audit-trace.js";
+import { PolicyGateClient, type PolicyGateOutcome } from "./policy-gate-client.js";
 
 export type GovernanceUser = { id: string; role: string; department: string | null };
 
@@ -40,6 +41,7 @@ export class GovernedValidationGate implements ValidationGate {
     readonly validator: RegistryValidator,
     readonly registries: RegistryService,
     readonly repository: Repository,
+    readonly policyGate: PolicyGateClient | null = null,
   ) {}
 
   async validateAndIssueToken(action: string, rawYAML: string, user: GovernanceUser, context: GovernedValidationContext = {}): Promise<ValidationGateResult> {
@@ -51,6 +53,17 @@ export class GovernedValidationGate implements ValidationGate {
       proposedActions: proposal.actions,
       caseContext: context.caseContext ?? {},
     };
+
+    // Tier 0: Hansaja policy gate — if configured and reachable, its decision is final.
+    // On any network failure the outcome is "fallback" and we drop through to tier 1.
+    if (this.policyGate !== null) {
+      const pg = await this.policyGate.evaluate(request, context.signal);
+      if (pg.outcome !== "fallback") {
+        return this.#resolveFromPolicyGate(pg, action, rawYAML, user, proposal, request, context);
+      }
+    }
+
+    // Tier 1+: existing governance chain (LLM fallback → static JSON).
     const outcome = await this.governance.govern(
       request,
       proposal.readOnly,
@@ -80,6 +93,54 @@ export class GovernedValidationGate implements ValidationGate {
       });
     }
     await this.recordDecision(action, rawYAML, proposal.readOnly, outcome.decision, gate.result.passed, request, context);
+    return gate;
+  }
+
+  async #resolveFromPolicyGate(
+    pg: Exclude<PolicyGateOutcome, { outcome: "fallback" }>,
+    action: string,
+    rawYAML: string,
+    user: GovernanceUser,
+    proposal: { actions: string[]; readOnly: boolean },
+    request: GovernanceRequest,
+    context: GovernedValidationContext,
+  ): Promise<ValidationGateResult> {
+    const decision: GovernanceDecision = {
+      status: pg.outcome === "review" ? "HUMAN_REVIEW" : pg.outcome === "allow" ? "FRESH" : "BLOCKED",
+      policyVersion: "policy-gate",
+      registryHash: this.registries.hash(),
+      source: "primary",
+      evidenceIds: [],
+      warning: pg.outcome === "allow" && pg.conditions.length > 0
+        ? `Policy gate conditions: ${pg.conditions.join("; ")}`
+        : null,
+      reason: pg.outcome !== "allow" ? pg.reason : null,
+    };
+
+    let gate: ValidationGateResult;
+    if (pg.outcome === "allow") {
+      gate = await this.validator.validateAndIssueToken(action, rawYAML, user.role);
+      attachDecision(gate.result, decision);
+      if (decision.warning !== null) gate.result.warnings.push(`GOVERNANCE_WARNING: ${decision.warning}`);
+    } else {
+      const result = this.validator.validatePlan(action, rawYAML, user.role);
+      result.passed = false;
+      result.policy_ok = false;
+      result.score = 0;
+      const ruleID = pg.outcome === "review" ? "GOVERNANCE-HUMAN-REVIEW" : "GOVERNANCE-UNAVAILABLE";
+      if (!result.failed_rules.includes(ruleID)) result.failed_rules.push(ruleID);
+      result.errors.push(`${ruleID}: ${pg.reason}`);
+      attachDecision(result, decision);
+      gate = { token: null, result };
+    }
+
+    if (pg.outcome === "allow") {
+      await attachValidationAuditTrace(this.repository, action, rawYAML, {
+        ...context,
+        actor: { id: user.id, role: user.role },
+      });
+    }
+    await this.recordDecision(action, rawYAML, proposal.readOnly, decision, gate.result.passed, request, context);
     return gate;
   }
 

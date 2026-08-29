@@ -23,6 +23,7 @@ import { ToolRegistry } from "../tools/registry.js";
 import { RegistryValidator } from "../validator/registry-validator.js";
 import { hashPassword } from "../authn/password.js";
 import { PostgresPersistence } from "../storage/postgres.js";
+import { FirestorePersistence } from "../storage/firestore.js";
 import {
   ProviderRuntime,
   type RuntimeProviderConfiguration,
@@ -32,6 +33,7 @@ import { GovernanceAdapter } from "../governance/adapter.js";
 import { GovernanceService } from "../governance/service.js";
 import { GovernedValidationGate } from "../governance/gate.js";
 import { LlmPolicyFallback } from "../governance/llm-fallback.js";
+import { PolicyGateClient } from "../governance/policy-gate-client.js";
 
 const root = process.cwd();
 const config = loadConfig(process.env, root);
@@ -57,11 +59,14 @@ const registries = await RegistryService.load(
 );
 const persistence =
   config.storageDriver === "postgres"
-    ? await PostgresPersistence.open(
-        config.databaseURL,
-        config.storageEncryptionKey,
-      )
-    : null;
+    ? await PostgresPersistence.open(config.databaseURL, config.storageEncryptionKey)
+    : config.storageDriver === "firestore"
+      ? await FirestorePersistence.open({
+          projectId: config.firestoreProjectId!,
+          ...(config.firestoreKeyFile ? { keyFilename: config.firestoreKeyFile } : {}),
+          ...(config.firestoreEncryptionKey ? { encryptionKey: config.firestoreEncryptionKey } : {}),
+        })
+      : null;
 const repository = await Repository.open(persistence);
 await bootstrapAdministrator(
   repository,
@@ -149,11 +154,20 @@ const governance = new GovernanceService(
   governanceLlmFallback,
 );
 await governance.initialize();
+const policyGateClient =
+  (config.policyGateURL ?? "") !== "" && (config.policyGateAPIKey ?? "") !== ""
+    ? new PolicyGateClient({
+        url: config.policyGateURL!,
+        apiKey: config.policyGateAPIKey!,
+        timeoutMs: config.policyGateTimeoutMs,
+      })
+    : null;
 const validationGate = new GovernedValidationGate(
   governance,
   validator,
   registries,
   repository,
+  policyGateClient,
 );
 const synthesis = new SynthesisService(
   providerRuntime,
@@ -180,6 +194,9 @@ const shutdown = async () => {
   await app.close();
   await erpbridgeSession?.close();
   await repository.close();
+  // Explicit exit so lingering async handles (Firestore listeners, timers) don't keep the
+  // process alive after the HTTP port is closed — prevents EADDRINUSE on --watch restarts.
+  process.exit(0);
 };
 process.once("SIGINT", () => {
   void shutdown();

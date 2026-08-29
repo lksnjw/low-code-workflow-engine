@@ -2,6 +2,11 @@ import { useState } from "react";
 import { Icon } from "@iconify/react";
 
 /** Tokenise a line into bold/italic/code/link spans */
+/*******************************************************************************
+ * Function: parseInline
+ *
+ * Parses inline for the MessageMarkdown module.
+ ******************************************************************************/
 function parseInline(text) {
   const parts = [];
   let rest = text;
@@ -27,11 +32,16 @@ function parseInline(text) {
       rest = rest.slice(italicMatch[0].length);
       continue;
     }
-    // plain char
+    // plain char — always advance at least 1 to avoid infinite loop on unmatched markers
     const nextSpecial = rest.search(/`|\*\*/);
     if (nextSpecial === -1) {
       parts.push({ type: "text", text: rest });
       break;
+    }
+    if (nextSpecial === 0) {
+      parts.push({ type: "text", text: rest[0] });
+      rest = rest.slice(1);
+      continue;
     }
     parts.push({ type: "text", text: rest.slice(0, nextSpecial) });
     rest = rest.slice(nextSpecial);
@@ -39,6 +49,11 @@ function parseInline(text) {
   return parts;
 }
 
+/*******************************************************************************
+ * Function: InlineContent
+ *
+ * Performs the Inline Content operation on content for the MessageMarkdown module.
+ ******************************************************************************/
 function InlineContent({ text }) {
   const parts = parseInline(text);
   return (
@@ -53,8 +68,18 @@ function InlineContent({ text }) {
   );
 }
 
+/*******************************************************************************
+ * Function: CodeBlock
+ *
+ * Performs the Code Block operation on block for the MessageMarkdown module.
+ ******************************************************************************/
 function CodeBlock({ lang, code }) {
   const [copied, setCopied] = useState(false);
+/*******************************************************************************
+ * Function: copy
+ *
+ * Performs the copy operation on the application for the MessageMarkdown module.
+ ******************************************************************************/
   const copy = () => {
     navigator.clipboard.writeText(code).catch(() => {});
     setCopied(true);
@@ -81,6 +106,11 @@ function CodeBlock({ lang, code }) {
 }
 
 /** Parse raw markdown text into block tokens */
+/*******************************************************************************
+ * Function: tokenize
+ *
+ * Performs the tokenize operation on the application for the MessageMarkdown module.
+ ******************************************************************************/
 function tokenize(text) {
   const lines = text.split("\n");
   const blocks = [];
@@ -156,11 +186,22 @@ function tokenize(text) {
       pLines.push(lines[i]);
       i++;
     }
-    if (pLines.length > 0) blocks.push({ type: "p", text: pLines.join(" ") });
+    if (pLines.length > 0) {
+      blocks.push({ type: "p", text: pLines.join(" ") });
+    } else {
+      // Unhandled line (e.g. bare `*`) — emit as plain text and always advance
+      blocks.push({ type: "p", text: line });
+      i++;
+    }
   }
   return blocks;
 }
 
+/*******************************************************************************
+ * Function: MessageMarkdown
+ *
+ * Performs the Message Markdown operation on markdown for the MessageMarkdown module.
+ ******************************************************************************/
 function MessageMarkdown({ text }) {
   if (!text) return null;
   const blocks = tokenize(String(text));
@@ -183,17 +224,17 @@ function MessageMarkdown({ text }) {
             {block.items.map((item, ii) => (
               <li key={ii} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                <span><InlineContent text={item} /></span>
+                <span className="text-gray-800 dark:text-gray-200"><InlineContent text={item} /></span>
               </li>
             ))}
           </ul>
         );
         if (block.type === "ol") return (
-          <ol key={idx} className="ml-4 list-none space-y-0.5 counter-reset-[item]">
+          <ol key={idx} className="ml-4 list-none space-y-0.5">
             {block.items.map((item, ii) => (
               <li key={ii} className="flex gap-2">
                 <span className="min-w-[1.2rem] font-semibold text-primary">{ii + 1}.</span>
-                <span><InlineContent text={item} /></span>
+                <span className="text-gray-800 dark:text-gray-200"><InlineContent text={item} /></span>
               </li>
             ))}
           </ol>

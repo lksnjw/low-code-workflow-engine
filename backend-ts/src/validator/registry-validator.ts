@@ -201,12 +201,20 @@ export class RegistryValidator {
       actions.push(action);
       const tool = this.registries.findTool(action);
       if (tool === undefined) {
-        result.tool_validity_ok = false;
-        failRule(
-          result,
-          "GLOBAL-SAFETY-001",
-          `Unknown or hallucinated tool ${JSON.stringify(action)} in step ${step.id}`,
-        );
+        const rule001 = snapshot.rules.find((r) => r.rule_id === "GLOBAL-SAFETY-001");
+        const rule001Enabled = rule001 === undefined || rule001.enabled !== false;
+        if (rule001Enabled) {
+          result.tool_validity_ok = false;
+          failRule(
+            result,
+            "GLOBAL-SAFETY-001",
+            `Unknown or hallucinated tool ${JSON.stringify(action)} in step ${step.id}`,
+          );
+        } else {
+          result.warnings.push(
+            `GLOBAL-SAFETY-001 (rule disabled): tool ${JSON.stringify(action)} in step ${step.id} is not in the registry — step may fail at runtime`,
+          );
+        }
         return;
       }
       usedTools.push(tool);
@@ -252,8 +260,16 @@ export class RegistryValidator {
       }
     });
 
+    // Skip rule evaluation when the YAML/schema is fundamentally invalid — the errors are already recorded.
+    if (!result.schema_ok) {
+      finish(result);
+      return result;
+    }
+
     for (const rule of this.registries.enabledRules()) {
       const family = normalize(rule.rule_type);
+      // Families that intentionally have no deterministic evaluator — skip silently.
+      if (knownNoEvaluatorFamilies.has(family)) continue;
       if (!evaluatedFamilies.has(family)) {
         result.policy_ok = false;
         failRule(

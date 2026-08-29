@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { approvalTierSchema, companyProfileSchema, costCentreSchema, departmentSchema } from "../../models/boundary.js";
 import { fail, ok } from "../../models/schemas.js";
@@ -9,6 +11,81 @@ import type { RouteDefinition } from "../generated-routes.js";
 import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, paginate, requestParam, stringValue } from "./common.js";
 import { classifyIntent } from "../../agent/intent-classifier.js";
 import { runQueryLoop } from "../../agent/query-loop.js";
+
+// ── Workflows catalog (feasibility policy) ──────────────────────────────────
+interface CatalogWorkflow {
+  id: string;
+  name: string;
+  description: string;
+  keywords: string[];
+  allowed_roles: string[];
+  requires_write: boolean;
+  domain: string;
+  doable: boolean;
+}
+interface WorkflowsCatalog {
+  workflows: CatalogWorkflow[];
+  globally_blocked: string[];
+  role_notes: Record<string, string>;
+}
+
+let _catalogCache: WorkflowsCatalog | null = null;
+function loadWorkflowsCatalog(): WorkflowsCatalog {
+  if (_catalogCache !== null) return _catalogCache;
+  try {
+    const path = resolve(process.cwd(), "policy/workflows_catalog.json");
+    _catalogCache = JSON.parse(readFileSync(path, "utf8")) as WorkflowsCatalog;
+  } catch {
+    _catalogCache = { workflows: [], globally_blocked: [], role_notes: {} };
+  }
+  return _catalogCache;
+}
+
+function checkFeasibility(request: string, userRole: string): { feasible: boolean; matchedWorkflow?: CatalogWorkflow; reason?: string } {
+  const catalog = loadWorkflowsCatalog();
+  const normalized = request.toLowerCase();
+
+  // Check globally blocked phrases
+  for (const blocked of catalog.globally_blocked) {
+    if (normalized.includes(blocked.toLowerCase())) {
+      return { feasible: false, reason: `This action ("${blocked}") is globally blocked and cannot be automated in this system.` };
+    }
+  }
+
+  // Find best matching workflow by keyword scoring
+  let bestMatch: CatalogWorkflow | undefined;
+  let bestScore = 0;
+  for (const workflow of catalog.workflows) {
+    const score = workflow.keywords.reduce((acc, kw) => acc + (normalized.includes(kw.toLowerCase()) ? 1 : 0), 0);
+    if (score > bestScore) { bestScore = score; bestMatch = workflow; }
+  }
+
+  if (bestMatch === undefined || bestScore === 0) {
+    // No specific match — allow it to proceed (LLM will figure it out)
+    return { feasible: true };
+  }
+
+  if (!bestMatch.doable) {
+    return { feasible: false, matchedWorkflow: bestMatch, reason: `"${bestMatch.name}" is not supported in this ERP system.` };
+  }
+
+  const normalizedRole = userRole.trim();
+  const allowed = bestMatch.allowed_roles.some((r) => r.toLowerCase() === normalizedRole.toLowerCase()) || normalizedRole === "Platform Admin";
+  if (!allowed) {
+    const roleNote = catalog.role_notes[normalizedRole] ?? `Role "${normalizedRole}" does not have access to this workflow.`;
+    return {
+      feasible: false,
+      matchedWorkflow: bestMatch,
+      reason: `Your role (**${normalizedRole}**) is not permitted to run "${bestMatch.name}".\n\n${roleNote}`,
+    };
+  }
+
+  if (bestMatch.requires_write && normalizedRole === "Client") {
+    return { feasible: false, matchedWorkflow: bestMatch, reason: `"${bestMatch.name}" requires write access. The **Client** role is read-only.` };
+  }
+
+  return { feasible: true, matchedWorkflow: bestMatch };
+}
 
 export const RESOURCE_UNHANDLED = Symbol("resource-unhandled");
 
@@ -150,9 +227,36 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     chat.messages.push(userMessage); chat.messageCount = chat.messages.length; chat.updatedAt = now();
     return { session: chatSummary(chat), userMessage, priorMessages };
   });
+  // ── Feasibility check against workflows catalog ──────────────────────────
+  const feasibility = checkFeasibility(content, user.role);
+  if (!feasibility.feasible) {
+    const denialText = feasibility.matchedWorkflow
+      ? `**Request blocked by policy.**\n\n${feasibility.reason}`
+      : `**Request blocked.**\n\n${feasibility.reason ?? "This action is not permitted in this system."}`;
+    const assistantMessage = await services.repository.mutate((state) => {
+      const chat = state.chats[requestParam(request, "id")];
+      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+      const message = { id: nextID(state, "msg"), role: "assistant", text: denialText, artifacts: { intent: "POLICY_DENIAL", blockedWorkflow: feasibility.matchedWorkflow?.id ?? null }, createdAt: now(), traceId };
+      chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      return message;
+    });
+    return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: denialText, intent: "POLICY_DENIAL" }, "Message processed", null));
+  }
   const intent = classifyIntent(content);
+  if (intent === "CAPABILITIES") {
+    const capText = buildCapabilitiesResponse(services.registries.snapshot().tools);
+    const assistantMessage = await services.repository.mutate((state) => {
+      const chat = state.chats[requestParam(request, "id")];
+      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+      const message = { id: nextID(state, "msg"), role: "assistant", text: capText, artifacts: { intent: "CAPABILITIES" }, createdAt: now(), traceId };
+      chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      return message;
+    });
+    return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: capText, intent }, "Message processed", null));
+  }
   if ((intent === "QUERY" || intent === "AUDIT") && services.erpbridgeSession !== undefined && services.providerRuntime?.configured === true) {
-    const readOnlyTools = services.registries.readOnlyTools();
+    const allReadOnlyTools = services.registries.readOnlyTools();
+    const readOnlyTools = selectRelevantTools(content, allReadOnlyTools, 15);
     if (readOnlyTools.length > 0) {
       const sessionId = requestParam(request, "id");
       const chatHistory = stored.priorMessages.map((line) => {
@@ -202,7 +306,20 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   if (services.synthesis === undefined) throw new HandlerFailure(502, "Chat orchestration is not configured");
   let result;
   try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, user: { id: user.id, role: user.role, department: user.departmentId }, model: stringValue(body.model), priorMessages: stored.priorMessages, signal: request.signal, traceId, sessionId: requestParam(request, "id"), messageId: stringValue(stored.userMessage.id) }); }
-  catch (error) { throw new HandlerFailure(502, `Chat orchestration failed: ${errorText(error)}`); }
+  catch (error) {
+    const errText = errorText(error);
+    const friendlyText = errText.includes("HTTP 400") || errText.includes("Generation attempt failed") || errText.includes("Candidate generation failed")
+      ? "I wasn't able to generate a workflow for this request.\n\nThis usually happens when the request involves capabilities not available in this ERP system (e.g. tax verification, sanctions checking, email notifications), or when the AI model is temporarily unavailable.\n\nTry asking for a simpler workflow, or check **Capabilities** to see what this system supports."
+      : `Unable to generate workflow — the generation service encountered an error. Please try again.\n\n_${errText.split(":").slice(-1)[0].trim()}_`;
+    const errMessage = await services.repository.mutate((state) => {
+      const chat = state.chats[requestParam(request, "id")];
+      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+      const msg = { id: nextID(state, "msg"), role: "assistant", text: friendlyText, artifacts: { intent: "WORKFLOW_ERROR" }, createdAt: now(), traceId };
+      chat.messages.push(msg); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      return msg;
+    });
+    return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage: errMessage, answer: friendlyText, intent: "WORKFLOW_ERROR" }, "Message processed", null));
+  }
   // Generate Claude Code-style narrative response
   const assistantText = await generateWorkflowNarrative(content, result, stored.priorMessages, services.providerRuntime, request.signal);
   const chatSessionId = requestParam(request, "id");
@@ -270,12 +387,13 @@ async function generateWorkflowNarrative(
     "Write a concise markdown response (under 300 words) that:",
     "- Starts with a ## heading naming the workflow",
     "- Explains what it does in 1-2 sentences",
-    "- Lists the key steps as short bullets (derive from the YAML steps)",
+    "- Lists the key steps as short bullets in PLAIN ENGLISH (e.g. 'Fetch all warehouses from ERP', NOT internal function names like list_warehouses_api_resource_warehouse_get)",
     passed
       ? "- Confirms it passed validation and is ready to execute"
       : "- Clearly explains what failed (name the rule IDs with `backticks`) and gives 1-2 concrete fixes",
     "- Ends with a brief next-step line",
-    "Do NOT include the full YAML. Use `code spans` for rule IDs and tool names.",
+    "IMPORTANT: NEVER show internal function names, API paths, or technical identifiers. Describe every action in plain English a business user would understand.",
+    "Do NOT include the full YAML. Use `code spans` only for governance rule IDs (e.g. `GLOBAL-AUDIT-001`).",
   ].filter((l) => l !== "").join("\n");
 
   try {
@@ -311,3 +429,47 @@ async function disconnectIntegration(request: FastifyRequest, reply: FastifyRepl
 function stringArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function validURL(value: unknown): string { const text = stringValue(value).trim(); try { const parsed = new URL(text); if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("unsupported protocol"); return parsed.toString(); } catch { throw new HandlerFailure(400, "A valid HTTP(S) URL is required"); } }
 function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+
+// Builds a plain-English summary of what the user can do in the ERP, grouped by module.
+function buildCapabilitiesResponse(tools: readonly import("../../registry/schemas.js").ToolDefinition[]): string {
+  // Group by module
+  const groups = new Map<string, { reads: string[]; writes: string[] }>();
+  for (const tool of tools) {
+    const module = (tool.module ?? "General").trim() || "General";
+    if (!groups.has(module)) groups.set(module, { reads: [], writes: [] });
+    const display = (tool.display_name ?? tool.name).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 60);
+    if (tool.is_read_only) groups.get(module)!.reads.push(display);
+    else groups.get(module)!.writes.push(display);
+  }
+
+  const lines: string[] = ["Here's what you can do in the ERP:\n"];
+  for (const [module, { reads, writes }] of groups.entries()) {
+    lines.push(`## ${module}`);
+    if (reads.length > 0) {
+      lines.push("**View / Query:**");
+      reads.slice(0, 10).forEach((r) => lines.push(`- ${r}`));
+    }
+    if (writes.length > 0) {
+      lines.push("**Create / Update / Action:**");
+      writes.slice(0, 10).forEach((w) => lines.push(`- ${w}`));
+    }
+    lines.push("");
+  }
+  lines.push("Just ask me in plain language — for example: *\"Show me open purchase orders\"* or *\"Approve the pending request\"*.");
+  return lines.join("\n");
+}
+
+// Picks the most relevant read-only tools for the user's query, capped at `limit`.
+// Scores by how many query words appear in the tool name or description.
+function selectRelevantTools(query: string, tools: readonly import("../../registry/schemas.js").ToolDefinition[], limit: number): readonly import("../../registry/schemas.js").ToolDefinition[] {
+  if (tools.length <= limit) return tools;
+  const words = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+  if (words.length === 0) return tools.slice(0, limit);
+  const scored = tools.map((tool) => {
+    const haystack = `${tool.name} ${tool.description}`.toLowerCase();
+    const score = words.reduce((n, w) => n + (haystack.includes(w) ? 1 : 0), 0);
+    return { tool, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((s) => s.tool);
+}

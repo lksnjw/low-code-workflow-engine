@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import { CANDIDATE_PROMPT_VERSION, type ProviderRuntime } from "../providers/runtime.js";
 import type { RegistryService } from "../registry/service.js";
+import type { ToolDefinition } from "../registry/schemas.js";
 import type { CandidateValidationResult, RegistryValidator } from "../validator/registry-validator.js";
 import type { GovernanceUser, ValidationGate } from "../governance/gate.js";
 import { attachValidationAuditTrace } from "../trace/audit-trace.js";
@@ -123,6 +124,7 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
   const snapshot = registries.snapshot();
   const applicableRules = snapshot.rules.filter((rule) => rule.enabled && (rule.applies_to_roles.length === 0 || rule.applies_to_roles.some((role) => normalizeRole(role) === normalizeRole(userRole))));
   const history = priorMessages.length === 0 ? "[]" : JSON.stringify(priorMessages);
+  const relevantTools = selectRelevantToolsForSynthesis(userText, snapshot.tools, 20);
   return [
     "SYSTEM",
     "Generate exactly one workflow as strict YAML. Return YAML only — no Markdown fence, no commentary.",
@@ -134,17 +136,20 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
     "    type: <string>         # e.g. manual, schedule, event",
     "  steps:                   # at least one step",
     "    - id: <string>         # REQUIRED — unique snake_case id, e.g. step_1",
-    "      action: <tool_name>  # must be a tool name from TOOL_REGISTRY",
+    "      description: <string> # REQUIRED — short plain-English label, e.g. 'Fetch all warehouses from ERP'",
+    "      action: <tool_name>  # must be an exact tool name from TOOL_REGISTRY_JSON below",
     "      parameters:          # key/value pairs matching the tool's input schema",
     "        key: value",
     "",
-    "RULES:",
+    "STRICT RULES:",
     "- Every step MUST have an id field (string, unique within the workflow).",
-    "- Use only tool names and parameters defined in TOOL_REGISTRY.",
-    "- Obey every APPLICABLE_RULE.",
+    "- Every step MUST have a description field — a short plain-English phrase describing what the step does (e.g. 'Fetch all warehouses from ERP'). Never leave description empty or use a tool name as the description.",
+    "- Every step MUST have action set to an EXACT tool name from TOOL_REGISTRY_JSON below. NO EXCEPTIONS.",
+    "- DO NOT use kind: approval, kind: condition, kind: http, or any kind other than tool. The ONLY valid step type is action-based (kind: tool).",
+    "- ONLY use tools that appear in TOOL_REGISTRY_JSON. Never add tools based on rule instructions — APPLICABLE_RULES_JSON is for reference only, not a source of tool names.",
+    "- If a rule mentions a tool (e.g. audit.write_audit_log) that is NOT in TOOL_REGISTRY_JSON, IGNORE that rule completely.",
+    "- Generate the MINIMUM number of steps needed to fulfill the user's request. Do NOT add extra steps for audit, notification, or echo unless the user explicitly asked for them.",
     "- No extra top-level keys beyond name, description, trigger, steps, metadata.",
-    "- No extra step keys beyond id, kind, type, action, parameters, instruction, input, output_schema, condition, onError, retryCount, description.",
-    "- To add a human-in-the-loop checkpoint, use kind: approval with a description (no action or parameters needed): { id: approval_1, kind: approval, description: 'Manager approval required before continuing' }",
     "",
     "USER_ROLE",
     userRole,
@@ -153,10 +158,22 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
     "USER_REQUEST",
     userText,
     "TOOL_REGISTRY_JSON",
-    JSON.stringify(snapshot.tools),
+    JSON.stringify(relevantTools),
     "APPLICABLE_RULES_JSON",
     JSON.stringify(applicableRules),
   ].join("\n");
+}
+
+function selectRelevantToolsForSynthesis(query: string, tools: readonly ToolDefinition[], limit: number): readonly ToolDefinition[] {
+  const words = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+  if (words.length === 0) return tools.slice(0, limit);
+  const scored = tools.map((tool) => {
+    const text = `${tool.name} ${tool.description} ${tool.display_name ?? ""}`.toLowerCase();
+    const score = words.reduce((acc, w) => acc + (text.includes(w) ? 1 : 0), 0);
+    return { tool, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((s) => s.tool);
 }
 
 function directRegistryContext(registries: RegistryService, userRole: string): Record<string, unknown> {
