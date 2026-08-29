@@ -2,8 +2,14 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Icon } from "@iconify/react";
 import ChatMessage from "./ChatMessage";
 import ChatWelcome from "./ChatWelcome";
+import { settingsService } from "../../services/settings.service";
 
 /** Animated streaming-style thinking indicator */
+/*******************************************************************************
+ * Function: ThinkingIndicator
+ *
+ * Performs the Thinking Indicator operation on indicator for the ChatWindow module.
+ ******************************************************************************/
 function ThinkingIndicator() {
   return (
     <div className="flex flex-col items-start gap-1 pl-1">
@@ -30,6 +36,11 @@ function ThinkingIndicator() {
 }
 
 /** Auto-resizing textarea */
+/*******************************************************************************
+ * Function: AutoResizeTextarea
+ *
+ * Performs the Auto Resize Textarea operation on resize textarea for the ChatWindow module.
+ ******************************************************************************/
 function AutoResizeTextarea({ value, onChange, onKeyDown, disabled, placeholder }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -60,24 +71,54 @@ const QUICK_PROMPTS = [
   { icon: "mdi:account-check-outline", label: "Supplier onboarding", text: "Create a supplier onboarding workflow: verify tax ID, check sanctions list, then approve or reject with an email notification." },
 ];
 
+/*******************************************************************************
+ * Function: ChatWindow
+ *
+ * Performs the Chat Window operation on window for the ChatWindow module.
+ ******************************************************************************/
 function ChatWindow({ messages, onSend, loading, error }) {
   const [draft, setDraft] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [availableModels, setAvailableModels] = useState([]);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    settingsService.providers().then((providers) => {
+      const active = Array.isArray(providers) ? providers.find((p) => p.active) ?? providers[0] : null;
+      if (!active) return;
+      const models = [
+        active.model && { id: active.model, label: active.model },
+        active.fallbackModel && active.fallbackModel !== active.model && { id: active.fallbackModel, label: `${active.fallbackModel} (fallback)` },
+      ].filter(Boolean);
+      setAvailableModels(models);
+      setSelectedModel(active.model ?? "");
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+/*******************************************************************************
+ * Function: handleSend
+ *
+ * Handles send for the ChatWindow module.
+ ******************************************************************************/
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!text || loading) return;
     setDraft("");
-    await onSend?.(text, {});
+    await onSend?.(text, { model: selectedModel || undefined });
     // refocus after send
     setTimeout(() => inputRef.current?.focus(), 50);
   }, [draft, loading, onSend]);
 
+/*******************************************************************************
+ * Function: handleKeyDown
+ *
+ * Handles key down for the ChatWindow module.
+ ******************************************************************************/
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -143,7 +184,7 @@ function ChatWindow({ messages, onSend, loading, error }) {
                 placeholder="Describe a workflow, query ERP data, or ask anything… (Enter to send, Shift+Enter for newline)"
               />
             </div>
-            <div className="mt-2 flex items-center justify-between">
+            <div className="mt-2 flex items-center justify-between gap-2">
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_PROMPTS.slice(0, 2).map((p) => (
                   <button
@@ -158,17 +199,34 @@ function ChatWindow({ messages, onSend, loading, error }) {
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={loading || !draft.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white transition hover:bg-primary/90 disabled:opacity-40"
-              >
-                {loading
-                  ? <Icon icon="mdi:loading" className="h-4 w-4 animate-spin" />
-                  : <Icon icon="mdi:send" className="h-4 w-4" />
-                }
-              </button>
+              <div className="ml-auto flex items-center gap-2">
+                {availableModels.length > 0 && (
+                  <div className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800/60">
+                    <Icon icon="mdi:chip" className="h-3 w-3 shrink-0 text-gray-400" />
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      disabled={loading}
+                      className="bg-transparent text-[10px] font-semibold text-gray-600 outline-none disabled:opacity-50 dark:text-gray-300"
+                    >
+                      {availableModels.map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={loading || !draft.trim()}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white transition hover:bg-primary/90 disabled:opacity-40"
+                >
+                  {loading
+                    ? <Icon icon="mdi:loading" className="h-4 w-4 animate-spin" />
+                    : <Icon icon="mdi:send" className="h-4 w-4" />
+                  }
+                </button>
+              </div>
             </div>
           </div>
           <p className="mt-1.5 text-center text-[10px] text-gray-400">
