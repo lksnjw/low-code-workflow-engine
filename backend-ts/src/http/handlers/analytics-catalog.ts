@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { fail, ok } from "../../models/schemas.js";
 import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
 import type { RouteDefinition } from "../generated-routes.js";
+import { requestTraceId } from "../../trace/request-trace.js";
 import {
   bodyRecord,
   HandlerFailure,
@@ -618,6 +619,7 @@ async function synthesisValidate(
     "SynthesisValidate",
     stringValue(body.yaml),
     user,
+    { traceId: requestTraceId(request) },
   );
   return reply.send(
     ok(
@@ -701,6 +703,7 @@ async function canvasValidate(
     "CanvasValidateWorkflow",
     yaml,
     user,
+    { traceId: requestTraceId(request) },
   );
   const stepErrors = gate.result.errors.map((message) => ({ message }));
   return reply.send(

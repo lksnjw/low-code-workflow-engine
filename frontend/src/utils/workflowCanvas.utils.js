@@ -153,7 +153,25 @@ export function workflowYamlToCanvas(yaml, metadata = {}) {
       description: workflow.description || metadata.description || "",
       yaml,
       candidateId: metadata.candidateId,
+      chatSessionId: metadata.chatSessionId,
+      chatMessageId: metadata.chatMessageId,
+      traceId: metadata.traceId,
     },
+  };
+}
+
+export function workflowCreationPayload(workflow, yaml) {
+  return {
+    name: workflow.name,
+    description: workflow.description,
+    yaml,
+    ...(workflow.chatSessionId && workflow.chatMessageId
+      ? {
+          chatSessionId: workflow.chatSessionId,
+          chatMessageId: workflow.chatMessageId,
+        }
+      : {}),
+    ...(workflow.traceId ? { traceId: workflow.traceId } : {}),
   };
 }
 

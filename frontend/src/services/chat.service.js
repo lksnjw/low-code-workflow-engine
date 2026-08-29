@@ -28,10 +28,11 @@ export const chatService = {
 
   async sendMessage(sessionId, content, options = {}) {
     const payload = { content };
-    ["mode", "model", "workflowId"].forEach((key) => {
+    ["mode", "model"].forEach((key) => {
       if (options[key]) payload[key] = options[key];
     });
-    const response = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload);
+    // Workflow synthesis can take up to 60s on the LLM side plus narrative generation.
+    const response = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload, { timeout: 120000 });
     return response.data.data;
   },
 };

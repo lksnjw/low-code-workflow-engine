@@ -85,8 +85,8 @@ test("workflow-read-only user sees datafeed status without rebuild action", asyn
   queryClient.clear();
 });
 
-test("registry writer without settings permission cannot trigger semantic rebuild", async () => {
-  permissions = new Set(["registry:read", "registry:write"]);
+test("disabled semantic search hides rebuild even from a settings manager", async () => {
+  permissions = new Set(["registry:read", "registry:write", "settings:manage"]);
   registryLoad.mockResolvedValue({ tools: [], rules: [] });
   registryCreate.mockResolvedValue({});
   const queryClient = renderWithQuery(<RegistryPage />, true);
@@ -95,7 +95,7 @@ test("registry writer without settings permission cannot trigger semantic rebuil
   fireEvent.click(screen.getByRole("button", { name: "Validate & save" }));
   await waitFor(() => expect(registryCreate).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(notify).toHaveBeenCalledWith(
-    "Registry saved. A settings manager can rebuild semantic search if needed.",
+    "Registry saved.",
     "success",
   ));
   expect(rebuild).not.toHaveBeenCalled();

@@ -12,6 +12,7 @@ import {
   type GovernanceRequest,
   type GovernanceSource,
 } from "./adapter.js";
+import type { LlmPolicyFallback } from "./llm-fallback.js";
 
 const persistedSnapshotSchema = z.object({
   policyVersion: z.string(),
@@ -50,6 +51,7 @@ export type GovernanceOutcome<T> =
 export class GovernanceService {
   readonly #mutex = new AsyncMutex();
   #state: PersistedGovernance = { lastPrimaryPolicyVersion: null, snapshot: null };
+  readonly #llmFallback: LlmPolicyFallback | null;
 
   constructor(
     readonly primary: GovernanceAdapter | null,
@@ -57,8 +59,10 @@ export class GovernanceService {
     readonly cacheTTLms: number,
     readonly registries: RegistryService,
     readonly repository: Repository,
+    llmFallback: LlmPolicyFallback | null = null,
   ) {
     if (!Number.isInteger(cacheTTLms) || cacheTTLms < 0) throw new Error("governance cache TTL must be a nonnegative integer");
+    this.#llmFallback = llmFallback;
   }
 
   async initialize(): Promise<void> {
@@ -110,17 +114,38 @@ export class GovernanceService {
       const failure = preferredFailure(primaryFailure, secondaryFailure);
       if (failure.kind === "parse") return this.blocked("BLOCKED", failure.message);
       const cached = this.#state.snapshot;
-      if (cached === null) return this.blocked("BLOCKED", `${failure.message}; no last good governance snapshot is available`);
-      if (Date.now() >= cached.expiresAt) return this.blocked("BLOCKED", `${failure.message}; the last good governance snapshot is expired`, cached.policyVersion, "cache", cached.evidenceIds);
-      if (!readOnly) return this.blocked("BLOCKED", `${failure.message}; side-effecting workflows require a fresh governance response`, cached.policyVersion, "cache", cached.evidenceIds);
-      this.applySnapshot(cached);
-      const warning = `${failure.message}; using the unexpired last good governance snapshot for a read-only workflow`;
-      const value = await evaluateLocally();
-      return {
-        allowed: true,
-        value,
-        decision: this.decision("CACHED_WARNING", cached.policyVersion, "cache", cached.evidenceIds, warning, null),
-      };
+      // Use cached snapshot for read-only workflows when it has not expired
+      if (cached !== null && Date.now() < cached.expiresAt && readOnly) {
+        this.applySnapshot(cached);
+        const warning = `${failure.message}; using the unexpired last good governance snapshot for a read-only workflow`;
+        const value = await evaluateLocally();
+        return {
+          allowed: true,
+          value,
+          decision: this.decision("CACHED_WARNING", cached.policyVersion, "cache", cached.evidenceIds, warning, null),
+        };
+      }
+      // All online sources exhausted — try offline LLM + static-policy fallback
+      if (this.#llmFallback !== null) {
+        try {
+          const fallback = await this.#llmFallback.evaluate(request, readOnly, signal);
+          if (fallback.allowed) {
+            const value = await evaluateLocally();
+            const warning = `${failure.message}; decision made by offline policy fallback (${fallback.source}): ${fallback.reason}`;
+            return {
+              allowed: true,
+              value,
+              decision: this.decision("CACHED_WARNING", cached?.policyVersion ?? null, "cache", cached?.evidenceIds ?? [], warning, null),
+            };
+          }
+          return this.blocked("BLOCKED", `${fallback.reason} [offline fallback: ${fallback.source}]`, cached?.policyVersion ?? undefined, cached !== null ? "cache" : undefined, cached?.evidenceIds ?? []);
+        } catch {
+          // Fallback itself failed — final block
+        }
+      }
+      if (cached === null) return this.blocked("BLOCKED", `${failure.message}; no last good governance snapshot is available and offline fallback failed`);
+      if (Date.now() >= cached.expiresAt) return this.blocked("BLOCKED", `${failure.message}; the last good governance snapshot is expired and offline fallback failed`, cached.policyVersion, "cache", cached.evidenceIds);
+      return this.blocked("BLOCKED", `${failure.message}; side-effecting workflows require a fresh governance response and offline fallback failed`, cached.policyVersion, "cache", cached.evidenceIds);
     });
   }
 

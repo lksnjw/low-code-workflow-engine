@@ -17,6 +17,9 @@ export const executionService = {
     const response = await apiClient.get("/executions", { params });
     return (unwrap(response, []) || []).map(normalizeExecution);
   },
+  async listByChatSession(chatSessionId) {
+    return this.list({ chatSessionId });
+  },
   async get(id) {
     return normalizeExecution(unwrap(await apiClient.get(`/executions/${id}`)));
   },
@@ -36,5 +39,11 @@ export const executionService = {
   },
   async retry(id, input = {}) {
     return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/retry`, { input })));
+  },
+  async approve(id, note = "") {
+    return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/approve`, { note })));
+  },
+  async reject(id, reason = "") {
+    return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/reject`, { reason })));
   },
 };

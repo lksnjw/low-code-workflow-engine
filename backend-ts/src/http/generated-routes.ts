@@ -221,6 +221,14 @@ export const routeTable = [
     "path": "/api/executions/:id/retry"
   },
   {
+    "method": "POST",
+    "path": "/api/executions/:id/approve"
+  },
+  {
+    "method": "POST",
+    "path": "/api/executions/:id/reject"
+  },
+  {
     "method": "GET",
     "path": "/api/executions/:id/timeline"
   },

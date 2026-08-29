@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import {
   takeWorkflowForCanvas,
+  workflowCreationPayload,
   workflowYamlToCanvas,
 } from "../../utils/workflowCanvas.utils";
 import { catalogService } from "../../services/catalog.service";
@@ -109,6 +110,9 @@ function getInitialCanvasState() {
   if (pendingWorkflow?.canExecute && pendingWorkflow.yaml) {
     const canvas = workflowYamlToCanvas(pendingWorkflow.yaml, {
       candidateId: pendingWorkflow.candidateId,
+      chatSessionId: pendingWorkflow.chatSessionId,
+      chatMessageId: pendingWorkflow.chatMessageId,
+      traceId: pendingWorkflow.traceId,
     });
     if (canvas.nodes.length > 0) {
       return canvas;
@@ -247,6 +251,88 @@ function BuilderSidebar({ groups = [], loading, error }) {
   );
 }
 
+function ExecutionResultPanel({ result, onClose }) {
+  if (!result) return null;
+  const { execution, timeline } = result;
+  const succeeded = execution?.status === "DONE";
+
+  return (
+    <aside className="flex h-screen w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div className="flex items-center gap-2">
+          {succeeded ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          ) : (
+            <AlertCircle className="h-5 w-5 text-red-500" />
+          )}
+          <h3 className="text-sm font-black text-slate-900">Execution Result</h3>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          title="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="space-y-4 p-4">
+        <div className={`rounded-lg border p-3 text-xs ${succeeded ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+          <p className={`font-bold uppercase tracking-wide ${succeeded ? "text-emerald-700" : "text-red-700"}`}>
+            {execution?.status ?? "—"}
+          </p>
+          <p className="mt-1 font-mono text-[10px] text-slate-500">{execution?.id}</p>
+          {(execution?.durationMs ?? 0) > 0 && (
+            <p className="mt-1 text-slate-600">{execution.durationMs} ms</p>
+          )}
+        </div>
+
+        {Array.isArray(timeline) && timeline.length > 0 && (
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Steps</p>
+            <div className="space-y-2">
+              {timeline.map((step, i) => (
+                <div key={step.nodeId ?? i} className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs font-semibold text-slate-800">{step.label ?? step.nodeId}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${step.status === "DONE" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                      {step.status}
+                    </span>
+                  </div>
+                  {step.output && (
+                    <pre className="mt-1.5 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-200 p-1.5 text-[10px] leading-4 text-slate-700">
+                      {JSON.stringify(step.output, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {execution?.finalOutput && (
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Final Output</p>
+            <pre className="max-h-48 overflow-auto rounded-lg bg-slate-900 p-3 text-[10px] leading-4 text-green-300">
+              {JSON.stringify(execution.finalOutput, null, 2)}
+            </pre>
+          </div>
+        )}
+
+        {execution?.stepOutputs && Object.keys(execution.stepOutputs).length > 0 && !execution?.finalOutput && (
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Step Outputs</p>
+            <pre className="max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-[10px] leading-4 text-green-300">
+              {JSON.stringify(execution.stepOutputs, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly, statusCounts, workflow }) {
   const stateCopy = {
     idle: "Ready",
@@ -294,6 +380,8 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
   const [executionState, setExecutionState] = useState("idle");
   const [isExecuting, setIsExecuting] = useState(false);
   const [runError, setRunError] = useState(null);
+  const [executionResult, setExecutionResult] = useState(null);
+  const [showResultPanel, setShowResultPanel] = useState(false);
   const { notify } = useNotifications();
   const catalogQuery = useQuery({
     queryKey: ["tool-catalog-groups"],
@@ -401,7 +489,9 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     if (workflow.id) {
       await workflowService.saveYAML(workflow.id, yaml);
     } else {
-      saved = await workflowService.create({ name: workflow.name, description: workflow.description, yaml });
+      saved = await workflowService.create(
+        workflowCreationPayload(workflow, yaml),
+      );
     }
     await workflowService.publish(saved.id, "Published from visual builder");
     saved = { ...saved, id: saved.id, yaml };
@@ -436,6 +526,8 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
       );
       const succeeded = execution.status === "DONE";
       setExecutionState(succeeded ? "success" : "error");
+      setExecutionResult({ execution, timeline });
+      setShowResultPanel(true);
       notify(`Execution ${execution.id} finished with status ${execution.status}.`, succeeded ? "success" : "warning");
     } catch (error) {
       setExecutionState("error");
@@ -509,6 +601,12 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
           </div>
         </div>
       </section>
+      {showResultPanel && executionResult ? (
+        <ExecutionResultPanel
+          result={executionResult}
+          onClose={() => setShowResultPanel(false)}
+        />
+      ) : null}
     </div>
   );
 }

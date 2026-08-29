@@ -1,6 +1,6 @@
 # TypeScript backend invariants
 
-These claims apply only to the TypeScript production artifact identified in `RESULTS.md`. They do not restate or replace the Go backend's invariants.
+These claims apply only to the TypeScript production artifact. They do not restate or replace the Go backend's invariants.
 
 ## Runtime-governed dispatch
 
@@ -14,7 +14,7 @@ Production tool dispatch is runtime-enforced. A dispatch capability is accepted 
 6. The requested action equals the bound action.
 7. The immutable authenticated dispatch identity (`userId`, local role, and mapped ERPBridge role) equals the identity bound at mint time.
 
-Capabilities are frozen, short-lived, and single-use. The mint registry, payload map, signing key, and mint functions are not exported. The legacy bridge HTTP function and the ERPBridge SDK client are reachable only through their governed adapters; the SDK client is private to `src/tools/erpbridge-mcp-client.ts`. Rejection happens before any HTTP or SDK request. This is proved by `tests/capability.test.ts`, `tests/erpbridge-mcp-client.test.ts`, and checked structurally by `scripts/analyze-boundary.mjs`.
+Capabilities are frozen, short-lived, and single-use. The mint registry, payload map, signing key, and mint functions are not exported. The legacy bridge HTTP function and the ERPBridge SDK client are reachable only through their governed adapters; the SDK client is private to `src/tools/erpbridge-mcp-client.ts`. Rejection happens before any HTTP or SDK request. This is proved by `tests/capability.test.ts` and `tests/erpbridge-mcp-client.test.ts`.
 
 This is not compile-time enforcement. TypeScript types are erased, assertions can bypass type checking, and raw JavaScript executing with sufficient same-process/module-loader authority could subvert runtime state. Object identity, HMAC binding, expiry, single use, frozen objects, a non-exported mint, and a non-exported transport reduce that risk; they do not recreate Go's package-private compile-fail guarantee.
 
@@ -24,17 +24,9 @@ This is not compile-time enforcement. TypeScript types are erased, assertions ca
 
 ## Deterministic validation boundary
 
-The validator's production dependency closure contains only canonical JSON, runtime models, strict workflow parsing, redaction, and the validator. It contains no HTTP handler, model-provider, synthesis, entrypoint, or experiment module. The production esbuild metafile is traversed by `scripts/analyze-boundary.mjs`, including resolved static and dynamic import edges.
+The validator's production dependency closure contains only canonical JSON, runtime models, strict workflow parsing, redaction, and the validator. It contains no HTTP handler, model-provider, synthesis, or entrypoint module.
 
 The frozen 120-case replay compares each verdict, ordered failed-rule list, and ordered error list. Every case is evaluated five times and the serialized evidence must be identical. This is proved by `tests/validator-parity.test.ts`.
-
-## Production/experiment artifact separation
-
-Experiment code lives under `packages/experiment/` and has a distinct entrypoint. The production dependency graph contains no experiment input. `scripts/scan-production.mjs` scans the production bundle, source map, and metafile for the forbidden experiment exports, state names, environment name, and package path. `scripts/test-production-inert.mjs` starts the production bundle with the experiment environment variable set and requires a healthy production response.
-
-The experiment artifact accepts only tools registered in its closure-owned safe-tool `WeakSet`; a structurally identical or real dispatch-capable object is rejected. This is proved by `tests/experiment-safety.test.ts`.
-
-Artifact exclusion and final-bundle scanning are the TypeScript proof. They are not described as Go build-tag or native-binary symbol absence.
 
 ## Sequential runner and pre-dispatch order
 
@@ -50,4 +42,4 @@ PostgreSQL uses one reserved connection, a session advisory writer lock, one enc
 
 Workflow YAML accepts exactly one document and uses recursively strict Zod schemas for the workflow structure. Core HTTP boundary schemas reject unknown properties and preserve `null`, empty, zero, and false where declared. Semantically meaningful zero values use explicit checks rather than truthiness defaults. Parser and selected zero-value fixtures are replayed by `tests/parser.test.ts` and `tests/zero-values.test.ts`.
 
-The complete set of 82 captured Go boundary types is not yet represented by dedicated TypeScript runtime schemas. Therefore this document does not claim complete serialization parity; the gap is recorded in `RESULTS.md`.
+The complete set of 82 captured Go boundary types is not yet represented by dedicated TypeScript runtime schemas. Therefore this document does not claim complete serialization parity.

@@ -10,6 +10,13 @@ export type AnalysisResponse = {
 export type ProviderInvocationContext = {
   promptTemplateVersion: string;
   fallbackUsed?: boolean;
+  traceId?: string;
+  sessionId?: string;
+  messageId?: string;
+  candidateId?: string;
+  workflowId?: string;
+  executionId?: string;
+  actor?: { id: string; role: string };
 };
 
 export interface AnalysisProvider {

@@ -1,6 +1,6 @@
 # Enforcement-strength changes
 
-The TypeScript port deliberately changes two proof mechanisms. The existing Go backend and its documentation remain the reference and fallback.
+The TypeScript port deliberately changes one proof mechanism. The existing Go backend and its documentation remain the reference and fallback.
 
 ## Capability construction
 
@@ -9,12 +9,6 @@ Weakened: Go can make external capability construction fail at compile time thro
 Strengthened at runtime: TypeScript capabilities are registered by object identity in a closure-owned `WeakSet`, cryptographically bound with a process-held HMAC, frozen, short-lived, and single-use. The resolved parameter bytes and action are rechecked immediately before dispatch. The Go capability was not single-use or wall-clock-expiring.
 
 Residual risk: code with sufficient same-process or module-loader authority could tamper with runtime execution. The claim is runtime enforcement, never compile-time unforgeability.
-
-## Experiment bypass absence
-
-Changed: Go uses build tags and scans a native executable. The TypeScript port uses a separate workspace package and entry graph, then scans the production bundle, source map, and metafile. The production graph cannot resolve the experiment package, and setting the experiment environment variable against the production bundle is inert.
-
-Residual risk: this proof applies to the exact built artifact hash. Rebuilding with a different graph requires rerunning the scan and runtime test.
 
 ## Async transaction redesign
 

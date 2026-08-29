@@ -1,4 +1,6 @@
-export const NAVIGATION_GROUPS = [
+import { features } from "../config/features";
+
+const allNavigationGroups = [
   {
     id: "dashboard",
     label: "Dashboard",
@@ -153,6 +155,27 @@ export const NAVIGATION_GROUPS = [
     ],
   },
 ];
+
+const groupFeatureFlags = {
+  datafeed: "datafeed",
+  mcp_bridge: "mcpBridge",
+  registry_search: "registrySearch",
+};
+
+const itemFeatureFlags = {
+  "registry.import": "registryImport",
+  "registry.context": "registryContext",
+};
+
+export const NAVIGATION_GROUPS = allNavigationGroups
+  .filter((group) => features[groupFeatureFlags[group.id]] !== false)
+  .map((group) => ({
+    ...group,
+    subMenu: group.subMenu.filter(
+      (item) => features[itemFeatureFlags[`${group.id}.${item.id}`]] !== false
+    ),
+  }))
+  .filter((group) => group.subMenu.length > 0);
 
 export const DEFAULT_ROUTE = {
   main: "dashboard",

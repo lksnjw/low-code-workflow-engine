@@ -11,6 +11,9 @@ import { withoutSecretFields } from "../../redact/secrets.js";
 import { partialResult } from "../../runner/executor.js";
 import type { RouteDefinition } from "../generated-routes.js";
 import { createDispatchIdentity } from "../../tools/registry.js";
+import { canReadExecution } from "../execution-scope.js";
+import { requestTraceId } from "../../trace/request-trace.js";
+import { attachDispatchAuditTrace } from "../../trace/audit-trace.js";
 import {
   appendAudit,
   bodyRecord,
@@ -62,6 +65,10 @@ export async function handleUploadExecutionRoute(
       return executionHealing(request, reply, user, services);
     if (route.path === `${base}/executions/:id/retry`)
       return retryExecution(request, reply, user, services);
+    if (route.path === `${base}/executions/:id/approve` && route.method === "POST")
+      return approveExecution(request, reply, user, services);
+    if (route.path === `${base}/executions/:id/reject` && route.method === "POST")
+      return rejectExecution(request, reply, user, services);
   } catch (error) {
     if (error instanceof HandlerFailure)
       return reply.status(error.status).send(fail(error.message, error.meta));
@@ -180,9 +187,10 @@ async function importWorkflow(
       error: errorText(error),
     });
   }
-  const gate = await validateWorkflow(services, "ImportWorkflow", yaml, user);
+  const traceId = requestTraceId(request);
+  const gate = await validateWorkflow(services, "ImportWorkflow", yaml, user, { traceId });
   if (!gate.result.passed)
-    throw new HandlerFailure(422, "Workflow validation failed", gate.result); // SAFETY: the strict workflow parser guarantees trigger.config is JSON-compatible; Workflow stores the same value as a generic object.
+    throw new HandlerFailure(422, "Workflow validation failed", { ...gate.result, traceId, ...(gate.gateExplanation !== undefined ? { gateExplanation: gate.gateExplanation } : {}) }); // SAFETY: the strict workflow parser guarantees trigger.config is JSON-compatible; Workflow stores the same value as a generic object.
   const workflow = await services.repository.mutate((state) => {
     const id = nextID(state, "wf");
     const createdAt = now();
@@ -295,7 +303,7 @@ async function retryExecution(
   const runRequest = parsed.success
     ? parsed.data
     : runWorkflowRequestSchema.parse({});
-  return executeWorkflow(workflow, runRequest, reply, user, services);
+  return executeWorkflow(workflow, runRequest, request, reply, user, services);
 }
 
 async function executeWorkflow(
@@ -306,6 +314,7 @@ async function executeWorkflow(
     dryRun: boolean;
     idempotencyKey: string;
   },
+  request: FastifyRequest,
   reply: FastifyReply,
   user: CurrentUser,
   services: HandlerServices,
@@ -322,14 +331,20 @@ async function executeWorkflow(
       "Workflow must be validated before execution",
       { status: workflow.status },
     );
+  const traceId = requestTraceId(request, workflow.traceId);
   const gate = await validateWorkflow(
     services,
     "RunWorkflow",
     workflow.yaml,
     user,
+    { traceId, workflowId: workflow.id },
   );
   if (!gate.result.passed || gate.token === null)
-    throw new HandlerFailure(422, "Workflow validation failed", gate.result);
+    throw new HandlerFailure(422, "Workflow validation failed", {
+      ...gate.result,
+      traceId,
+      ...(gate.gateExplanation !== undefined ? { gateExplanation: gate.gateExplanation } : {}),
+    });
   const blueprint = parseWorkflowYAMLStrict(workflow.yaml);
   if (runRequest.dryRun)
     return reply.send(
@@ -357,6 +372,10 @@ async function executeWorkflow(
       tokens: { input: 0, output: 0, total: 0 },
       costUsd: 0,
       startedBy: { id: user.id, name: user.name },
+      ...(workflow.chatSessionId === undefined
+        ? {}
+        : { chatSessionId: workflow.chatSessionId }),
+      traceId,
     };
     state.executions[id] = value;
     return value;
@@ -372,7 +391,20 @@ async function executeWorkflow(
       runRequest.input ?? {},
       gate.token,
       dispatchIdentity,
+      undefined,
+      {
+        traceId,
+        workflowId: workflow.id,
+        executionId: execution.id,
+        actor: { id: user.id, role: user.role },
+      },
     );
+    await attachDispatchAuditTrace(services.repository, execution.id, {
+      traceId,
+      workflowId: workflow.id,
+      executionId: execution.id,
+      actor: { id: user.id, role: user.role },
+    });
     const completed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
       item.status = "DONE";
@@ -387,8 +419,12 @@ async function executeWorkflow(
         id: `log_${index + 1}`,
         executionId: item.id,
         ...log,
+        traceId,
       }));
-      state.timelines[item.id] = result.timeline;
+      state.timelines[item.id] = result.timeline.map((entry) => ({
+        ...entry,
+        traceId,
+      }));
       const storedWorkflow = state.workflows[workflow.id];
       if (storedWorkflow !== undefined) {
         storedWorkflow.lastRunAt = item.completedAt;
@@ -403,7 +439,7 @@ async function executeWorkflow(
         item.id,
         null,
         { status: item.status },
-        undefined,
+        request,
       );
       return structuredClone(item);
     });
@@ -415,6 +451,12 @@ async function executeWorkflow(
       ),
     );
   } catch (error) {
+    await attachDispatchAuditTrace(services.repository, execution.id, {
+      traceId,
+      workflowId: workflow.id,
+      executionId: execution.id,
+      actor: { id: user.id, role: user.role },
+    });
     const partial = partialResult(error);
     const failed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
@@ -438,9 +480,13 @@ async function executeWorkflow(
           id: `log_${index + 1}`,
           executionId: item.id,
           ...log,
+          traceId,
         }),
       );
-      state.timelines[item.id] = partial?.timeline ?? [];
+      state.timelines[item.id] = (partial?.timeline ?? []).map((entry) => ({
+        ...entry,
+        traceId,
+      }));
       state.healing[item.id] = {
         executionId: item.id,
         workflowId: item.workflowId,
@@ -457,14 +503,14 @@ async function executeWorkflow(
         item.id,
         null,
         { failure: item.failure },
-        undefined,
+        request,
       );
       return structuredClone(item);
     });
     throw new HandlerFailure(
       422,
       `Workflow execution failed: ${errorText(error)}`,
-      { executionId: failed.id, status: failed.status },
+      { executionId: failed.id, status: failed.status, traceId },
     );
   }
 }
@@ -478,13 +524,48 @@ async function requireExecution(
     (state) => state.executions[id] ?? null,
   );
   if (
-    execution === null ||
-    (!user.permissions.includes("workflow:read") &&
-      execution.startedBy.id !== user.id)
+    execution === null || !canReadExecution(user, execution)
   )
     throw new HandlerFailure(404, "Execution not found");
   return execution;
 }
+async function approveExecution(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: CurrentUser,
+  services: HandlerServices,
+): Promise<unknown> {
+  const execution = await requireExecution(requestParam(request, "id"), user, services);
+  const updated = await services.repository.mutate((state) => {
+    const item = state.executions[execution.id];
+    if (item === undefined) throw new HandlerFailure(404, "Execution not found");
+    item.status = "DONE";
+    appendAudit(state, user, "execution.approved", "execution", item.id, null, { status: item.status }, request);
+    return structuredClone(item);
+  });
+  return reply.send(ok(updated, "Execution approved", null));
+}
+
+async function rejectExecution(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: CurrentUser,
+  services: HandlerServices,
+): Promise<unknown> {
+  const execution = await requireExecution(requestParam(request, "id"), user, services);
+  const body = bodyRecord(request);
+  const reason = body !== null ? stringValue(body.reason) : "Rejected by user";
+  const updated = await services.repository.mutate((state) => {
+    const item = state.executions[execution.id];
+    if (item === undefined) throw new HandlerFailure(404, "Execution not found");
+    item.status = "FAILED";
+    item.failure = { failureCategory: "REJECTED", failedStepId: "approval", failedToolName: "human_approval", toolWasCalled: false };
+    appendAudit(state, user, "execution.rejected", "execution", item.id, null, { status: item.status, reason }, request);
+    return structuredClone(item);
+  });
+  return reply.send(ok(updated, "Execution rejected", null));
+}
+
 function publicWorkflow(workflow: Workflow): Record<string, unknown> {
   const {
     yaml: _yaml,

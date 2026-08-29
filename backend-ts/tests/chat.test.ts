@@ -16,6 +16,9 @@ import { GenericMCPTool } from "../src/tools/generic-mcp-tool.js";
 import { createGovernedMCPClient } from "../src/tools/mcp-client.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import { RegistryValidator } from "../src/validator/registry-validator.js";
+import { GovernanceAdapter } from "../src/governance/adapter.js";
+import { GovernedValidationGate } from "../src/governance/gate.js";
+import { GovernanceService } from "../src/governance/service.js";
 
 const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
 afterEach(async () => {
@@ -94,6 +97,10 @@ describe("chat orchestration", () => {
     const state = await setup.repository.snapshot();
     expect(state.workflows[workflowID]?.yaml).toBe(yaml.trim());
     expect(state.workflows[workflowID]?.publishedVersion).toBe(1);
+    expect(state.workflows[workflowID]?.chatSessionId).toBe("chat_deploy");
+    expect(state.workflows[workflowID]?.chatMessageId).toBe(
+      generated.json().data.userMessage.id,
+    );
     expect(state.versions[workflowID]).toHaveLength(1);
 
     const tampered = {
@@ -148,6 +155,7 @@ describe("chat orchestration", () => {
     });
     expect(run.statusCode).toBe(200);
     expect(run.json().data.status).toBe("DONE");
+    expect(run.json().data.chatSessionId).toBe("chat_e2e");
     expect(run.json().data.finalOutput).toEqual({
       attendance: [
         {
@@ -161,7 +169,291 @@ describe("chat orchestration", () => {
     });
     const state = await setup.repository.snapshot();
     expect(state.executions[run.json().data.id]?.status).toBe("DONE");
+    expect(state.executions[run.json().data.id]?.chatSessionId).toBe(
+      "chat_e2e",
+    );
     expect(Object.values(state.invocationProvenance)).toHaveLength(1);
+
+    const correlated = await setup.app.inject({
+      method: "GET",
+      url: "/api/executions?chatSessionId=chat_e2e",
+      headers: { authorization: `Bearer ${setup.token}` },
+    });
+    expect(correlated.statusCode).toBe(200);
+    expect(correlated.json().data.map((item: { id: string }) => item.id)).toEqual(
+      [run.json().data.id],
+    );
+
+    const otherUser = await setup.repository.mutate((repositoryState) => {
+      const value = {
+        id: "usr_other_client",
+        name: "Other Client",
+        email: "other@example.test",
+        roleId: "role_client",
+        permissionOverrides: [],
+        status: "Active",
+        initials: "OC",
+        departmentId: null,
+        lastLoginAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      repositoryState.users[value.id] = value;
+      return value;
+    });
+    const otherToken = jwt.sign({}, setup.config.jwtSecret, {
+      algorithm: "HS256",
+      subject: otherUser.id,
+      expiresIn: 3600,
+    });
+    const hiddenList = await setup.app.inject({
+      method: "GET",
+      url: "/api/executions?chatSessionId=chat_e2e",
+      headers: { authorization: `Bearer ${otherToken}` },
+    });
+    expect(hiddenList.statusCode).toBe(200);
+    expect(hiddenList.json().data).toEqual([]);
+    const hiddenDetail = await setup.app.inject({
+      method: "GET",
+      url: `/api/executions/${run.json().data.id}`,
+      headers: { authorization: `Bearer ${otherToken}` },
+    });
+    expect(hiddenDetail.statusCode).toBe(404);
+  });
+
+  test("redacts credential-shaped tool result keys before execution persistence and response", async () => {
+    const yaml = `name: Redacted echo\ndescription: Verifies execution output redaction.\ntrigger:\n  type: manual\nsteps:\n  - id: echo_value\n    action: demo.echo\n    parameters:\n      value: safe\n`;
+    const setup = await buildTestApplication(async () =>
+      Response.json({ choices: [{ message: { content: yaml } }] }),
+    );
+    setup.tools.register({
+      name: "demo.echo",
+      description: "Returns a result containing credential-shaped fields.",
+      async execute() {
+        return {
+          value: "safe",
+          api_key: "must-not-escape",
+          nested: { status: "ok", authorization: "Bearer must-not-escape" },
+        };
+      },
+    });
+
+    const chat = await setup.app.inject({
+      method: "POST",
+      url: "/api/chat/sessions/chat_redaction/messages",
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: { content: "Echo a safe value" },
+    });
+    const deploy = await setup.app.inject({
+      method: "POST",
+      url: "/api/workflows",
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: { candidate: chat.json().data.workflowDraft },
+    });
+    const run = await setup.app.inject({
+      method: "POST",
+      url: `/api/workflows/${deploy.json().data.id}/run`,
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: {},
+    });
+
+    expect(run.statusCode).toBe(200);
+    expect(run.json().data.stepOutputs.echo_value).toEqual({
+      value: "safe",
+      nested: { status: "ok" },
+    });
+    expect(run.json().data.finalOutput).toEqual({
+      value: "safe",
+      nested: { status: "ok" },
+    });
+    expect(JSON.stringify(run.json().data)).not.toContain("must-not-escape");
+
+    const executionID = run.json().data.id as string;
+    const persisted = (await setup.repository.snapshot()).executions[executionID]!;
+    expect(persisted.stepOutputs?.echo_value).toEqual({
+      value: "safe",
+      nested: { status: "ok" },
+    });
+    const detail = await setup.app.inject({
+      method: "GET",
+      url: `/api/executions/${executionID}`,
+      headers: { authorization: `Bearer ${setup.token}` },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(JSON.stringify(detail.json().data)).not.toContain("must-not-escape");
+  });
+
+  test("redacts execution records persisted before the fix at list and detail read boundaries", async () => {
+    const setup = await buildTestApplication(async () =>
+      Response.json({ choices: [{ message: { content: "unused" } }] }),
+    );
+    await setup.repository.mutate((state) => {
+      state.executions.run_legacy_secret = {
+        id: "run_legacy_secret",
+        workflowId: "wf_legacy",
+        workflowName: "Legacy workflow",
+        status: "DONE",
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: 1,
+        tokens: { input: 0, output: 0, total: 0 },
+        costUsd: 0,
+        startedBy: { id: setup.user.id, name: setup.user.name },
+        stepOutputs: {
+          legacy_step: { value: "visible", private_key: "must-not-escape" },
+        },
+        finalOutput: { value: "visible", password: "must-not-escape" },
+      };
+    });
+
+    const detail = await setup.app.inject({
+      method: "GET",
+      url: "/api/executions/run_legacy_secret",
+      headers: { authorization: `Bearer ${setup.token}` },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().data.stepOutputs.legacy_step).toEqual({
+      value: "visible",
+    });
+    expect(detail.json().data.finalOutput).toEqual({ value: "visible" });
+
+    const list = await setup.app.inject({
+      method: "GET",
+      url: "/api/executions",
+      headers: { authorization: `Bearer ${setup.token}` },
+    });
+    expect(list.statusCode).toBe(200);
+    const legacy = list
+      .json()
+      .data.find((item: { id: string }) => item.id === "run_legacy_secret");
+    expect(legacy.stepOutputs.legacy_step).toEqual({ value: "visible" });
+    expect(legacy.finalOutput).toEqual({ value: "visible" });
+    expect(JSON.stringify(list.json().data)).not.toContain("must-not-escape");
+  });
+
+  test("returns an ordered permission-scoped trace from one chat message through execution", async () => {
+    const yaml = `name: Traced echo\ndescription: Executes a traced read-only tool.\ntrigger:\n  type: manual\nsteps:\n  - id: echo_value\n    action: demo.echo\n    parameters:\n      value: traced\n`;
+    const setup = await buildTestApplication(
+      async () =>
+        Response.json({ choices: [{ message: { content: yaml } }] }),
+      "tests/fixtures/tools.json",
+      "tests/fixtures/rules.json",
+      true,
+    );
+    setup.tools.register({
+      name: "demo.echo",
+      description: "Returns trace-test output.",
+      async execute() {
+        return { value: "visible", api_key: "must-not-escape" };
+      },
+    });
+    const chat = await setup.app.inject({
+      method: "POST",
+      url: "/api/chat/sessions/chat_trace/messages",
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: { content: "Echo with a trace" },
+    });
+    expect(chat.statusCode).toBe(200);
+    const traceId = chat.json().data.workflowDraft.traceId as string;
+    expect(traceId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(chat.headers["x-trace-id"]).toBe(traceId);
+
+    const deploy = await setup.app.inject({
+      method: "POST",
+      url: "/api/workflows",
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: { candidate: chat.json().data.workflowDraft },
+    });
+    expect(deploy.statusCode).toBe(201);
+    expect(deploy.json().data.traceId).toBe(traceId);
+    const run = await setup.app.inject({
+      method: "POST",
+      url: `/api/workflows/${deploy.json().data.id}/run`,
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: {},
+    });
+    expect(run.statusCode).toBe(200);
+    expect(run.json().data.traceId).toBe(traceId);
+
+    const fullTrace = await setup.app.inject({
+      method: "GET",
+      url: `/api/executions?traceId=${encodeURIComponent(traceId)}`,
+      headers: { authorization: `Bearer ${setup.token}` },
+    });
+    expect(fullTrace.statusCode).toBe(200);
+    const chain = fullTrace.json().data as Array<{
+      kind: string;
+      timestamp: string;
+      record: Record<string, unknown>;
+    }>;
+    const kinds = chain.map((entry) => entry.kind);
+    expect(kinds).toContain("chat.message");
+    expect(kinds).toContain("model.invocation");
+    expect(kinds).toContain("governance.decision");
+    expect(kinds).toContain("gate.validation");
+    expect(kinds).toContain("execution");
+    expect(kinds).toContain("execution.log");
+    expect(kinds).toContain("execution.timeline");
+    expect(chain.map((entry) => entry.timestamp)).toEqual(
+      [...chain.map((entry) => entry.timestamp)].sort(),
+    );
+    expect(JSON.stringify(chain)).not.toContain("must-not-escape");
+
+    const state = await setup.repository.snapshot();
+    const invocation = Object.values(state.invocationProvenance).find(
+      (record) => record.traceId === traceId,
+    );
+    expect(invocation).toMatchObject({
+      sessionId: "chat_trace",
+      messageId: chat.json().data.userMessage.id,
+      candidateId: "candidate_1",
+      actor: { id: setup.user.id, role: "Platform Admin" },
+    });
+    const governanceRecords = state.auditLogs.filter(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        (entry as Record<string, unknown>).traceId === traceId &&
+        (entry as Record<string, unknown>).source === "governance-gate-ts",
+    ) as Array<Record<string, unknown>>;
+    expect(governanceRecords.length).toBeGreaterThan(0);
+    expect(governanceRecords[0]).toMatchObject({
+      governanceRequestId: expect.any(String),
+      actor: { id: setup.user.id, role: "Platform Admin" },
+    });
+    const dispatchAudit = state.auditLogs.find(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        (entry as Record<string, unknown>).traceId === traceId &&
+        (entry as Record<string, unknown>).executionId === run.json().data.id,
+    ) as Record<string, unknown> | undefined;
+    expect(dispatchAudit).toMatchObject({
+      workflowId: deploy.json().data.id,
+      executionId: run.json().data.id,
+    });
+    for (const record of governanceRecords)
+      expect(JSON.stringify(record.after)).not.toContain(traceId);
+    expect(JSON.stringify(dispatchAudit?.after)).not.toContain(traceId);
+    expect(setup.governanceRequests.length).toBeGreaterThan(0);
+    expect(JSON.stringify(setup.governanceRequests)).not.toContain(traceId);
+
+    await setup.repository.mutate((repositoryState) => {
+      repositoryState.users[setup.user.id]!.roleId = "role_client";
+    });
+    const partialTrace = await setup.app.inject({
+      method: "GET",
+      url: `/api/executions?traceId=${encodeURIComponent(traceId)}`,
+      headers: { authorization: `Bearer ${setup.token}` },
+    });
+    expect(partialTrace.statusCode).toBe(200);
+    const partialKinds = partialTrace
+      .json()
+      .data.map((entry: { kind: string }) => entry.kind);
+    expect(partialKinds).toContain("chat.message");
+    expect(partialKinds).toContain("execution");
+    expect(partialKinds).not.toContain("model.invocation");
+    expect(partialKinds).not.toContain("governance.decision");
+    expect(partialKinds).not.toContain("gate.validation");
   });
 
   test("production configuration refuses in-process mock ERP mode", () => {
@@ -180,6 +472,7 @@ async function buildTestApplication(
   fetchImplementation: typeof fetch,
   toolPath = "tests/fixtures/tools.json",
   rulePath = "tests/fixtures/rules.json",
+  withGovernance = false,
 ) {
   const config: AppConfig = {
     appName: "lcwe-test",
@@ -202,6 +495,10 @@ async function buildTestApplication(
     erpbridgeMcpToken: "",
     erpbridgeRoleMap: {},
     generationTimeoutMs: 1_000,
+    governanceFallbackPolicyPath: "",
+    governanceFallbackLlmApiKey: "",
+    governanceFallbackLlmModel: "",
+    governanceFallbackLlmTimeoutMs: 15_000,
     corsOrigins: ["http://localhost:5173"],
     platformAdminEmail: "admin@example.test",
     platformAdminPassword: "test-password",
@@ -255,7 +552,43 @@ async function buildTestApplication(
     timeoutMs: 1_000,
   };
   providers.activate(providerConfiguration);
-  const synthesis = new SynthesisService(providers, registries, validator);
+  let validationGate: GovernedValidationGate | undefined;
+  const governanceRequests: unknown[] = [];
+  if (withGovernance) {
+    const governance = new GovernanceService(
+      new GovernanceAdapter({
+        url: "https://governance.example.test/policy",
+        apiKey: "governance-test-key",
+        timeoutMs: 1_000,
+        source: "primary",
+        fetchImplementation: async (_url, init) => {
+          governanceRequests.push(JSON.parse(String(init?.body)));
+          return Response.json({
+            policyVersion: "trace-test-v1",
+            rules: [],
+            evidenceIds: [],
+          });
+        },
+      }),
+      null,
+      10_000,
+      registries,
+      repository,
+    );
+    await governance.initialize();
+    validationGate = new GovernedValidationGate(
+      governance,
+      validator,
+      registries,
+      repository,
+    );
+  }
+  const synthesis = new SynthesisService(
+    providers,
+    registries,
+    validator,
+    validationGate,
+  );
   const app = await buildApp({
     config,
     repository,
@@ -264,6 +597,7 @@ async function buildTestApplication(
     executor,
     providerRuntime: providers,
     synthesis,
+    ...(validationGate === undefined ? {} : { validationGate }),
   });
   apps.push(app);
   await app.ready();
@@ -272,5 +606,5 @@ async function buildTestApplication(
     subject: user.id,
     expiresIn: 3600,
   });
-  return { app, repository, token };
+  return { app, repository, token, tools, user, config, governanceRequests };
 }

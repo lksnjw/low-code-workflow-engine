@@ -60,6 +60,6 @@ See [ERPBridge integration](docs/ERPBRIDGE_INTEGRATION.md) for the role matrix, 
 npm run verify
 ```
 
-That command type-checks, runs the test suite, builds the production artifact, scans it for experiment-only symbols and strings, analyzes the production import graph, starts the production bundle with the experiment variable set to prove it is inert, and builds the separate experiment artifact.
+That command type-checks, runs the test suite, and builds the production artifact.
 
-The evidence and known gaps are recorded in [docs/RESULTS.md](docs/RESULTS.md). The runtime security claims are deliberately narrower than the Go compile-time claims; see [docs/INVARIANTS.md](docs/INVARIANTS.md) and [docs/MIGRATION.md](docs/MIGRATION.md).
+The runtime security claims are deliberately narrower than the Go compile-time claims; see [docs/INVARIANTS.md](docs/INVARIANTS.md) and [docs/MIGRATION.md](docs/MIGRATION.md).

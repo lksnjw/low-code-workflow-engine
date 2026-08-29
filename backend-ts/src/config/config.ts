@@ -34,6 +34,10 @@ const environmentSchema = z
     GOVERNANCE_TIMEOUT_MS: z.string().optional(),
     GOVERNANCE_SECONDARY_URL: z.string().optional(),
     GOVERNANCE_CACHE_TTL_MS: z.string().optional(),
+    GOVERNANCE_FALLBACK_POLICY_PATH: z.string().optional(),
+    GOVERNANCE_FALLBACK_LLM_API_KEY: z.string().optional(),
+    GOVERNANCE_FALLBACK_LLM_MODEL: z.string().optional(),
+    GOVERNANCE_FALLBACK_LLM_TIMEOUT_MS: z.string().optional(),
     CORS_ORIGINS: z.string().optional(),
     PLATFORM_ADMIN_EMAIL: z.string().optional(),
     PLATFORM_ADMIN_PASSWORD: z.string().optional(),
@@ -73,6 +77,10 @@ export type AppConfig = {
   governanceTimeoutMs?: number;
   governanceSecondaryURL?: string;
   governanceCacheTTLms?: number;
+  governanceFallbackPolicyPath: string;
+  governanceFallbackLlmApiKey: string;
+  governanceFallbackLlmModel: string;
+  governanceFallbackLlmTimeoutMs: number;
   corsOrigins: string[];
   platformAdminEmail: string;
   platformAdminPassword: string;
@@ -133,6 +141,11 @@ export function loadConfig(
   const governanceCacheTTLMs = parseOptionalInteger(
     source.GOVERNANCE_CACHE_TTL_MS,
     "GOVERNANCE_CACHE_TTL_MS",
+  );
+  const governanceFallbackLlmTimeoutMs = parseInteger(
+    source.GOVERNANCE_FALLBACK_LLM_TIMEOUT_MS,
+    15_000,
+    "GOVERNANCE_FALLBACK_LLM_TIMEOUT_MS",
   );
   const storageDriver = nonblank(
     source.STORAGE_DRIVER?.trim().toLowerCase(),
@@ -202,6 +215,16 @@ export function loadConfig(
     ...(governanceCacheTTLMs === undefined
       ? {}
       : { governanceCacheTTLms: governanceCacheTTLMs }),
+    governanceFallbackPolicyPath: resolve(
+      root,
+      nonblank(source.GOVERNANCE_FALLBACK_POLICY_PATH?.trim(), "policy/governance_fallback.json"),
+    ),
+    governanceFallbackLlmApiKey: source.GOVERNANCE_FALLBACK_LLM_API_KEY?.trim() ?? "",
+    governanceFallbackLlmModel: nonblank(
+      source.GOVERNANCE_FALLBACK_LLM_MODEL?.trim(),
+      "deepseek/deepseek-chat-v3-0324",
+    ),
+    governanceFallbackLlmTimeoutMs,
     corsOrigins: nonblank(source.CORS_ORIGINS, "http://localhost:5173")
       .split(",")
       .map((item) => item.trim())

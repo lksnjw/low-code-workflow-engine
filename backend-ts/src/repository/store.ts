@@ -33,6 +33,8 @@ export type Execution = {
   failure?: Record<string, unknown>;
   stepOutputs?: Record<string, unknown>;
   finalOutput?: unknown;
+  chatSessionId?: string;
+  traceId?: string;
 };
 
 export type Permission = { key: string; name: string; description: string; group: string };
@@ -61,6 +63,13 @@ export type InvocationProvenanceRecord = {
   fallbackUsed: boolean;
   status: "SUCCEEDED" | "FAILED";
   createdAt: string;
+  traceId?: string;
+  sessionId?: string;
+  messageId?: string;
+  candidateId?: string;
+  workflowId?: string;
+  executionId?: string;
+  actor?: { id: string; role: string };
 };
 
 export type RepositoryState = {

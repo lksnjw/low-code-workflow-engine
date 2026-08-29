@@ -77,6 +77,9 @@ export type Workflow = z.infer<typeof workflowSchema> & {
   yaml: string;
   archived: boolean;
   canvas?: Record<string, unknown>;
+  chatSessionId?: string;
+  chatMessageId?: string;
+  traceId?: string;
 };
 
 export const deferredCheckSchema = z.object({

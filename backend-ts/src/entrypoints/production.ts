@@ -31,12 +31,7 @@ import { SynthesisService } from "../synthesis/service.js";
 import { GovernanceAdapter } from "../governance/adapter.js";
 import { GovernanceService } from "../governance/service.js";
 import { GovernedValidationGate } from "../governance/gate.js";
-
-if (process.env.LCWE_BUILD_MODE === "experiment") {
-  throw new Error(
-    "the production entry point cannot run as an experiment artifact",
-  );
-}
+import { LlmPolicyFallback } from "../governance/llm-fallback.js";
 
 const root = process.cwd();
 const config = loadConfig(process.env, root);
@@ -139,12 +134,19 @@ const governanceSecondary =
         timeoutMs: config.governanceTimeoutMs ?? 10_000,
         source: "secondary",
       });
+const governanceLlmFallback = new LlmPolicyFallback({
+  openrouterApiKey: config.governanceFallbackLlmApiKey,
+  model: config.governanceFallbackLlmModel,
+  policyPath: config.governanceFallbackPolicyPath,
+  timeoutMs: config.governanceFallbackLlmTimeoutMs,
+});
 const governance = new GovernanceService(
   governancePrimary,
   governanceSecondary,
   config.governanceCacheTTLms ?? 0,
   registries,
   repository,
+  governanceLlmFallback,
 );
 await governance.initialize();
 const validationGate = new GovernedValidationGate(
@@ -169,6 +171,7 @@ const app = await buildApp({
   providerRuntime,
   synthesis,
   contextAvailable: true,
+  ...(erpbridgeSession !== null ? { erpbridgeSession } : {}),
 });
 let shuttingDown = false;
 const shutdown = async () => {

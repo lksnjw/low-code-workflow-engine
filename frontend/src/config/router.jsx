@@ -14,6 +14,7 @@ import { useAuthContext } from "../context/AuthContext";
 import { RouteProvider } from "../context/RouteContext";
 import usePermissions from "../hooks/usePermissions";
 import AppLayout from "../layouts/AppLayout";
+import { features } from "./features";
 
 export const lazyRouteComponents = {
   DashboardPage: lazy(() => import("../pages/dashboard/DashboardPage")),
@@ -51,44 +52,48 @@ export const lazyRouteComponents = {
 
 const C = lazyRouteComponents;
 
-export const protectedRouteDefinitions = [
-  { id: "dashboard.overview", path: "/", Component: C.DashboardPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "overview" } },
-  { id: "dashboard.activity", path: "/activity", Component: C.DashboardPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "activity" } },
-  { id: "company.overview", path: "/company", Component: C.CompanyPage, requiredAny: [] },
-  { id: "workflows.list", path: "/workflows", Component: C.WorkflowListPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN] },
-  { id: "workflows.builder", path: "/builder", Component: C.WorkflowBuilderPage, requiredAny: [PERMISSIONS.WORKFLOW_WRITE] },
-  { id: "workflows.builder-detail", path: "/builder/:workflowId", Component: C.WorkflowBuilderPage, requiredAny: [PERMISSIONS.WORKFLOW_WRITE] },
-  { id: "workflows.templates", path: "/workflows/templates", Component: C.WorkflowTemplatePage, requiredAny: [PERMISSIONS.WORKFLOW_READ] },
-  { id: "workflows.detail", path: "/workflows/:workflowId", Component: C.WorkflowDetailPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN] },
-  { id: "chat.session", path: "/chat", Component: C.ChatPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE] },
-  { id: "chat.session-detail", path: "/chat/:sessionId", Component: C.ChatPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE] },
-  { id: "chat.history", path: "/chat/history", Component: C.ChatHistoryPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE] },
-  { id: "executions.history", path: "/executions", Component: C.ExecutionListPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN] },
-  { id: "executions.live", path: "/executions/logs", Component: C.ExecutionLogsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN], componentProps: { view: "logs" } },
-  { id: "executions.healing", path: "/executions/healing", Component: C.ExecutionLogsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN], componentProps: { view: "healing" } },
-  { id: "executions.detail", path: "/executions/:executionId", Component: C.ExecutionDetailPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN] },
-  { id: "analytics.performance", path: "/analytics/performance", Component: C.AnalyticsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "performance" } },
-  { id: "analytics.usage", path: "/analytics/usage", Component: C.AnalyticsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "usage" } },
-  { id: "analytics.healing", path: "/analytics/healing", Component: C.AnalyticsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "healing" } },
-  { id: "users.directory", path: "/users", Component: C.UserListPage, requiredAny: [PERMISSIONS.USER_MANAGE], componentProps: { view: "directory" } },
-  { id: "users.roles", path: "/roles", Component: C.UserListPage, requiredAny: [PERMISSIONS.USER_MANAGE], componentProps: { view: "roles" } },
-  { id: "users.audit", path: "/audit", Component: C.AuditPage, requiredAny: [PERMISSIONS.AUDIT_READ] },
-  { id: "settings.general", path: "/settings", Component: C.SettingsPage, requiredAny: [PERMISSIONS.SETTINGS_MANAGE], componentProps: { view: "general" } },
-  { id: "settings.integrations", path: "/settings/integrations", Component: C.SettingsPage, requiredAny: [PERMISSIONS.SETTINGS_MANAGE], componentProps: { view: "integrations" } },
-  { id: "settings.llm", path: "/settings/llm", Component: C.SettingsPage, requiredAny: [PERMISSIONS.SETTINGS_MANAGE], componentProps: { view: "llm" } },
-  { id: "models.overview", path: "/settings/providers", Component: C.ModelsPage, requiredAny: [PERMISSIONS.PROVIDER_MANAGE] },
-  { id: "registry.overview", path: "/registry/tools", Component: C.RegistryPage, requiredAny: [PERMISSIONS.REGISTRY_READ], componentProps: { initialKind: "tools" } },
-  { id: "registry.rules", path: "/registry/rules", Component: C.RegistryPage, requiredAny: [PERMISSIONS.REGISTRY_READ], componentProps: { initialKind: "rules" } },
-  { id: "registry.import", path: "/registry/import", Component: C.RegistryImportPage, requiredAny: [PERMISSIONS.REGISTRY_WRITE] },
-  { id: "registry.context", path: "/registry/context", Component: C.RegistryContextPage, requiredAny: [PERMISSIONS.REGISTRY_READ] },
-  { id: "mcp_bridge.overview", path: "/mcp-bridge", Component: C.McpBridgePage, requiredAny: [PERMISSIONS.WORKFLOW_READ] },
-  { id: "datafeed.overview", path: "/datafeed", Component: C.DatafeedPage, requiredAny: [PERMISSIONS.WORKFLOW_READ] },
-  { id: "datafeed.metrics", path: "/datafeed/metrics", Component: C.VectorMetricsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ] },
-  { id: "datafeed.config", path: "/datafeed/configuration", Component: C.PipelineConfigPage, requiredAny: [PERMISSIONS.WORKFLOW_READ] },
-  { id: "registry_search.overview", path: "/registry-search", Component: C.RegistrySearchPage, requiredAny: [PERMISSIONS.WORKFLOW_READ] },
-  { id: "profile.profile", path: "/profile", Component: C.ProfilePage, requiredAny: [] },
-  { id: "profile.security", path: "/profile/security", Component: C.SecurityPage, requiredAny: [] },
+const allProtectedRouteDefinitions = [
+  { id: "dashboard.overview", path: "/", Component: C.DashboardPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "overview" }, feature: "dashboard" },
+  { id: "dashboard.activity", path: "/activity", Component: C.DashboardPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "activity" }, feature: "dashboard" },
+  { id: "company.overview", path: "/company", Component: C.CompanyPage, requiredAny: [], feature: "company" },
+  { id: "workflows.list", path: "/workflows", Component: C.WorkflowListPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN], feature: "workflows" },
+  { id: "workflows.builder", path: "/builder", Component: C.WorkflowBuilderPage, requiredAny: [PERMISSIONS.WORKFLOW_WRITE], feature: "workflows" },
+  { id: "workflows.builder-detail", path: "/builder/:workflowId", Component: C.WorkflowBuilderPage, requiredAny: [PERMISSIONS.WORKFLOW_WRITE], feature: "workflows" },
+  { id: "workflows.templates", path: "/workflows/templates", Component: C.WorkflowTemplatePage, requiredAny: [PERMISSIONS.WORKFLOW_READ], feature: "workflows" },
+  { id: "workflows.detail", path: "/workflows/:workflowId", Component: C.WorkflowDetailPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN], feature: "workflows" },
+  { id: "chat.session", path: "/chat", Component: C.ChatPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE], feature: "chat" },
+  { id: "chat.session-detail", path: "/chat/:sessionId", Component: C.ChatPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE], feature: "chat" },
+  { id: "chat.history", path: "/chat/history", Component: C.ChatHistoryPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE], feature: "chat" },
+  { id: "executions.history", path: "/executions", Component: C.ExecutionListPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN], feature: "executions" },
+  { id: "executions.live", path: "/executions/logs", Component: C.ExecutionLogsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN], componentProps: { view: "logs" }, feature: "executions" },
+  { id: "executions.healing", path: "/executions/healing", Component: C.ExecutionLogsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN], componentProps: { view: "healing" }, feature: "executions" },
+  { id: "executions.detail", path: "/executions/:executionId", Component: C.ExecutionDetailPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.EXECUTION_READ_OWN], feature: "executions" },
+  { id: "analytics.performance", path: "/analytics/performance", Component: C.AnalyticsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "performance" }, feature: "analytics" },
+  { id: "analytics.usage", path: "/analytics/usage", Component: C.AnalyticsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "usage" }, feature: "analytics" },
+  { id: "analytics.healing", path: "/analytics/healing", Component: C.AnalyticsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], componentProps: { view: "healing" }, feature: "analytics" },
+  { id: "users.directory", path: "/users", Component: C.UserListPage, requiredAny: [PERMISSIONS.USER_MANAGE], componentProps: { view: "directory" }, feature: "users" },
+  { id: "users.roles", path: "/roles", Component: C.UserListPage, requiredAny: [PERMISSIONS.USER_MANAGE], componentProps: { view: "roles" }, feature: "users" },
+  { id: "users.audit", path: "/audit", Component: C.AuditPage, requiredAny: [PERMISSIONS.AUDIT_READ], feature: "users" },
+  { id: "settings.general", path: "/settings", Component: C.SettingsPage, requiredAny: [PERMISSIONS.SETTINGS_MANAGE], componentProps: { view: "general" }, feature: "settings" },
+  { id: "settings.integrations", path: "/settings/integrations", Component: C.SettingsPage, requiredAny: [PERMISSIONS.SETTINGS_MANAGE], componentProps: { view: "integrations" }, feature: "settings" },
+  { id: "settings.llm", path: "/settings/llm", Component: C.SettingsPage, requiredAny: [PERMISSIONS.SETTINGS_MANAGE], componentProps: { view: "llm" }, feature: "settings" },
+  { id: "models.overview", path: "/settings/providers", Component: C.ModelsPage, requiredAny: [PERMISSIONS.PROVIDER_MANAGE], feature: "models" },
+  { id: "registry.overview", path: "/registry/tools", Component: C.RegistryPage, requiredAny: [PERMISSIONS.REGISTRY_READ], componentProps: { initialKind: "tools" }, feature: "registry" },
+  { id: "registry.rules", path: "/registry/rules", Component: C.RegistryPage, requiredAny: [PERMISSIONS.REGISTRY_READ], componentProps: { initialKind: "rules" }, feature: "registry" },
+  { id: "registry.import", path: "/registry/import", Component: C.RegistryImportPage, requiredAny: [PERMISSIONS.REGISTRY_WRITE], feature: "registryImport" },
+  { id: "registry.context", path: "/registry/context", Component: C.RegistryContextPage, requiredAny: [PERMISSIONS.REGISTRY_READ], feature: "registryContext" },
+  { id: "mcp_bridge.overview", path: "/mcp-bridge", Component: C.McpBridgePage, requiredAny: [PERMISSIONS.WORKFLOW_READ], feature: "mcpBridge" },
+  { id: "datafeed.overview", path: "/datafeed", Component: C.DatafeedPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], feature: "datafeed" },
+  { id: "datafeed.metrics", path: "/datafeed/metrics", Component: C.VectorMetricsPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], feature: "datafeed" },
+  { id: "datafeed.config", path: "/datafeed/configuration", Component: C.PipelineConfigPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], feature: "datafeed" },
+  { id: "registry_search.overview", path: "/registry-search", Component: C.RegistrySearchPage, requiredAny: [PERMISSIONS.WORKFLOW_READ], feature: "registrySearch" },
+  { id: "profile.profile", path: "/profile", Component: C.ProfilePage, requiredAny: [], feature: "profile" },
+  { id: "profile.security", path: "/profile/security", Component: C.SecurityPage, requiredAny: [], feature: "profile" },
 ];
+
+export const protectedRouteDefinitions = allProtectedRouteDefinitions.filter(
+  (definition) => features[definition.feature] !== false
+);
 
 export const navigationRouteIds = NAVIGATION_GROUPS.flatMap((group) =>
   group.subMenu.map((item) => `${group.id}.${item.id}`)

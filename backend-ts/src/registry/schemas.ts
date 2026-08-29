@@ -19,7 +19,7 @@ export const toolSchema = z.object({
   optional_parameters: z.array(z.string()).default([]),
   allowed_roles: z.array(z.string()).default([]),
   risk_level: z.string().default(""),
-  is_read_only: z.boolean().default(false),
+  is_read_only: z.boolean(),
   side_effects: z.array(z.string()).default([]),
   preconditions: z.array(z.string()).default([]),
   postconditions: z.array(z.string()).default([]),

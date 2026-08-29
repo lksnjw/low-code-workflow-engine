@@ -7,6 +7,7 @@ import type { Repository } from "../repository/store.js";
 import type { CandidateValidationResult, RegistryValidator, ValidationToken } from "../validator/registry-validator.js";
 import type { GovernanceRequest } from "./adapter.js";
 import { GovernanceService, type GovernanceDecision } from "./service.js";
+import { attachValidationAuditTrace } from "../trace/audit-trace.js";
 
 export type GovernanceUser = { id: string; role: string; department: string | null };
 
@@ -14,6 +15,12 @@ export type GovernedValidationContext = {
   intent?: string;
   caseContext?: Record<string, unknown>;
   signal?: AbortSignal;
+  traceId?: string | undefined;
+  sessionId?: string | undefined;
+  messageId?: string | undefined;
+  candidateId?: string | undefined;
+  workflowId?: string | undefined;
+  executionId?: string | undefined;
 };
 
 export type ValidationGateResult = { token: ValidationToken | null; result: CandidateValidationResult };
@@ -66,11 +73,17 @@ export class GovernedValidationGate implements ValidationGate {
       attachDecision(result, outcome.decision);
       gate = { token: null, result };
     }
-    await this.recordDecision(action, rawYAML, proposal.readOnly, outcome.decision, gate.result.passed);
+    if (outcome.allowed) {
+      await attachValidationAuditTrace(this.repository, action, rawYAML, {
+        ...context,
+        actor: { id: user.id, role: user.role },
+      });
+    }
+    await this.recordDecision(action, rawYAML, proposal.readOnly, outcome.decision, gate.result.passed, request, context);
     return gate;
   }
 
-  private async recordDecision(action: string, rawYAML: string, readOnly: boolean, decision: GovernanceDecision, passed: boolean): Promise<void> {
+  private async recordDecision(action: string, rawYAML: string, readOnly: boolean, decision: GovernanceDecision, passed: boolean, request: GovernanceRequest, context: GovernedValidationContext): Promise<void> {
     await this.repository.mutate((state) => {
       state.auditLogs.push({
         id: `audit_${state.auditLogs.length + 1}`,
@@ -80,9 +93,27 @@ export class GovernedValidationGate implements ValidationGate {
         after: { passed, readOnly, ...decision },
         createdAt: new Date().toISOString(),
         source: "governance-gate-ts",
+        governanceRequestId: request.requestId,
+        actor: { id: request.user.id, role: request.user.role },
+        ...traceMetadata(context),
       });
     });
   }
+}
+
+function traceMetadata(
+  context: GovernedValidationContext,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries({
+      traceId: context.traceId,
+      sessionId: context.sessionId,
+      messageId: context.messageId,
+      candidateId: context.candidateId,
+      workflowId: context.workflowId,
+      executionId: context.executionId,
+    }).filter(([, value]) => value !== undefined),
+  );
 }
 
 function classifyProposal(rawYAML: string, registries: RegistryService): { actions: string[]; readOnly: boolean } {

@@ -4,6 +4,7 @@ import { CANDIDATE_PROMPT_VERSION, type ProviderRuntime } from "../providers/run
 import type { RegistryService } from "../registry/service.js";
 import type { CandidateValidationResult, RegistryValidator } from "../validator/registry-validator.js";
 import type { GovernanceUser, ValidationGate } from "../governance/gate.js";
+import { attachValidationAuditTrace } from "../trace/audit-trace.js";
 
 export type SynthesisResult = {
   candidate: CandidateReport;
@@ -46,20 +47,40 @@ export class SynthesisFailure extends Error {
 export class SynthesisService {
   constructor(readonly providers: ProviderRuntime, readonly registries: RegistryService, readonly validator: RegistryValidator, readonly validationGate?: ValidationGate) {}
 
-  async synthesize(input: { prompt: string; userRole: string; user?: GovernanceUser; model?: string; priorMessages?: string[]; caseContext?: Record<string, unknown>; signal?: AbortSignal }): Promise<SynthesisResult> {
+  async synthesize(input: { prompt: string; userRole: string; user?: GovernanceUser; model?: string; priorMessages?: string[]; caseContext?: Record<string, unknown>; signal?: AbortSignal; traceId?: string; sessionId?: string; messageId?: string }): Promise<SynthesisResult> {
     const prompt = assembleCandidatePrompt(input.prompt, input.userRole, this.registries, input.priorMessages ?? []);
     let generated;
-    try { generated = await this.providers.generateCandidate(prompt, CANDIDATE_PROMPT_VERSION, (response) => { parseWorkflowYAMLStrict(response.text.trim()); }, input.signal); }
+    try { generated = await this.providers.generateCandidate(prompt, CANDIDATE_PROMPT_VERSION, (response) => { parseWorkflowYAMLStrict(response.text.trim()); }, input.signal, {
+      ...(input.traceId === undefined ? {} : { traceId: input.traceId }),
+      ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+      ...(input.messageId === undefined ? {} : { messageId: input.messageId }),
+      candidateId: "candidate_1",
+      ...(input.user === undefined ? {} : { actor: { id: input.user.id, role: input.user.role } }),
+    }); }
     catch (error) { throw new SynthesisFailure(`Candidate generation failed: ${errorText(error)}`); }
     const yaml = generated.text.trim();
     const candidateID = "candidate_1";
-    const gate = this.validationGate === undefined
-      ? await this.validator.validateAndIssueToken(candidateID, yaml, input.userRole)
-      : await this.validationGate.validateAndIssueToken(candidateID, yaml, input.user ?? { id: "anonymous", role: input.userRole, department: null }, {
-        intent: input.prompt,
-        caseContext: input.caseContext ?? { priorMessageCount: input.priorMessages?.length ?? 0 },
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
+    let gate;
+    if (this.validationGate === undefined) {
+      gate = await this.validator.validateAndIssueToken(candidateID, yaml, input.userRole);
+      await attachValidationAuditTrace(this.validator.repository, candidateID, yaml, {
+        traceId: input.traceId,
+        sessionId: input.sessionId,
+        messageId: input.messageId,
+        candidateId: candidateID,
+        actor: input.user === undefined ? undefined : { id: input.user.id, role: input.user.role },
       });
+    } else {
+      gate = await this.validationGate.validateAndIssueToken(candidateID, yaml, input.user ?? { id: "anonymous", role: input.userRole, department: null }, {
+          intent: input.prompt,
+          caseContext: input.caseContext ?? { priorMessageCount: input.priorMessages?.length ?? 0 },
+          traceId: input.traceId,
+          sessionId: input.sessionId,
+          messageId: input.messageId,
+          candidateId: candidateID,
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+        });
+    }
     const canExecute = gate.result.passed && gate.token !== null;
     const temperature = this.providers.configuration?.temperature ?? 0;
     const candidate: CandidateReport = {
@@ -104,9 +125,27 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
   const history = priorMessages.length === 0 ? "[]" : JSON.stringify(priorMessages);
   return [
     "SYSTEM",
-    "Generate exactly one workflow as strict YAML. Return YAML only: no Markdown fence, commentary, confidence, cost, or alternatives.",
-    "The workflow must contain name, a non-empty description, trigger.type, and at least one step.",
-    "Use only tool names and parameters defined in TOOL_REGISTRY. Obey every APPLICABLE_RULE.",
+    "Generate exactly one workflow as strict YAML. Return YAML only — no Markdown fence, no commentary.",
+    "",
+    "REQUIRED WORKFLOW STRUCTURE (all fields are exact key names — do not rename them):",
+    "  name: <string>           # workflow name",
+    "  description: <string>    # non-empty description",
+    "  trigger:",
+    "    type: <string>         # e.g. manual, schedule, event",
+    "  steps:                   # at least one step",
+    "    - id: <string>         # REQUIRED — unique snake_case id, e.g. step_1",
+    "      action: <tool_name>  # must be a tool name from TOOL_REGISTRY",
+    "      parameters:          # key/value pairs matching the tool's input schema",
+    "        key: value",
+    "",
+    "RULES:",
+    "- Every step MUST have an id field (string, unique within the workflow).",
+    "- Use only tool names and parameters defined in TOOL_REGISTRY.",
+    "- Obey every APPLICABLE_RULE.",
+    "- No extra top-level keys beyond name, description, trigger, steps, metadata.",
+    "- No extra step keys beyond id, kind, type, action, parameters, instruction, input, output_schema, condition, onError, retryCount, description.",
+    "- To add a human-in-the-loop checkpoint, use kind: approval with a description (no action or parameters needed): { id: approval_1, kind: approval, description: 'Manager approval required before continuing' }",
+    "",
     "USER_ROLE",
     userRole,
     "PRIOR_MESSAGES_JSON",

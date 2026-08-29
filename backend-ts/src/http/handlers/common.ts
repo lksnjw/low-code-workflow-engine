@@ -8,6 +8,10 @@ import type { ProviderRuntime } from "../../providers/runtime.js";
 import type { SynthesisService } from "../../synthesis/service.js";
 import type { RegistryValidator } from "../../validator/registry-validator.js";
 import type { GovernedValidationContext, ValidationGateResult } from "../../governance/gate.js";
+import { projectGateExplanation, type GateExplanation } from "../../governance/explain.js";
+import { requestTraceId } from "../../trace/request-trace.js";
+import { attachValidationAuditTrace } from "../../trace/audit-trace.js";
+import type { ErpbridgeMcpSession } from "../../tools/erpbridge-mcp-client.js";
 
 export type CurrentUser = User & { role: string; permissions: string[] };
 export type HandlerServices = {
@@ -19,8 +23,11 @@ export type HandlerServices = {
   executor: Executor;
   providerRuntime?: ProviderRuntime;
   synthesis?: SynthesisService;
+  erpbridgeSession?: ErpbridgeMcpSession;
   contextAvailable?: boolean;
 };
+
+export type EnrichedValidationResult = ValidationGateResult & { gateExplanation?: GateExplanation };
 
 export async function validateWorkflow(
   services: HandlerServices,
@@ -28,13 +35,28 @@ export async function validateWorkflow(
   rawYAML: string,
   user: Pick<CurrentUser, "id" | "role" | "departmentId">,
   context: GovernedValidationContext = {},
-): Promise<ValidationGateResult> {
-  if (services.validationGate === undefined) return services.validator.validateAndIssueToken(action, rawYAML, user.role);
-  return services.validationGate.validateAndIssueToken(action, rawYAML, {
-    id: user.id,
-    role: user.role,
-    department: user.departmentId,
-  }, context);
+): Promise<EnrichedValidationResult> {
+  let gate: ValidationGateResult;
+  if (services.validationGate === undefined) {
+    gate = await services.validator.validateAndIssueToken(action, rawYAML, user.role);
+    await attachValidationAuditTrace(services.repository, action, rawYAML, {
+      ...context,
+      actor: { id: user.id, role: user.role },
+    });
+  } else {
+    gate = await services.validationGate.validateAndIssueToken(action, rawYAML, {
+      id: user.id,
+      role: user.role,
+      department: user.departmentId,
+    }, context);
+  }
+  if (!gate.result.passed) {
+    const failedRules = Array.isArray((gate.result as Record<string, unknown>).failed_rules)
+      ? (gate.result as Record<string, unknown>).failed_rules as string[]
+      : [];
+    return { ...gate, gateExplanation: projectGateExplanation(failedRules, services.registries) };
+  }
+  return gate;
 }
 
 export function requestParam(request: FastifyRequest, name: string): string {
@@ -107,6 +129,7 @@ export function appendAudit(
     before,
     after,
     createdAt: now(),
+    ...(request === undefined ? {} : { traceId: requestTraceId(request) }),
   });
 }
 

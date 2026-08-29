@@ -48,6 +48,30 @@ describe("single-candidate synthesis", () => {
     expect((error as SynthesisFailure).status).toBe(502);
     expect((error as Error).message).toContain("Candidate generation failed");
   });
+
+  test("synthesis still receives the full registry and generates a workflow after adding the read-only selector", async () => {
+    const yaml = `name: Attendance lookup\ndescription: Fetches an employee attendance record.\ntrigger:\n  type: manual\nsteps:\n  - id: fetch_employee_attendance\n    action: fetch_attendance\n    parameters:\n      employeeId: EMP-005\n`;
+    const { service, registries } = await setup(
+      "fixtures/parity/http/runtime/all_tools_master_registry.json",
+      "fixtures/parity/http/runtime/all_rules_master_registry.json",
+      async () => providerResponse(yaml),
+    );
+    const assembled = assembleCandidatePrompt(
+      "Show attendance for employee EMP-005",
+      "Platform Admin",
+      registries,
+    );
+
+    expect(registries.snapshot().tools).toHaveLength(17);
+    expect(assembled).toContain("demo.echo");
+    expect(assembled).toContain("procurement.create_purchase_order");
+    const result = await service.synthesize({
+      prompt: "Show attendance for employee EMP-005",
+      userRole: "Platform Admin",
+    });
+    expect(result.canExecute).toBe(true);
+    expect(result.candidate.yaml).toBe(yaml.trim());
+  });
 });
 
 async function setup(toolPath: string, rulePath: string, fetchImplementation: typeof fetch) {

@@ -9,6 +9,7 @@ import { ErrorState, EmptyState, LoadingState } from "../../components/shared/Re
 import DataTable from "../../components/shared/tables/DataTable";
 import Button from "../../components/shared/ui/Button";
 import Tabs from "../../components/shared/ui/Tabs";
+import { features } from "../../config/features";
 import { useNotifications } from "../../context/NotificationContext";
 import { registryService } from "../../services/registry.service";
 import { semanticService } from "../../services/semantic.service";
@@ -81,7 +82,7 @@ function RegistryPage({ initialKind = "tools" }) {
   const { notify } = useNotifications();
   const { has } = usePermissions();
   const canWrite = has("registry:write");
-  const canRebuild = has("settings:manage");
+  const canRebuild = features.semanticSearch && has("settings:manage");
   const query = useQuery({ queryKey: ["admin-registry"], queryFn: registryService.load });
 
   const items = query.data?.[kind] ?? [];
@@ -123,8 +124,10 @@ function RegistryPage({ initialKind = "tools" }) {
           label: "Rebuild index",
           onClick: rebuild,
         });
-      } else {
+      } else if (features.semanticSearch) {
         notify("Registry saved. A settings manager can rebuild semantic search if needed.", "success");
+      } else {
+        notify("Registry saved.", "success");
       }
     },
     onError: (error) => notify(apiErrorMessage(error, "Registry change failed."), "error"),

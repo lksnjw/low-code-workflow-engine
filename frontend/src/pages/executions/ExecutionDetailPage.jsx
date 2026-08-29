@@ -8,6 +8,7 @@ import LiveLogStream from "../../components/executions/LiveLogStream";
 import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import Card from "../../components/shared/ui/Card";
 import { useExecution } from "../../hooks/useExecution";
+import TraceIdentifier from "../../components/shared/TraceIdentifier";
 
 function ExecutionDetailPage() {
   const { executionId } = useParams();
@@ -26,6 +27,7 @@ function ExecutionDetailPage() {
           <Link to="/executions" className="text-sm font-semibold text-primary">← All executions</Link>
           <h1 className="page-heading mt-3 text-gray-950 dark:text-white">{execution.workflowName || execution.workflow}</h1>
           <p className="mt-2 font-mono text-xs text-gray-500">{execution.id}</p>
+          <TraceIdentifier traceId={execution.traceId} />
         </div>
         <ExecutionStatus status={execution.status} failure={execution.failure} />
       </section>

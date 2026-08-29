@@ -17,5 +17,5 @@
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.mjs"],
-  "exclude": ["dist", "node_modules", "packages/experiment"]
+  "exclude": ["dist", "node_modules"]
 }

@@ -4,8 +4,11 @@ import { approvalTierSchema, companyProfileSchema, costCentreSchema, departmentS
 import { fail, ok } from "../../models/schemas.js";
 import { withoutSecretFields } from "../../redact/secrets.js";
 import { providerConfigurationFromRecord, validateRuntimeProviderConfiguration } from "../../providers/runtime.js";
+import { requestTraceId } from "../../trace/request-trace.js";
 import type { RouteDefinition } from "../generated-routes.js";
 import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, paginate, requestParam, stringValue } from "./common.js";
+import { classifyIntent } from "../../agent/intent-classifier.js";
+import { runQueryLoop } from "../../agent/query-loop.js";
 
 export const RESOURCE_UNHANDLED = Symbol("resource-unhandled");
 
@@ -136,28 +139,79 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
   const content = stringValue(body.content).trim() === "" ? stringValue(body.message).trim() : stringValue(body.content).trim();
   if (content === "") throw new HandlerFailure(400, "message is required");
+  const traceId = requestTraceId(request);
   const stored = await services.repository.mutate((state) => {
     const id = requestParam(request, "id");
     let chat = state.chats[id];
     if (chat === undefined) { const timestamp = now(); chat = { id, ownerId: user.id, title: content.slice(0, 80), createdAt: timestamp, updatedAt: timestamp, messageCount: 0, messages: [] }; state.chats[id] = chat; }
     if (chat.ownerId !== user.id && !user.permissions.includes("workflow:write")) throw new HandlerFailure(404, "Chat session not found");
     const priorMessages = chat.messages.map((message) => `${stringValue(message.role)}: ${stringValue(message.text)}`);
-    const userMessage = { id: nextID(state, "msg"), role: "user", text: content, createdAt: now() };
+    const userMessage = { id: nextID(state, "msg"), role: "user", text: content, createdAt: now(), traceId };
     chat.messages.push(userMessage); chat.messageCount = chat.messages.length; chat.updatedAt = now();
     return { session: chatSummary(chat), userMessage, priorMessages };
   });
+  const intent = classifyIntent(content);
+  if ((intent === "QUERY" || intent === "AUDIT") && services.erpbridgeSession !== undefined && services.providerRuntime?.configured === true) {
+    const readOnlyTools = services.registries.readOnlyTools();
+    if (readOnlyTools.length > 0) {
+      const sessionId = requestParam(request, "id");
+      const chatHistory = stored.priorMessages.map((line) => {
+        const sep = line.indexOf(": ");
+        return sep > -1 ? { role: line.slice(0, sep), text: line.slice(sep + 2) } : { role: "user", text: line };
+      });
+      let loopResult;
+      try {
+        const bridgeSession = services.erpbridgeSession;
+        loopResult = await runQueryLoop(
+          { userMessage: content, chatHistory, sessionId, actorId: user.id, actorRole: user.role, signal: request.signal, traceId },
+          readOnlyTools,
+          async (toolName, args) => bridgeSession.callToolDirect(toolName, args),
+          services.providerRuntime,
+        );
+      } catch (error) {
+        throw new HandlerFailure(502, `Query agent failed: ${errorText(error)}`);
+      }
+      const queryArtifacts = {
+        intent,
+        sources: loopResult.toolCallLog,
+        boundHit: loopResult.boundHit,
+        iterationsUsed: loopResult.iterationsUsed,
+        latencyMs: loopResult.latencyMs,
+        ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
+      };
+      const assistantMessage = await services.repository.mutate((state) => {
+        const chat = state.chats[requestParam(request, "id")];
+        if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+        const message = { id: nextID(state, "msg"), role: "assistant", text: loopResult.text, artifacts: queryArtifacts, createdAt: now(), traceId };
+        chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+        return message;
+      });
+      return reply.send(ok({
+        session: stored.session,
+        userMessage: stored.userMessage,
+        assistantMessage,
+        answer: loopResult.text,
+        intent,
+        sources: loopResult.toolCallLog,
+        ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
+        boundHit: loopResult.boundHit,
+        usage: { inputTokens: loopResult.totalTokens.input, outputTokens: loopResult.totalTokens.output, measured: true },
+      }, "Message processed", null));
+    }
+  }
   if (services.synthesis === undefined) throw new HandlerFailure(502, "Chat orchestration is not configured");
   let result;
-  try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, user: { id: user.id, role: user.role, department: user.departmentId }, model: stringValue(body.model), priorMessages: stored.priorMessages, signal: request.signal }); }
+  try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, user: { id: user.id, role: user.role, department: user.departmentId }, model: stringValue(body.model), priorMessages: stored.priorMessages, signal: request.signal, traceId, sessionId: requestParam(request, "id"), messageId: stringValue(stored.userMessage.id) }); }
   catch (error) { throw new HandlerFailure(502, `Chat orchestration failed: ${errorText(error)}`); }
-  const assistantText = result.canExecute
-    ? "I generated a workflow candidate that passed the deterministic validation gate."
-    : `I generated a candidate, but the deterministic validation gate blocked it${result.validation.failed_rules.length === 0 ? "." : ` under ${result.validation.failed_rules.join(", ")}.`}`;
-  const artifacts = { ...result };
+  // Generate Claude Code-style narrative response
+  const assistantText = await generateWorkflowNarrative(content, result, stored.priorMessages, services.providerRuntime, request.signal);
+  const chatSessionId = requestParam(request, "id");
+  const chatMessageId = stringValue(stored.userMessage.id);
+  const artifacts = { ...result, chatSessionId, chatMessageId, traceId, intent: "WORKFLOW" };
   const assistantMessage = await services.repository.mutate((state) => {
     const chat = state.chats[requestParam(request, "id")];
     if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
-    const message = { id: nextID(state, "msg"), role: "assistant", text: assistantText, artifacts, createdAt: now() };
+    const message = { id: nextID(state, "msg"), role: "assistant", text: assistantText, artifacts, createdAt: now(), traceId };
     chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
     return message;
   });
@@ -168,7 +222,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     assistantMessage,
     answer: assistantText,
     yaml: result.yaml,
-    workflowDraft: result.candidate,
+    workflowDraft: { ...result.candidate, chatSessionId, chatMessageId, traceId },
     validation: result.validation,
     flowPreview: null,
     usage: { inputTokens: result.candidate.generation_metadata.inputTokens, outputTokens: result.candidate.generation_metadata.outputTokens, measured: result.candidate.generation_metadata.measured },
@@ -176,6 +230,62 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     toolCandidates: retrieval.tools ?? [],
     ruleCandidates: [...(retrieval.rules ?? []), ...(retrieval.global_rules ?? [])],
   }, "Message processed", null));
+}
+
+async function generateWorkflowNarrative(
+  userMessage: string,
+  result: import("../../synthesis/service.js").SynthesisResult,
+  priorMessages: string[],
+  providerRuntime: import("../../providers/runtime.js").ProviderRuntime | undefined,
+  signal?: AbortSignal,
+): Promise<string> {
+  const passed = result.can_execute;
+  const failedRules: string[] = Array.isArray(result.validation.failed_rules) ? result.validation.failed_rules as string[] : [];
+  const errors: string[] = result.blocking_errors.slice(0, 4);
+
+  // Fallback: deterministic markdown when no LLM is available
+  if (providerRuntime === undefined || !providerRuntime.configured) {
+    return passed
+      ? `## Workflow Generated ✓\n\nI've generated a workflow that passed all policy checks and is ready to execute.\n\nClick **Pass to Canvas** in the panel to review and run it.`
+      : `## Workflow Blocked\n\nI generated a workflow, but the validator blocked it.\n\n**Failed rules:** ${failedRules.length ? failedRules.map((r) => `\`${r}\``).join(", ") : "see errors below"}\n\n${errors.length ? "**Errors:**\n" + errors.map((e) => `- ${e}`).join("\n") + "\n\n" : ""}Ask me to fix these issues and I'll regenerate.`;
+  }
+
+  const historySection = priorMessages.slice(-6).join("\n");
+  const prompt = [
+    "You are an AI workflow assistant. The user asked you to build an automation workflow, you generated it, and it was validated.",
+    "Respond in clear markdown — like a senior engineer explaining what they built.",
+    "",
+    historySection.length > 0 ? `CONVERSATION HISTORY:\n${historySection}\n` : "",
+    `USER REQUEST: ${userMessage}`,
+    "",
+    "GENERATED YAML:",
+    "```yaml",
+    result.yaml,
+    "```",
+    "",
+    `VALIDATION: ${passed ? "PASSED ✓ — the workflow cleared all policy rules" : "BLOCKED ✗"}`,
+    !passed && failedRules.length > 0 ? `Failed rules: ${failedRules.join(", ")}` : "",
+    !passed && errors.length > 0 ? `Errors:\n${errors.map((e) => `- ${e}`).join("\n")}` : "",
+    "",
+    "Write a concise markdown response (under 300 words) that:",
+    "- Starts with a ## heading naming the workflow",
+    "- Explains what it does in 1-2 sentences",
+    "- Lists the key steps as short bullets (derive from the YAML steps)",
+    passed
+      ? "- Confirms it passed validation and is ready to execute"
+      : "- Clearly explains what failed (name the rule IDs with `backticks`) and gives 1-2 concrete fixes",
+    "- Ends with a brief next-step line",
+    "Do NOT include the full YAML. Use `code spans` for rule IDs and tool names.",
+  ].filter((l) => l !== "").join("\n");
+
+  try {
+    const response = await providerRuntime.generate(prompt, "prompt/workflow-narrative/v1", signal);
+    return response.text.trim();
+  } catch {
+    return passed
+      ? `## Workflow Generated ✓\n\nI've generated a workflow that passed all policy checks.\n\nClick **Pass to Canvas** in the artifact panel to run it.`
+      : `## Workflow Blocked\n\nThe validator blocked the generated workflow.\n\n**Failed rules:** ${failedRules.map((r) => `\`${r}\``).join(", ") || "see panel"}\n\nAsk me to fix these issues.`;
+  }
 }
 
 function requirePlatformAdmin(user: CurrentUser): void { if (user.role !== "Platform Admin") throw new HandlerFailure(403, "Only Platform Admin can manage providers"); }

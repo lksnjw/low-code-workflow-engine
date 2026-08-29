@@ -22,7 +22,9 @@ export class RegistryService {
 
   static async load(toolPath: string, rulePath: string): Promise<RegistryService> {
     const [toolBytes, ruleBytes] = await Promise.all([readFile(toolPath), readFile(rulePath)]);
-    const tools = toolArraySchema.parse(JSON.parse(toolBytes.toString("utf8")));
+    const rawTools: unknown = JSON.parse(toolBytes.toString("utf8"));
+    assertExplicitReadOnlyFlags(rawTools);
+    const tools = toolArraySchema.parse(rawTools);
     const rules = ruleArraySchema.parse(JSON.parse(ruleBytes.toString("utf8")));
     return new RegistryService(toolPath, rulePath, freezeSnapshot(tools, rules, fileVersion(toolBytes), fileVersion(ruleBytes)));
   }
@@ -39,6 +41,12 @@ export class RegistryService {
   findTool(name: string): ToolDefinition | undefined {
     const wanted = normalize(name);
     return this.#snapshot.tools.find((tool) => normalize(tool.name) === wanted || normalize(tool.tool_id) === wanted || normalize(tool.mcp_tool_name) === wanted);
+  }
+
+  readOnlyTools(): readonly ToolDefinition[] {
+    return Object.freeze(
+      this.#snapshot.tools.filter((tool) => tool.is_read_only === true),
+    );
   }
 
   findRule(id: string): RuleDefinition | undefined {
@@ -185,4 +193,26 @@ function freezeSnapshot(tools: ToolDefinition[], rules: RuleDefinition[], toolVe
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function assertExplicitReadOnlyFlags(input: unknown): void {
+  if (!Array.isArray(input)) return;
+  for (const [index, item] of input.entries()) {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Object.hasOwn(item, "is_read_only")
+    )
+      continue;
+    const record = item as Record<string, unknown>;
+    const identity =
+      typeof record.name === "string" && record.name.trim() !== ""
+        ? record.name
+        : typeof record.tool_id === "string" && record.tool_id.trim() !== ""
+          ? record.tool_id
+          : `at index ${index}`;
+    throw new Error(
+      `tool ${JSON.stringify(identity)} is missing required is_read_only`,
+    );
+  }
 }

@@ -252,6 +252,82 @@ function NextActionBanner({ nextAction }) {
 }
 
 // ── MAIN COMPONENT ──────────────────────────────────────────────────────────
+// ── Simple inline bar chart ─────────────────────────────────────────────────
+function MiniBarChart({ vis }) {
+  if (!vis || !Array.isArray(vis.data) || vis.data.length === 0) return null;
+  const max = Math.max(...vis.data.map((d) => d.value), 1);
+  return (
+    <div className="mt-2 rounded-xl border border-gray-100 bg-white p-3 dark:border-gray-800 dark:bg-darkBackground">
+      <p className="mb-2 text-xs font-semibold text-gray-700 dark:text-gray-300">{vis.title}</p>
+      <div className="space-y-1.5">
+        {vis.data.map((d, i) => (
+          <div key={i} className="flex items-center gap-2 text-xs">
+            <span className="w-24 shrink-0 truncate text-right text-gray-500 dark:text-gray-400">{d.label}</span>
+            <div className="flex-1 rounded-full bg-gray-100 dark:bg-gray-800" style={{ height: 8 }}>
+              <div
+                className="rounded-full bg-primary"
+                style={{ width: `${(d.value / max) * 100}%`, height: 8 }}
+              />
+            </div>
+            <span className="w-10 shrink-0 text-right font-semibold text-gray-700 dark:text-gray-300">{d.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Query / Audit result panel ──────────────────────────────────────────────
+function QueryResultPanel({ artifact }) {
+  const sources = Array.isArray(artifact.sources) ? artifact.sources : [];
+  const { visualisation, boundHit, iterationsUsed, latencyMs, intent } = artifact;
+
+  return (
+    <div className="space-y-3">
+      {/* ── Intent badge ── */}
+      <div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 dark:border-blue-900/40 dark:bg-blue-900/20">
+        <Icon icon={intent === "AUDIT" ? "mdi:magnify-scan" : "mdi:database-search-outline"} className="h-4 w-4 text-blue-500" />
+        <span className="text-xs font-bold text-blue-700 dark:text-blue-300">{intent === "AUDIT" ? "Audit Query" : "Data Query"}</span>
+        {typeof iterationsUsed === "number" && (
+          <span className="ml-auto text-[10px] text-blue-500">{iterationsUsed} tool call{iterationsUsed !== 1 ? "s" : ""}</span>
+        )}
+        {typeof latencyMs === "number" && (
+          <span className="text-[10px] text-blue-400">{(latencyMs / 1000).toFixed(1)}s</span>
+        )}
+      </div>
+
+      {/* ── Bound hit warning ── */}
+      {boundHit && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-300">
+          <Icon icon="mdi:alert-outline" className="h-4 w-4 shrink-0" />
+          Search ended early — iteration or token limit reached.
+        </div>
+      )}
+
+      {/* ── Visualisation ── */}
+      {visualisation && <MiniBarChart vis={visualisation} />}
+
+      {/* ── Sources ── */}
+      {sources.length > 0 && (
+        <Collapsible title="Sources" icon="mdi:api" count={sources.length}>
+          <div className="space-y-1.5">
+            {sources.map((call, i) => (
+              <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 p-2 text-xs dark:border-gray-800 dark:bg-darkBackgroundVery">
+                <p className="font-mono font-semibold text-gray-800 dark:text-white">{call.name}</p>
+                {Object.keys(call.arguments ?? {}).length > 0 && (
+                  <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all text-[10px] text-gray-400 dark:text-gray-500">
+                    {JSON.stringify(call.arguments, null, 2)}
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
+        </Collapsible>
+      )}
+    </div>
+  );
+}
+
 function ChatArtifactPanel({ artifact }) {
   const { startWorkflow } = useRoute();
   const { has } = usePermissions();
@@ -269,6 +345,11 @@ function ChatArtifactPanel({ artifact }) {
     );
   }
 
+  // Query / Audit path (intent-routed)
+  if (artifact.intent === "QUERY" || artifact.intent === "AUDIT") {
+    return <QueryResultPanel artifact={artifact} />;
+  }
+
   const {
     blocking_errors: rawBlockingErrors,
     can_execute,
@@ -278,6 +359,9 @@ function ChatArtifactPanel({ artifact }) {
     validation_summary = {},
     selected_workflow_yaml,
     selected_candidate_id,
+    chatSessionId,
+    chatMessageId,
+    traceId,
   } = artifact;
 
   const blocking_errors = rawBlockingErrors ?? [];
@@ -296,6 +380,9 @@ function ChatArtifactPanel({ artifact }) {
       canExecute: can_execute,
       validationSummary: validation_summary,
       source: "chat_semantic_validator",
+      chatSessionId,
+      chatMessageId,
+      traceId,
     });
     startWorkflow();
   };

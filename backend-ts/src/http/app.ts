@@ -20,7 +20,9 @@ import {
   runWorkflowRequestSchema,
   type Workflow,
 } from "../models/schemas.js";
+import type { ErpbridgeMcpSession } from "../tools/erpbridge-mcp-client.js";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
+import { withoutSecretFields } from "../redact/secrets.js";
 import type { RegistryService } from "../registry/service.js";
 import type { Repository, User } from "../repository/store.js";
 import type { ProviderRuntime } from "../providers/runtime.js";
@@ -28,9 +30,21 @@ import type { SynthesisService } from "../synthesis/service.js";
 import type { ValidationGate } from "../governance/gate.js";
 import { AsyncMutex } from "../repository/async-mutex.js";
 import { partialResult, type Executor } from "../runner/executor.js";
+import { generateExecutionAnalysis, type ExecutionAnalysisInput } from "../agent/execution-analyst.js";
 import type { RegistryValidator } from "../validator/registry-validator.js";
 import { createDispatchIdentity } from "../tools/registry.js";
 import { routeTable, type RouteDefinition } from "./generated-routes.js";
+import {
+  canReadExecution,
+  visibleExecutions,
+} from "./execution-scope.js";
+import { buildTraceChain } from "./trace-chain.js";
+import {
+  initializeRequestTrace,
+  isTraceId,
+  requestTraceId,
+} from "../trace/request-trace.js";
+import { attachDispatchAuditTrace } from "../trace/audit-trace.js";
 import {
   ADMIN_UNHANDLED,
   handleAdministrationRoute,
@@ -57,6 +71,7 @@ import {
 } from "./handlers/workflows.js";
 import {
   HandlerFailure,
+  stringValue,
   validateWorkflow as validateWithGovernance,
 } from "./handlers/common.js";
 
@@ -69,6 +84,7 @@ export type ApplicationServices = {
   executor: Executor;
   providerRuntime?: ProviderRuntime;
   synthesis?: SynthesisService;
+  erpbridgeSession?: ErpbridgeMcpSession;
   contextAvailable?: boolean;
 };
 
@@ -194,6 +210,13 @@ export async function buildApp(
           : normalized.message;
     void reply.status(status).send(fail(message, null));
   });
+  app.addHook("onRequest", async (request) => {
+    initializeRequestTrace(request);
+  });
+  app.addHook("onSend", async (request, reply, payload) => {
+    void reply.header("x-trace-id", requestTraceId(request));
+    return payload;
+  });
 
   for (const route of routeTable) {
     if (route.path === "/ws/*") {
@@ -232,9 +255,9 @@ export async function buildApp(
             ),
     });
   }
-  if (routeTable.length !== 168)
+  if (routeTable.length !== 170)
     throw new Error(
-      `route table has ${routeTable.length} routes, expected 168`,
+      `route table has ${routeTable.length} routes, expected 170`,
     );
   return app;
 }
@@ -427,7 +450,7 @@ async function handleRoute(
     route.path === `${services.config.apiBasePath}/executions` &&
     route.method === "GET"
   )
-    return listExecutions(reply, current!, services);
+    return listExecutions(request, reply, current!, services);
   if (
     route.path === `${services.config.apiBasePath}/executions/:id` &&
     route.method === "GET"
@@ -825,10 +848,16 @@ async function createWorkflow(
           yaml: z.string(),
           candidate_id: z.string().optional(),
           id: z.string().optional(),
+          chatSessionId: z.string().optional(),
+          chatMessageId: z.string().optional(),
+          traceId: z.string().optional(),
         })
         .passthrough()
         .optional(),
       tags: z.array(z.string()).optional(),
+      chatSessionId: z.string().optional(),
+      chatMessageId: z.string().optional(),
+      traceId: z.string().optional(),
     })
     .strict();
   const parsed = schema.safeParse(request.body);
@@ -837,6 +866,44 @@ async function createWorkflow(
   const rawYAML = parsed.data.candidate?.yaml ?? parsed.data.yaml ?? "";
   if (rawYAML.trim() === "")
     return reply.status(400).send(fail("Workflow YAML is required", null));
+  const chatSessionId = (
+    parsed.data.chatSessionId ?? parsed.data.candidate?.chatSessionId ?? ""
+  ).trim();
+  const chatMessageId = (
+    parsed.data.chatMessageId ?? parsed.data.candidate?.chatMessageId ?? ""
+  ).trim();
+  const linkedTraceId = (
+    parsed.data.traceId ?? parsed.data.candidate?.traceId ?? ""
+  ).trim();
+  if (linkedTraceId !== "" && !isTraceId(linkedTraceId))
+    return reply.status(400).send(fail("Invalid trace ID", null));
+  const traceId = requestTraceId(
+    request,
+    linkedTraceId === "" ? undefined : linkedTraceId,
+  );
+  if ((chatSessionId === "") !== (chatMessageId === ""))
+    return reply
+      .status(400)
+      .send(fail("Chat session and message IDs must be provided together", null));
+  if (chatSessionId !== "") {
+    const originExists = await services.repository.read((state) => {
+      const chat = state.chats[chatSessionId];
+      if (
+        chat === undefined ||
+        (chat.ownerId !== user.id &&
+          !(user as User & { permissions?: string[] }).permissions?.includes(
+            "workflow:read",
+          ))
+      )
+        return false;
+      return chat.messages.some(
+        (message) =>
+          message.id === chatMessageId && stringValue(message.role) === "user",
+      );
+    });
+    if (!originExists)
+      return reply.status(400).send(fail("Chat candidate origin not found", null));
+  }
   let blueprint;
   try {
     blueprint = parseWorkflowYAMLStrict(rawYAML);
@@ -850,11 +917,18 @@ async function createWorkflow(
     "CreateWorkflow",
     rawYAML,
     user,
+    {
+      traceId,
+      ...(chatSessionId === "" ? {} : { sessionId: chatSessionId }),
+      ...(chatMessageId === "" ? {} : { messageId: chatMessageId }),
+      candidateId:
+        parsed.data.candidate?.candidate_id ?? parsed.data.candidate?.id,
+    },
   );
   if (!gate.result.passed)
     return reply
       .status(422)
-      .send(fail("Workflow validation failed", gate.result));
+      .send(fail("Workflow validation failed", { ...gate.result, traceId }));
   const workflow = await services.repository.mutate((state) => {
     state.counter += 1;
     const id = `wf_${state.counter}_${randomBytes(4).toString("hex")}`;
@@ -887,6 +961,10 @@ async function createWorkflow(
       updatedAt: now,
       yaml: rawYAML,
       archived: false,
+      ...(chatSessionId === ""
+        ? {}
+        : { chatSessionId, chatMessageId }),
+      ...(linkedTraceId === "" ? {} : { traceId }),
     };
     state.workflows[id] = item;
     if (fromCandidate) {
@@ -949,17 +1027,19 @@ async function validateWorkflow(
     isRecord(request.body) && typeof request.body.yaml === "string"
       ? request.body.yaml
       : item.yaml;
+  const traceId = requestTraceId(request, item.traceId);
   const gate = await validateWithGovernance(
     services,
     "ValidateWorkflow",
     raw,
     user,
+    { traceId, workflowId: item.id },
   );
   return reply.send(
     ok(
       gate.result,
       gate.result.passed ? "Workflow is valid" : "Workflow is invalid",
-      null,
+      { traceId },
     ),
   );
 }
@@ -978,6 +1058,7 @@ async function runWorkflow(
   );
   if (workflow === null)
     return reply.status(404).send(fail("Workflow not found", null));
+  const traceId = requestTraceId(request, workflow.traceId);
   if (
     !user.permissions.includes("workflow:run") &&
     workflow.owner.id !== user.id &&
@@ -991,11 +1072,12 @@ async function runWorkflow(
     "RunWorkflow",
     workflow.yaml,
     user,
+    { traceId, workflowId: workflow.id },
   );
   if (!gate.result.passed || gate.token === null)
     return reply
       .status(422)
-      .send(fail("Workflow validation failed", gate.result));
+      .send(fail("Workflow validation failed", { ...gate.result, traceId }));
   if (parsed.data.dryRun)
     return reply.send(
       ok(
@@ -1006,7 +1088,7 @@ async function runWorkflow(
           planned_steps: parseWorkflowYAMLStrict(workflow.yaml).steps,
         },
         "Dry run validation passed",
-        null,
+      { traceId },
       ),
     );
   const execution = await services.repository.mutate((state) => {
@@ -1023,6 +1105,10 @@ async function runWorkflow(
       tokens: { input: 0, output: 0, total: 0 },
       costUsd: 0,
       startedBy: { id: user.id, name: user.name },
+      ...(workflow.chatSessionId === undefined
+        ? {}
+        : { chatSessionId: workflow.chatSessionId }),
+      traceId,
     };
     state.executions[id] = item;
     return item;
@@ -1038,7 +1124,20 @@ async function runWorkflow(
       parsed.data.input ?? {},
       gate.token,
       dispatchIdentity,
+      undefined,
+      {
+        traceId,
+        workflowId: workflow.id,
+        executionId: execution.id,
+        actor: { id: user.id, role: user.role },
+      },
     );
+    await attachDispatchAuditTrace(services.repository, execution.id, {
+      traceId,
+      workflowId: workflow.id,
+      executionId: execution.id,
+      actor: { id: user.id, role: user.role },
+    });
     const completed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
       item.status = "DONE";
@@ -1053,10 +1152,17 @@ async function runWorkflow(
         id: `log_${index + 1}`,
         executionId: item.id,
         ...log,
+        traceId,
       }));
-      state.timelines[item.id] = result.timeline;
+      state.timelines[item.id] = result.timeline.map((entry) => ({
+        ...entry,
+        traceId,
+      }));
       return structuredClone(item);
     });
+    if (completed.chatSessionId && services.providerRuntime?.configured) {
+      void postExecutionAnalysis(completed, result.timeline, services);
+    }
     return reply.send(
       ok(
         completed,
@@ -1065,6 +1171,12 @@ async function runWorkflow(
       ),
     );
   } catch (error) {
+    await attachDispatchAuditTrace(services.repository, execution.id, {
+      traceId,
+      workflowId: workflow.id,
+      executionId: execution.id,
+      actor: { id: user.id, role: user.role },
+    });
     const partial = partialResult(error);
     const failed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
@@ -1088,9 +1200,13 @@ async function runWorkflow(
           id: `log_${index + 1}`,
           executionId: item.id,
           ...log,
+          traceId,
         }),
       );
-      state.timelines[item.id] = partial?.timeline ?? [];
+      state.timelines[item.id] = (partial?.timeline ?? []).map((entry) => ({
+        ...entry,
+        traceId,
+      }));
       state.healing[item.id] = {
         executionId: item.id,
         workflowId: item.workflowId,
@@ -1101,27 +1217,43 @@ async function runWorkflow(
       };
       return structuredClone(item);
     });
+    if (failed.chatSessionId && services.providerRuntime?.configured) {
+      void postExecutionAnalysis(failed, partial?.timeline ?? [], services);
+    }
     return reply.status(422).send(
       fail(`Workflow execution failed: ${errorText(error)}`, {
         executionId: failed.id,
         status: failed.status,
+        traceId,
       }),
     );
   }
 }
 
 async function listExecutions(
+  request: FastifyRequest,
   reply: FastifyReply,
   user: User & { permissions: string[] },
   services: ApplicationServices,
 ): Promise<unknown> {
   const state = await services.repository.snapshot();
-  const all = Object.values(state.executions);
-  const visible = user.permissions.includes("workflow:read")
-    ? all
-    : all.filter((item) => item.startedBy.id === user.id);
+  const query = request.query as Record<string, unknown>;
+  const traceId = stringValue(query.traceId).trim();
+  if (traceId !== "") {
+    if (!isTraceId(traceId))
+      return reply.status(400).send(fail("Invalid trace ID", null));
+    const chain = buildTraceChain(state, user, traceId);
+    return reply.send(
+      ok(chain, "OK", { traceId, count: chain.length }),
+    );
+  }
+  const chatSessionId = stringValue(query.chatSessionId).trim();
+  const all = Object.values(state.executions).filter(
+    (item) => chatSessionId === "" || item.chatSessionId === chatSessionId,
+  );
+  const visible = visibleExecutions(user, all);
   return reply.send(
-    ok(visible, "OK", {
+    ok(visible.map((item) => withoutSecretFields(item)), "OK", {
       page: 1,
       limit: 20,
       total: visible.length,
@@ -1141,11 +1273,10 @@ async function getExecution(
   );
   if (
     item === null ||
-    (!user.permissions.includes("workflow:read") &&
-      item.startedBy.id !== user.id)
+    !canReadExecution(user, item)
   )
     return reply.status(404).send(fail("Execution not found", null));
-  return reply.send(ok(item, "OK", null));
+  return reply.send(ok(withoutSecretFields(item), "OK", null));
 }
 
 async function genericRoute(
@@ -1291,5 +1422,47 @@ class HTTPFailure extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+async function postExecutionAnalysis(
+  execution: { id: string; workflowId: string; workflowName?: string; status: string; startedAt: string; completedAt: string | null; durationMs: number; stepOutputs?: Record<string, unknown>; failure?: Record<string, unknown>; chatSessionId?: string; tokens?: { input: number; output: number; total: number } },
+  timeline: Array<{ nodeId?: unknown; output?: unknown; durationMs?: unknown }>,
+  services: ApplicationServices,
+): Promise<void> {
+  if (!execution.chatSessionId || !services.providerRuntime) return;
+  try {
+    const failedStepId = typeof execution.failure?.failedStepId === "string" ? execution.failure.failedStepId : undefined;
+    const input: ExecutionAnalysisInput = {
+      executionId: execution.id,
+      workflowName: String(execution.workflowName ?? execution.workflowId),
+      status: execution.status === "DONE" ? "DONE" : "FAILED",
+      startedAt: execution.startedAt,
+      completedAt: execution.completedAt,
+      durationMs: execution.durationMs,
+      stepOutputs: execution.stepOutputs ?? {},
+      timeline: timeline.map((t) => ({ nodeId: String(t.nodeId ?? ""), output: t.output, durationMs: typeof t.durationMs === "number" ? t.durationMs : 0 })),
+      ...(failedStepId !== undefined ? { failedStepId } : {}),
+      ...(execution.tokens !== undefined ? { tokens: execution.tokens } : {}),
+    };
+    const analysis = await generateExecutionAnalysis(input, services.providerRuntime);
+    await services.repository.mutate((state) => {
+      const chat = state.chats[execution.chatSessionId!];
+      if (chat === undefined) return;
+      state.counter += 1;
+      const id = `msg_${state.counter}_${randomBytes(4).toString("hex")}`;
+      const message = {
+        id,
+        role: "system",
+        text: analysis.text,
+        createdAt: new Date().toISOString(),
+        ...(analysis.visualisation !== undefined ? { artifacts: { intent: "EXECUTION_ANALYSIS", visualisation: analysis.visualisation, executionId: execution.id } } : { artifacts: { intent: "EXECUTION_ANALYSIS", executionId: execution.id } }),
+      };
+      chat.messages.push(message);
+      chat.messageCount = chat.messages.length;
+      chat.updatedAt = new Date().toISOString();
+    });
+  } catch {
+    // Fire-and-forget: analysis failure must not affect the execution response
   }
 }

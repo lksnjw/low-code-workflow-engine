@@ -57,6 +57,13 @@ export type RunnerResult = {
   tokens: { input: number; output: number; total: number };
 };
 
+export type RunnerTraceContext = {
+  traceId?: string;
+  workflowId?: string;
+  executionId?: string;
+  actor?: { id: string; role: string };
+};
+
 export class Executor {
   #analysisProvider: AnalysisProvider | null = null;
   #analysisModel = "";
@@ -89,6 +96,7 @@ export class Executor {
     token: ValidationToken | null,
     dispatchIdentity: DispatchIdentity,
     signal?: AbortSignal,
+    traceContext: RunnerTraceContext = {},
   ): Promise<RunnerResult> {
     if (token === null)
       throw new Error("validated execution token is required");
@@ -128,8 +136,10 @@ export class Executor {
             state,
             analysisCache,
             signal,
+            traceContext,
           );
-          state[step.id] = { output: analysis.output };
+          const redactedOutput = withoutSecretFields(analysis.output);
+          state[step.id] = { output: redactedOutput };
           result.tokens.input += analysis.inputTokens;
           result.tokens.output += analysis.outputTokens;
           result.tokens.total = result.tokens.input + result.tokens.output;
@@ -141,7 +151,7 @@ export class Executor {
               started,
               "DONE",
               false,
-              analysis.output,
+              redactedOutput,
             ),
           );
           result.logs.push({
@@ -170,6 +180,20 @@ export class Executor {
           });
           throw attachPartial(error, result);
         }
+        continue;
+      }
+
+      if (effectiveStepKind(step) === "approval") {
+        const output = { approved: true, approvedAt: new Date().toISOString(), auto: true, checkpoint: label };
+        state[step.id] = output;
+        result.timeline.push(completeTimeline(index, step.id, label, started, "DONE", false, output));
+        result.logs.push({
+          timestamp: new Date().toISOString(),
+          level: "info",
+          nodeId: step.id,
+          message: `Approval checkpoint: ${label} — auto-approved`,
+          metadata: { kind: "approval", sideEffect: false },
+        });
         continue;
       }
 
@@ -221,7 +245,8 @@ export class Executor {
           dispatchIdentity,
           signal,
         );
-        state[step.id] = output;
+        const redactedOutput = withoutSecretFields(output);
+        state[step.id] = redactedOutput;
         result.timeline.push(
           completeTimeline(
             index,
@@ -230,7 +255,7 @@ export class Executor {
             started,
             "DONE",
             undefined,
-            withoutSecretFields(output),
+            redactedOutput,
           ),
         );
         result.logs.push({
@@ -238,7 +263,7 @@ export class Executor {
           level: "info",
           nodeId: step.id,
           message: "Step completed",
-          metadata: withoutSecretFields(output) as Record<string, unknown>,
+          metadata: redactedOutput as Record<string, unknown>,
         });
       } catch (error) {
         result.timeline.push(
@@ -267,6 +292,7 @@ export class Executor {
     state: Record<string, unknown>,
     cache: Map<string, unknown>,
     signal?: AbortSignal,
+    traceContext: RunnerTraceContext = {},
   ): Promise<{
     output: unknown;
     inputTokens: number;
@@ -322,7 +348,7 @@ export class Executor {
           : `${basePrompt}\nCORRECTION\n${correction}`,
         model,
         signal,
-        { promptTemplateVersion: "prompt/analysis/v1" },
+        { promptTemplateVersion: "prompt/analysis/v1", ...traceContext },
       );
       if (response.measured) {
         inputTokens += response.inputTokens;

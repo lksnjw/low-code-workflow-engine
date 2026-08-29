@@ -23,6 +23,7 @@ export type ErpbridgeMcpSdkClient = Readonly<{
 
 export type ErpbridgeMcpSession = Readonly<{
   clientFor(definition: ToolDefinition): GovernedMCPClient;
+  callToolDirect(toolName: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
   listTools(): Promise<readonly ErpbridgeMcpSdkTool[]>;
   close(): Promise<void>;
 }>;
@@ -65,6 +66,13 @@ export async function createErpbridgeMcpSession(options: {
   return Object.freeze({
     clientFor: (definition: ToolDefinition) =>
       createToolClient(sdkClient, options.validator, definition, () => closed),
+    callToolDirect: async (toolName: string, args: Record<string, unknown>) => {
+      if (closed) throw new Error("ERPBridge MCP session is closed");
+      const result = await sdkClient.callTool(toolName, args);
+      const envelope = asResultRecord(result);
+      if (envelope.isError === true) throw new ErpbridgeMcpToolError(envelope);
+      return envelope;
+    },
     listTools: () => sdkClient.listTools(),
     close,
   });
