@@ -308,9 +308,10 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, user: { id: user.id, role: user.role, department: user.departmentId }, model: stringValue(body.model), priorMessages: stored.priorMessages, signal: request.signal, traceId, sessionId: requestParam(request, "id"), messageId: stringValue(stored.userMessage.id) }); }
   catch (error) {
     const errText = errorText(error);
+    const errorDetail = errText.split(":").at(-1)?.trim() || errText;
     const friendlyText = errText.includes("HTTP 400") || errText.includes("Generation attempt failed") || errText.includes("Candidate generation failed")
       ? "I wasn't able to generate a workflow for this request.\n\nThis usually happens when the request involves capabilities not available in this ERP system (e.g. tax verification, sanctions checking, email notifications), or when the AI model is temporarily unavailable.\n\nTry asking for a simpler workflow, or check **Capabilities** to see what this system supports."
-      : `Unable to generate workflow — the generation service encountered an error. Please try again.\n\n_${errText.split(":").slice(-1)[0].trim()}_`;
+      : `Unable to generate workflow — the generation service encountered an error. Please try again.\n\n_${errorDetail}_`;
     const errMessage = await services.repository.mutate((state) => {
       const chat = state.chats[requestParam(request, "id")];
       if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
@@ -324,7 +325,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   const assistantText = await generateWorkflowNarrative(content, result, stored.priorMessages, services.providerRuntime, request.signal);
   const chatSessionId = requestParam(request, "id");
   const chatMessageId = stringValue(stored.userMessage.id);
-  const artifacts = { ...result, chatSessionId, chatMessageId, traceId, intent: "WORKFLOW" };
+  const artifacts = compactWorkflowArtifacts(result, chatSessionId, chatMessageId, traceId);
   const assistantMessage = await services.repository.mutate((state) => {
     const chat = state.chats[requestParam(request, "id")];
     if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
@@ -347,6 +348,69 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     toolCandidates: retrieval.tools ?? [],
     ruleCandidates: [...(retrieval.rules ?? []), ...(retrieval.global_rules ?? [])],
   }, "Message processed", null));
+}
+
+function compactWorkflowArtifacts(
+  result: import("../../synthesis/service.js").SynthesisResult,
+  chatSessionId: string,
+  chatMessageId: string,
+  traceId: string,
+): Record<string, unknown> {
+  const retrieval = result.retrieval as {
+    tools?: unknown[];
+    rules?: unknown[];
+    global_rules?: unknown[];
+    examples?: unknown[];
+  };
+  return {
+    intent: "WORKFLOW",
+    chatSessionId,
+    chatMessageId,
+    traceId,
+    validation: result.validation,
+    can_execute: result.can_execute,
+    selected_candidate_id: result.selected_candidate_id,
+    selected_workflow_yaml: result.selected_workflow_yaml,
+    ...(result.can_execute ? {} : { yaml: result.yaml }),
+    validation_summary: result.validation_summary,
+    blocking_errors: result.blocking_errors,
+    next_action: result.next_action,
+    candidates: result.candidates.map((candidate) => ({
+      id: candidate.id,
+      candidate_id: candidate.candidate_id,
+      status: candidate.status,
+      score: candidate.score,
+    })),
+    retrieval: {
+      tools: pickArtifactRecords(retrieval.tools, [
+        "tool_id", "name", "display_name", "description", "endpoint",
+        "http_method", "risk_level", "erp_system", "bpi_process_alignment",
+        "score", "current_gaps", "allowed_roles", "required_parameters",
+      ]),
+      rules: pickArtifactRecords(retrieval.rules, [
+        "rule_id", "rule_name", "rule_type", "description", "enforcement_action",
+        "severity", "score",
+      ]),
+      global_rules: pickArtifactRecords(retrieval.global_rules, [
+        "rule_id", "rule_name", "rule_type", "description", "enforcement_action",
+        "severity", "score",
+      ]),
+      examples: pickArtifactRecords(retrieval.examples, [
+        "scenario_id", "user_request", "user_role", "risk_level",
+        "expected_decision", "expected_domain",
+      ]),
+    },
+  };
+}
+
+function pickArtifactRecords(values: unknown[] | undefined, keys: readonly string[]): Record<string, unknown>[] {
+  if (!Array.isArray(values)) return [];
+  return values.flatMap((value) => {
+    if (!isRecord(value)) return [];
+    const record: Record<string, unknown> = {};
+    for (const key of keys) if (value[key] !== undefined) record[key] = structuredClone(value[key]);
+    return [record];
+  });
 }
 
 async function generateWorkflowNarrative(
