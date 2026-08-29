@@ -84,37 +84,35 @@ const legacyMcp =
         validator,
       })
     : null;
-const erpbridgeSession: ErpbridgeMcpSession | null =
-  config.mcpTransport === "erpbridge-mcp"
-    ? await createErpbridgeMcpSession({
-        baseURL: config.erpbridgeBaseURL,
-        token: config.erpbridgeMcpToken,
-        timeoutMs: config.mcpTimeoutMs,
-        validator,
-      })
-    : null;
-const clientFor = (definition: ToolDefinition): GovernedMCPClient =>
-  erpbridgeSession === null
-    ? legacyMcp!
-    : erpbridgeSession.clientFor(definition);
+let erpbridgeSession: ErpbridgeMcpSession | null = null;
+if (config.mcpTransport === "erpbridge-mcp") {
+  try {
+    erpbridgeSession = await createErpbridgeMcpSession({
+      baseURL: config.erpbridgeBaseURL,
+      token: config.erpbridgeMcpToken,
+      timeoutMs: config.mcpTimeoutMs,
+      validator,
+    });
+  } catch (err) {
+    console.warn("[erpbridge] MCP session failed to start — ERP tools will be unavailable:", err instanceof Error ? err.message : String(err));
+  }
+}
+const clientFor = (definition: ToolDefinition): GovernedMCPClient | null =>
+  erpbridgeSession !== null
+    ? erpbridgeSession.clientFor(definition)
+    : legacyMcp;
 const toolRegistry = new ToolRegistry();
-for (const definition of registries.snapshot().tools)
-  toolRegistry.register(
-    new GenericMCPTool(
-      definition.name,
-      definition.description,
-      clientFor(definition),
-    ),
-  );
+for (const definition of registries.snapshot().tools) {
+  const client = clientFor(definition);
+  if (client !== null)
+    toolRegistry.register(new GenericMCPTool(definition.name, definition.description, client));
+}
 registries.onToolUpsert((definition) => {
-  if (!toolRegistry.has(definition.name))
-    toolRegistry.register(
-      new GenericMCPTool(
-        definition.name,
-        definition.description,
-        clientFor(definition),
-      ),
-    );
+  if (!toolRegistry.has(definition.name)) {
+    const client = clientFor(definition);
+    if (client !== null)
+      toolRegistry.register(new GenericMCPTool(definition.name, definition.description, client));
+  }
 });
 const executor = new Executor(toolRegistry, validator);
 const providerRuntime = new ProviderRuntime(repository, executor);
