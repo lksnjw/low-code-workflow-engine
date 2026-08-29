@@ -10,7 +10,21 @@ import { requestTraceId } from "../../trace/request-trace.js";
 import type { RouteDefinition } from "../generated-routes.js";
 import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, paginate, requestParam, stringValue } from "./common.js";
 import { classifyIntent } from "../../agent/intent-classifier.js";
-import { runQueryLoop } from "../../agent/query-loop.js";
+import { runQueryLoop, type ToolStep } from "../../agent/query-loop.js";
+
+function buildWorkflowYamlFromSteps(steps: ToolStep[], userPrompt: string): string {
+  const safeName = userPrompt.trim().slice(0, 60).replace(/[^a-zA-Z0-9 ]/g, "").trim() || "Chat Workflow";
+  const stepsYaml = steps
+    .map((step, i) => {
+      const friendlyDesc = step.toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      const paramsJson = Object.keys(step.arguments).length > 0
+        ? "\n    parameters:\n" + Object.entries(step.arguments).map(([k, v]) => `      ${k}: ${JSON.stringify(v)}`).join("\n")
+        : "";
+      return `  - id: step_${i + 1}\n    action: ${step.toolName}\n    description: "${friendlyDesc}"${paramsJson}`;
+    })
+    .join("\n");
+  return `name: "${safeName}"\ndescription: "Saved from chat session"\nsteps:\n${stepsYaml}`;
+}
 
 // ── Workflows catalog (feasibility policy) ──────────────────────────────────
 interface CatalogWorkflow {
@@ -275,13 +289,18 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
       } catch (error) {
         throw new HandlerFailure(502, `Query agent failed: ${errorText(error)}`);
       }
+      const workflowDraft = loopResult.toolSteps.length > 0
+        ? buildWorkflowYamlFromSteps(loopResult.toolSteps, content)
+        : undefined;
       const queryArtifacts = {
         intent,
         sources: loopResult.toolCallLog,
+        toolSteps: loopResult.toolSteps,
         boundHit: loopResult.boundHit,
         iterationsUsed: loopResult.iterationsUsed,
         latencyMs: loopResult.latencyMs,
         ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
+        ...(workflowDraft !== undefined ? { workflowDraft } : {}),
       };
       const assistantMessage = await services.repository.mutate((state) => {
         const chat = state.chats[requestParam(request, "id")];
@@ -297,7 +316,9 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
         answer: loopResult.text,
         intent,
         sources: loopResult.toolCallLog,
+        toolSteps: loopResult.toolSteps,
         ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
+        ...(workflowDraft !== undefined ? { workflowDraft } : {}),
         boundHit: loopResult.boundHit,
         usage: { inputTokens: loopResult.totalTokens.input, outputTokens: loopResult.totalTokens.output, measured: true },
       }, "Message processed", null));

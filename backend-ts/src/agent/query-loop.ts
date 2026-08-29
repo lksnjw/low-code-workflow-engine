@@ -14,6 +14,12 @@ export type ToolCallLogEntry = {
   iterationIndex: number;
 };
 
+export type ToolStep = {
+  toolName: string;
+  arguments: Record<string, unknown>;
+  result: unknown;
+};
+
 export type QueryLoopInput = {
   userMessage: string;
   chatHistory: Array<{ role: string; text: string }>;
@@ -27,6 +33,7 @@ export type QueryLoopInput = {
 export type QueryLoopResult = {
   text: string;
   toolCallLog: ToolCallLogEntry[];
+  toolSteps: ToolStep[];
   iterationsUsed: number;
   boundHit: boolean;
   visualisation?: VisualisationSpec;
@@ -85,6 +92,7 @@ export async function runQueryLoop(
   ];
 
   const toolCallLog: ToolCallLogEntry[] = [];
+  const toolSteps: ToolStep[] = [];
   const seenCallHashes = new Set<string>();
   const totalTokens = { input: 0, output: 0 };
   let lastText = "";
@@ -113,7 +121,7 @@ export async function runQueryLoop(
 
     if (turn.toolCalls.length === 0 || turn.stopReason !== "tool_calls") {
       // Final text response — done
-      return buildResult(lastText, toolCallLog, iteration + 1, false, totalTokens, started);
+      return buildResult(lastText, toolCallLog, toolSteps, iteration + 1, false, totalTokens, started);
     }
 
     // Append assistant message with tool calls
@@ -135,6 +143,7 @@ export async function runQueryLoop(
         return buildResult(
           lastText || "(Note: search ended — repeated tool call detected.)",
           toolCallLog,
+          toolSteps,
           iteration + 1,
           true,
           totalTokens,
@@ -148,10 +157,12 @@ export async function runQueryLoop(
       let toolResultContent: string;
       try {
         const raw = await callTool(call.name, call.arguments);
+        toolSteps.push({ toolName: call.name, arguments: redactCredentials(call.arguments), result: raw });
         const serialized = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
         // Wrap in structural delimiter to prevent injection
         toolResultContent = `<tool_result id="${escapeAttr(call.id)}" name="${escapeAttr(call.name)}">\n${serialized}\n</tool_result>`;
       } catch (error) {
+        toolSteps.push({ toolName: call.name, arguments: redactCredentials(call.arguments), result: { error: errorText(error) } });
         toolResultContent = `<tool_result id="${escapeAttr(call.id)}" name="${escapeAttr(call.name)}">\n{"error":${JSON.stringify(errorText(error))}}\n</tool_result>`;
       }
 
@@ -164,12 +175,13 @@ export async function runQueryLoop(
   const notice = lastText.trim() !== ""
     ? `${lastText}\n\n*(Note: search incomplete — maximum iterations reached)*`
     : "*(Note: search incomplete — maximum iterations reached)*";
-  return buildResult(notice, toolCallLog, MAX_ITERATIONS, true, totalTokens, started);
+  return buildResult(notice, toolCallLog, toolSteps, MAX_ITERATIONS, true, totalTokens, started);
 }
 
 function buildResult(
   text: string,
   toolCallLog: ToolCallLogEntry[],
+  toolSteps: ToolStep[],
   iterationsUsed: number,
   boundHit: boolean,
   totalTokens: { input: number; output: number },
@@ -180,6 +192,7 @@ function buildResult(
   return {
     text: extractText(text),
     toolCallLog,
+    toolSteps,
     iterationsUsed,
     boundHit,
     ...(vis !== undefined ? { visualisation: vis } : {}),

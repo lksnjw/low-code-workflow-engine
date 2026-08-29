@@ -1,8 +1,15 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import MessageMarkdown from "./MessageMarkdown";
+import { saveWorkflowForCanvas } from "../../utils/workflowCanvas.utils";
 
 // ── Inline validation badge ─────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: ValidationBadge
+ *
+ * Performs the Validation Badge operation on badge for the ChatMessage module.
+ ******************************************************************************/
 function ValidationBadge({ canExecute, failedRules = [] }) {
   if (canExecute == null) return null;
   return (
@@ -21,6 +28,11 @@ function ValidationBadge({ canExecute, failedRules = [] }) {
 }
 
 // ── Collapsible YAML inline preview ────────────────────────────────────────
+/*******************************************************************************
+ * Function: InlineYamlPreview
+ *
+ * Performs the Inline Yaml Preview operation on yaml preview for the ChatMessage module.
+ ******************************************************************************/
 function InlineYamlPreview({ yaml }) {
   const [open, setOpen] = useState(false);
   if (!yaml) return null;
@@ -49,8 +61,18 @@ function InlineYamlPreview({ yaml }) {
 }
 
 // ── Inline mini bar chart (recharts-free, pure CSS) ────────────────────────
+/*******************************************************************************
+ * Function: InlineBarChart
+ *
+ * Performs the Inline Bar Chart operation on bar chart for the ChatMessage module.
+ ******************************************************************************/
 function InlineBarChart({ vis }) {
   if (!vis || !Array.isArray(vis.data) || vis.data.length === 0) return null;
+/*******************************************************************************
+ * Function: max
+ *
+ * Performs the max operation on the application for the ChatMessage module.
+ ******************************************************************************/
   const max = Math.max(...vis.data.map((d) => d.value), 1);
   return (
     <div className="mt-2 rounded-xl border border-gray-100 bg-white p-3 dark:border-gray-800 dark:bg-darkBackground">
@@ -71,6 +93,11 @@ function InlineBarChart({ vis }) {
 }
 
 // ── Tool call sources (query agent) ────────────────────────────────────────
+/*******************************************************************************
+ * Function: InlineSources
+ *
+ * Performs the Inline Sources operation on sources for the ChatMessage module.
+ ******************************************************************************/
 function InlineSources({ sources, boundHit }) {
   const [open, setOpen] = useState(false);
   if (!Array.isArray(sources) || sources.length === 0) return null;
@@ -107,7 +134,35 @@ function InlineSources({ sources, boundHit }) {
   );
 }
 
+// ── View in Canvas handoff button (query / tool-call results) ──────────────
+function CanvasHandoffButton({ workflowDraft, toolSteps, userPrompt }) {
+  const navigate = useNavigate();
+  const [sent, setSent] = useState(false);
+  if (!workflowDraft || !Array.isArray(toolSteps) || toolSteps.length === 0) return null;
+  function handleClick() {
+    saveWorkflowForCanvas({ yaml: workflowDraft, name: userPrompt?.slice(0, 60) || "Chat Workflow", description: "Saved from chat" });
+    setSent(true);
+    navigate("/workflows/canvas");
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={sent}
+      className="mt-3 flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-800/40 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+    >
+      <Icon icon="mdi:vector-square" className="h-3.5 w-3.5 shrink-0" />
+      {sent ? "Opening canvas…" : `View in Canvas (${toolSteps.length} step${toolSteps.length !== 1 ? "s" : ""})`}
+    </button>
+  );
+}
+
 // ── Main ChatMessage ────────────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: ChatMessage
+ *
+ * Performs the Chat Message operation on message for the ChatMessage module.
+ ******************************************************************************/
 function ChatMessage({ message }) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -178,11 +233,15 @@ function ChatMessage({ message }) {
       <div className="max-w-[92%]">
         <MessageMarkdown text={message.text} />
 
-        {/* ── Query: inline sources + chart ── */}
+        {/* ── Query: inline sources + chart + canvas handoff ── */}
         {isQuery && (
           <>
             {artifacts?.visualisation && <InlineBarChart vis={artifacts.visualisation} />}
             <InlineSources sources={artifacts?.sources} boundHit={artifacts?.boundHit} />
+            <CanvasHandoffButton
+              workflowDraft={artifacts?.workflowDraft}
+              toolSteps={artifacts?.toolSteps}
+            />
           </>
         )}
 
