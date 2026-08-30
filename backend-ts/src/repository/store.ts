@@ -125,10 +125,18 @@ export class Repository {
 
   static async open(persistence: PersistenceBackend | null): Promise<Repository> {
     if (persistence === null) return new Repository(null);
+    const t0 = Date.now();
+    console.log("[repo] load() starting...");
     const payload = await persistence.load();
+    console.log(`[repo] load() done in ${Date.now() - t0}ms`);
     const restored = payload === null ? initialState() : restoreState(payload);
     const repository = new Repository(persistence, restored);
-    await persistence.save(Buffer.from(JSON.stringify(restored), "utf8"));
+    const serialized = Buffer.from(JSON.stringify(restored), "utf8");
+    console.log(`[repo] serialized size: ${serialized.byteLength} bytes (vs loaded ${payload?.byteLength ?? 0} bytes)`);
+    const t1 = Date.now();
+    console.log("[repo] save() starting...");
+    await persistence.save(serialized);
+    console.log(`[repo] save() done in ${Date.now() - t1}ms`);
     return repository;
   }
 

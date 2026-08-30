@@ -89,10 +89,12 @@ function ChatWindow({ messages, onSend, loading, error }) {
     settingsService.providers().then((providers) => {
       const active = Array.isArray(providers) ? providers.find((p) => p.active) ?? providers[0] : null;
       if (!active) return;
+      const seen = new Set();
       const models = [
         active.model && { id: active.model, label: active.model },
         active.fallbackModel && active.fallbackModel !== active.model && { id: active.fallbackModel, label: `${active.fallbackModel} (fallback)` },
-      ].filter(Boolean);
+        ...(Array.isArray(active.additionalModels) ? active.additionalModels.map((id) => ({ id, label: id })) : []),
+      ].filter((m) => m && m.id && !seen.has(m.id) && seen.add(m.id));
       setAvailableModels(models);
       setSelectedModel(active.model ?? "");
     }).catch(() => {});

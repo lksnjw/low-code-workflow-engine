@@ -417,6 +417,7 @@ function ChatArtifactPanel({ artifact }) {
     chatSessionId,
     chatMessageId,
     traceId,
+    workflowId,
   } = artifact;
 
   const blocking_errors = rawBlockingErrors ?? [];
@@ -443,6 +444,10 @@ function ChatArtifactPanel({ artifact }) {
       chatSessionId,
       chatMessageId,
       traceId,
+      // The chat handler already auto-saved this workflow (workflowId). Passing it
+      // through lets the canvas update that same record on deploy instead of
+      // creating a second, duplicate workflow.
+      workflowId,
     });
     startWorkflow();
   };
@@ -513,8 +518,8 @@ function ChatArtifactPanel({ artifact }) {
       {tools.length > 0 && (
         <Collapsible title="Retrieved Tools" icon="mdi:tools" count={tools.length} defaultOpen>
           <div className="space-y-2">
-            {tools.map((tool) => (
-              <ToolCard key={tool.tool_id} tool={tool} />
+            {tools.map((tool, i) => (
+              <ToolCard key={tool.tool_id || tool.name || i} tool={tool} />
             ))}
           </div>
         </Collapsible>
@@ -524,8 +529,8 @@ function ChatArtifactPanel({ artifact }) {
       {rules.length > 0 && (
         <Collapsible title="Governance Rules" icon="mdi:scale-balance" count={rules.length}>
           <div className="space-y-2">
-            {rules.map((rule) => (
-              <RuleCard key={rule.rule_id} rule={rule} />
+            {rules.map((rule, i) => (
+              <RuleCard key={rule.rule_id || rule.rule_name || i} rule={rule} />
             ))}
           </div>
         </Collapsible>
@@ -535,8 +540,8 @@ function ChatArtifactPanel({ artifact }) {
       {examples.length > 0 && (
         <Collapsible title="Similar Scenarios" icon="mdi:lightbulb-outline" count={examples.length}>
           <div className="space-y-2">
-            {examples.map((ex) => (
-              <ExampleCard key={ex.scenario_id} example={ex} />
+            {examples.map((ex, i) => (
+              <ExampleCard key={ex.scenario_id || i} example={ex} />
             ))}
           </div>
         </Collapsible>

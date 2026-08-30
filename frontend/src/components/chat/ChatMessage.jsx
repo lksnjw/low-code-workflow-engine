@@ -93,6 +93,121 @@ function InlineBarChart({ vis }) {
   );
 }
 
+// ── Inline line chart (pure SVG, no dependencies) ──────────────────────────
+/*******************************************************************************
+ * Function: InlineLineChart
+ *
+ * Performs the Inline Line Chart operation on line chart for the ChatMessage module.
+ ******************************************************************************/
+function InlineLineChart({ vis }) {
+  if (!vis || !Array.isArray(vis.data) || vis.data.length === 0) return null;
+  const width = 320;
+  const height = 120;
+  const padding = 24;
+  const values = vis.data.map((d) => d.value);
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const step = vis.data.length > 1 ? (width - padding * 2) / (vis.data.length - 1) : 0;
+  const points = vis.data.map((d, i) => {
+    const x = padding + i * step;
+    const y = height - padding - ((d.value - min) / range) * (height - padding * 2);
+    return { x, y, label: d.label, value: d.value };
+  });
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  return (
+    <div className="mt-2 rounded-xl border border-gray-100 bg-white p-3 dark:border-gray-800 dark:bg-darkBackground">
+      <p className="mb-2 text-xs font-semibold text-gray-700 dark:text-gray-300">{vis.title}</p>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: 140 }}>
+        <path d={pathD} fill="none" className="stroke-primary" strokeWidth="2" />
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="2.5" className="fill-primary" />
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+        <span className="truncate">{points[0]?.label}</span>
+        {points.length > 1 && <span className="truncate">{points[points.length - 1]?.label}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Inline pie chart (pure CSS conic-gradient) ─────────────────────────────
+const PIE_COLORS = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ef4444", "#ec4899", "#6366f1", "#84cc16"];
+/*******************************************************************************
+ * Function: InlinePieChart
+ *
+ * Performs the Inline Pie Chart operation on pie chart for the ChatMessage module.
+ ******************************************************************************/
+function InlinePieChart({ vis }) {
+  if (!vis || !Array.isArray(vis.data) || vis.data.length === 0) return null;
+  const total = vis.data.reduce((sum, d) => sum + Math.max(0, d.value), 0) || 1;
+  const segments = vis.data.reduce((acc, d, i) => {
+    const fraction = Math.max(0, d.value) / total;
+    const start = acc.length > 0 ? acc[acc.length - 1].end : 0;
+    const end = start + fraction * 360;
+    acc.push({ ...d, color: PIE_COLORS[i % PIE_COLORS.length], start, end });
+    return acc;
+  }, []);
+  const gradient = segments.map((s) => `${s.color} ${s.start}deg ${s.end}deg`).join(", ");
+  return (
+    <div className="mt-2 rounded-xl border border-gray-100 bg-white p-3 dark:border-gray-800 dark:bg-darkBackground">
+      <p className="mb-2 text-xs font-semibold text-gray-700 dark:text-gray-300">{vis.title}</p>
+      <div className="flex items-center gap-4">
+        <div className="h-24 w-24 shrink-0 rounded-full" style={{ background: `conic-gradient(${gradient})` }} />
+        <div className="min-w-0 flex-1 space-y-1">
+          {segments.slice(0, 8).map((s, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-[11px]">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+              <span className="truncate text-gray-600 dark:text-gray-300">{s.label}</span>
+              <span className="ml-auto shrink-0 font-semibold text-gray-700 dark:text-gray-200">{s.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Inline vis-table (label/value grid from a <vis> block) ─────────────────
+/*******************************************************************************
+ * Function: InlineVisTable
+ *
+ * Performs the Inline Vis Table operation on vis table for the ChatMessage module.
+ ******************************************************************************/
+function InlineVisTable({ vis }) {
+  if (!vis || !Array.isArray(vis.data) || vis.data.length === 0) return null;
+  return (
+    <div className="mt-2 overflow-x-auto rounded-xl border border-gray-100 dark:border-gray-800">
+      <p className="border-b border-gray-100 bg-white px-3 py-2 text-xs font-semibold text-gray-700 dark:border-gray-800 dark:bg-darkBackground dark:text-gray-300">{vis.title}</p>
+      <table className="w-full min-w-max border-collapse text-xs">
+        <tbody>
+          {vis.data.map((d, i) => (
+            <tr key={i} className="border-b border-gray-50 last:border-0 dark:border-gray-800/60">
+              <td className="px-3 py-1.5 text-gray-600 dark:text-gray-400">{d.label}</td>
+              <td className="px-3 py-1.5 text-right font-semibold [font-variant-numeric:tabular-nums] text-gray-800 dark:text-gray-200">{d.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Dispatches a <vis> block to the right chart/table renderer ─────────────
+/*******************************************************************************
+ * Function: InlineVisualisation
+ *
+ * Performs the Inline Visualisation operation on visualisation for the ChatMessage module.
+ ******************************************************************************/
+function InlineVisualisation({ vis }) {
+  if (!vis) return null;
+  if (vis.type === "line") return <InlineLineChart vis={vis} />;
+  if (vis.type === "pie") return <InlinePieChart vis={vis} />;
+  if (vis.type === "table") return <InlineVisTable vis={vis} />;
+  return <InlineBarChart vis={vis} />;
+}
+
 // ── Tool call sources (query agent) ────────────────────────────────────────
 /*******************************************************************************
  * Function: InlineSources
@@ -286,7 +401,7 @@ function ChatMessage({ message }) {
           <div className="min-w-0">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Analysis</p>
             <MessageMarkdown text={message.text} />
-            {artifacts?.visualisation && <InlineBarChart vis={artifacts.visualisation} />}
+            {artifacts?.visualisation && <InlineVisualisation vis={artifacts.visualisation} />}
           </div>
         </div>
         {message.createdAt && (
@@ -343,7 +458,7 @@ function ChatMessage({ message }) {
         {/* ── Query: inline sources + chart only ── */}
         {isQuery && (
           <>
-            {artifacts?.visualisation && <InlineBarChart vis={artifacts.visualisation} />}
+            {artifacts?.visualisation && <InlineVisualisation vis={artifacts.visualisation} />}
             <InlineSources sources={artifacts?.sources} boundHit={artifacts?.boundHit} />
           </>
         )}

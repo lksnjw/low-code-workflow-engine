@@ -204,6 +204,7 @@ export function workflowYamlToCanvas(yaml, metadata = {}) {
     nodes,
     edges,
     workflow: {
+      id: metadata.workflowId ?? null,
       name: workflow.name || metadata.name || "Generated workflow",
       description: workflow.description || metadata.description || "",
       yaml,

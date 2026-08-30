@@ -120,6 +120,7 @@ function getInitialCanvasState() {
       chatSessionId: pendingWorkflow.chatSessionId,
       chatMessageId: pendingWorkflow.chatMessageId,
       traceId: pendingWorkflow.traceId,
+      workflowId: pendingWorkflow.workflowId,
     });
     if (canvas.nodes.length > 0) {
       return canvas;

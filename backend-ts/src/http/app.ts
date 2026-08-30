@@ -29,11 +29,12 @@ import type { ProviderRuntime } from "../providers/runtime.js";
 import type { SynthesisService } from "../synthesis/service.js";
 import type { ValidationGate } from "../governance/gate.js";
 import { AsyncMutex } from "../repository/async-mutex.js";
-import { partialResult, type Executor } from "../runner/executor.js";
+import { type Executor } from "../runner/executor.js";
 import { generateExecutionAnalysis, type ExecutionAnalysisInput } from "../agent/execution-analyst.js";
 import type { RegistryValidator } from "../validator/registry-validator.js";
 import { createDispatchIdentity } from "../tools/registry.js";
 import { routeTable, type RouteDefinition } from "./generated-routes.js";
+import { RBAC_ENABLED } from "../governance/rbac.js";
 import {
   canReadExecution,
   visibleExecutions,
@@ -53,7 +54,7 @@ import {
   ANALYTICS_UNHANDLED,
   handleAnalyticsCatalogRoute,
 } from "./handlers/analytics-catalog.js";
-import { runActionLoop } from "../agent/action-loop.js";
+import { runActionLoop, partialActionSteps } from "../agent/action-loop.js";
 import { discoverTools } from "../agent/tool-discovery.js";
 import { validateWorkflowStatically, analyzeDataFlow } from "../agent/workflow-runtime-validator.js";
 import {
@@ -389,17 +390,21 @@ async function handleRoute(
   if (!publicRoutes.has(routeKey) && auth === null) return;
   const current = auth?.user ?? null;
   if (current !== null) {
-    const policy = routePolicy(route);
-    if (
-      policy !== null &&
-      !policy.required.some((permission) =>
-        current.permissions.includes(permission),
-      )
-    ) {
-      const meta = policy.any
-        ? { requiredAny: policy.required }
-        : { required: policy.required[0] };
-      return reply.status(403).send(fail("Permission denied", meta));
+    // ── RBAC toggle — controls route-level permission enforcement.
+    // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce route policies.
+    if (RBAC_ENABLED) {
+      const policy = routePolicy(route);
+      if (
+        policy !== null &&
+        !policy.required.some((permission) =>
+          current.permissions.includes(permission),
+        )
+      ) {
+        const meta = policy.any
+          ? { requiredAny: policy.required }
+          : { required: policy.required[0] };
+        return reply.status(403).send(fail("Permission denied", meta));
+      }
     }
   }
 
@@ -1079,16 +1084,32 @@ async function runWorkflow(
   user: User & { role: string; permissions: string[] },
   services: ApplicationServices,
 ): Promise<unknown> {
-  const parsed = runWorkflowRequestSchema.safeParse(request.body ?? {});
-  if (!parsed.success)
-    return reply.status(400).send(fail("Invalid request body", null));
   const workflow = await services.repository.read(
     (state) => state.workflows[param(request, "id")] ?? null,
   );
   if (workflow === null)
     return reply.status(404).send(fail("Workflow not found", null));
+  return runWorkflowFor(workflow, request, reply, user, services);
+}
+
+// Shared by POST /workflows/:id/run and POST /executions/:id/retry — the ONLY
+// workflow execution path. No deterministic fallback: every run goes through
+// the self-healing LLM agent loop (runWorkflowWithHealing below).
+export async function runWorkflowFor(
+  workflow: Workflow,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { role: string; permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
+  const parsed = runWorkflowRequestSchema.safeParse(request.body ?? {});
+  if (!parsed.success)
+    return reply.status(400).send(fail("Invalid request body", null));
   const traceId = requestTraceId(request, workflow.traceId);
+  // ── RBAC toggle — controls workflow ownership / assignment enforcement.
+  // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce this check.
   if (
+    RBAC_ENABLED &&
     !user.permissions.includes("workflow:run") &&
     workflow.owner.id !== user.id &&
     !(workflow.assignedUserIds ?? []).includes(user.id)
@@ -1262,48 +1283,61 @@ async function runWorkflow(
       executionId: execution.id,
       actor: { id: user.id, role: user.role },
     });
-    const partial = partialResult(error);
+    const partialSteps = partialActionSteps(error) ?? [];
+    const nowIso = new Date().toISOString();
+    const partialTimeline = partialSteps.map((s, index) => ({
+      id: `tl_${index + 1}`,
+      nodeId: s.toolName,
+      label: s.displayName,
+      status: (s.error === undefined ? "DONE" : "FAILED") as "DONE" | "FAILED",
+      startedAt: s.startedAt,
+      completedAt: s.completedAt,
+      durationMs: Math.max(0, new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime()),
+      output: s.result,
+    }));
     const failed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
       item.status = "FAILED";
-      item.completedAt = new Date().toISOString();
+      item.completedAt = nowIso;
       item.durationMs = Date.now() - new Date(item.startedAt).getTime();
-      item.stepOutputs =
-        partial === null
-          ? {}
-          : Object.fromEntries(
-              Object.entries(partial.state).filter(([key]) => key !== "input"),
-            );
-      item.failure = {
-        failureCategory: "TOOL_FAILURE",
-        failedStepId: partial?.timeline.at(-1)?.nodeId ?? "unknown",
-        failedToolName: "unknown",
-        toolWasCalled: true,
-      };
-      state.executionLogs[item.id] = (partial?.logs ?? []).map(
-        (log, index) => ({
-          id: `log_${index + 1}`,
-          executionId: item.id,
-          ...log,
-          traceId,
-        }),
+      item.stepOutputs = Object.fromEntries(
+        partialSteps.map((s, i) => [`step_${i + 1}_${s.toolName}`, s.result]),
       );
-      state.timelines[item.id] = (partial?.timeline ?? []).map((entry) => ({
-        ...entry,
+      item.failure = {
+        failureCategory: "AGENT_FAILURE",
+        failedStepId: partialSteps.at(-1)?.toolName ?? "unknown",
+        failedToolName: partialSteps.at(-1)?.toolName ?? "unknown",
+        toolWasCalled: partialSteps.length !== 0,
+      };
+      state.executionLogs[item.id] = partialSteps.map((s, index) => ({
+        id: `log_${index + 1}`,
+        executionId: item.id,
+        timestamp: s.completedAt,
+        level: s.error !== undefined ? "error" : "info",
+        nodeId: s.toolName,
+        message: s.error ?? "Step completed",
+        metadata: null,
         traceId,
       }));
-      state.healing[item.id] = {
-        executionId: item.id,
-        workflowId: item.workflowId,
-        status: "HEALING_NOT_ATTEMPTED",
-        summary: "Automatic healing was not attempted",
-        events: [],
-        metrics: {},
-      };
+      state.timelines[item.id] = partialTimeline.map((entry) => ({ ...entry, traceId }));
+      // runWorkflowWithHealing already records real attempt/event history in
+      // state.healing (HEALING_ATTEMPT_N, INTERVENTION_REQUIRED, etc). Only fall
+      // back to a generic record here if it never got the chance to write one
+      // (e.g. the failure happened before the healing loop started).
+      if (state.healing[item.id] === undefined) {
+        state.healing[item.id] = {
+          executionId: item.id,
+          workflowId: item.workflowId,
+          status: "HEALING_NOT_ATTEMPTED",
+          summary: "Automatic healing was not attempted",
+          events: [],
+          metrics: {},
+        };
+      }
       return structuredClone(item);
     });
     if (failed.chatSessionId && services.providerRuntime?.configured) {
-      void postExecutionAnalysis(failed, partial?.timeline ?? [], services);
+      void postExecutionAnalysis(failed, partialTimeline, services);
     }
     return reply.status(422).send(
       fail(`Workflow execution failed: ${errorText(error)}`, {

@@ -21,6 +21,8 @@ export type ActionStep = {
   governanceStatus: "allowed" | "blocked" | "skipped";
   governanceReason?: string;
   error?: string;
+  startedAt: string;
+  completedAt: string;
 };
 
 export type ActionLoopInput = {
@@ -70,6 +72,13 @@ DATA PASSING RULES:
 - For email/notification tools: compose the message body from actual fetched records. Format as a readable list with labels.
 - Pass data as a JSON object with named fields, never as a raw string unless the tool requires it.
 
+DATA INTEGRITY — follow these exactly, no exceptions:
+- Every ID, record, field value, or count you act on or report MUST come from an actual <tool_result>. Never invent, guess, estimate, or assume a value that was not actually returned by a tool call.
+- NEVER simulate, fabricate, or role-play what a tool "would" return. If you have not called the tool yet, you do not have the data — call it first.
+- Do not use example, placeholder, sample, or demo data for any step, even if a value seems obvious or the user described it in the task. Confirm it via a real tool call before using it.
+- If a tool call fails, times out, or returns empty/unexpected data, report the exact error or gap (DATA_GAP / BAD_RESULT) — do not paper over it with a plausible-sounding substitute so the workflow appears to succeed.
+- Only use tools from your available tool list, which are live ERP Bridge tools. Never claim a step succeeded unless a real tool result confirms it.
+
 AFTER ALL STEPS:
 Report: (1) each step's status — DONE / FAILED / SKIPPED, (2) what data was fetched, (3) what was sent or actioned, (4) any errors with their exact messages.
 
@@ -108,6 +117,7 @@ export async function runActionLoop(
   let blocked = false;
   const deadline = Date.now() + TIMEOUT_MS;
 
+  try {
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     if (Date.now() > deadline || totalTokens.output >= TOKEN_BUDGET) break;
 
@@ -135,6 +145,7 @@ export async function runActionLoop(
     for (const call of turn.toolCalls) {
       if (blocked) break;
 
+      const stepStartedAt = new Date().toISOString();
       const toolDef = allTools.find((t) => t.mcp_tool_name === call.name || t.name === call.name);
       const isReadOnly = toolDef?.is_read_only === true;
       const displayName = toolDef?.display_name ?? humanizeName(call.name);
@@ -154,6 +165,8 @@ export async function runActionLoop(
             isReadOnly: false,
             governanceStatus: "blocked",
             governanceReason: gov.reason ?? "Blocked by policy",
+            startedAt: stepStartedAt,
+            completedAt: new Date().toISOString(),
           });
           blocked = true;
           messages.push({
@@ -189,6 +202,8 @@ export async function runActionLoop(
           result: rawResult,
           isReadOnly,
           governanceStatus: isReadOnly ? "skipped" : "allowed",
+          startedAt: stepStartedAt,
+          completedAt: new Date().toISOString(),
         });
         messages.push({
           role: "tool",
@@ -209,6 +224,8 @@ export async function runActionLoop(
           isReadOnly,
           governanceStatus: isReadOnly ? "skipped" : "allowed",
           error: errMsg,
+          startedAt: stepStartedAt,
+          completedAt: new Date().toISOString(),
         });
         messages.push({
           role: "tool",
@@ -217,6 +234,9 @@ export async function runActionLoop(
         });
       }
     }
+  }
+  } catch (error) {
+    throw attachPartialSteps(error, steps);
   }
 
   return {
@@ -227,6 +247,20 @@ export async function runActionLoop(
     totalTokens,
     latencyMs: Math.max(0, Math.round(performance.now() - started)),
   };
+}
+
+// Mirrors runner/executor.ts's attachPartial/partialResult pattern: when the loop
+// throws (e.g. a provider outage mid-run), the steps completed so far are attached
+// to the error so callers can still show real diagnostic info instead of nothing.
+function attachPartialSteps(error: unknown, steps: ActionStep[]): Error {
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  Object.defineProperty(normalized, "actionLoopSteps", { value: steps, enumerable: false });
+  return normalized;
+}
+
+export function partialActionSteps(error: unknown): ActionStep[] | null {
+  if (!(error instanceof Error)) return null;
+  return (error as Error & { actionLoopSteps?: ActionStep[] }).actionLoopSteps ?? null;
 }
 
 function buildWorkflowYaml(steps: ActionStep[], prompt: string): string {

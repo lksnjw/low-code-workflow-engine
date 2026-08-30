@@ -13,6 +13,7 @@ export function normalizeWorkflow(workflow) {
     ...workflow,
     owner: workflow.owner?.name || "Unassigned",
     ownerRecord: workflow.owner,
+    triggerRaw: workflow.trigger,
     trigger:
       workflow.trigger?.displayName || workflow.trigger?.type || workflow.trigger || "Manual",
     successRate: hasRuns ? `${Number(workflow.successRate || 0).toFixed(1)}%` : "—",

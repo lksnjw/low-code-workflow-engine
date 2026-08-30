@@ -14,6 +14,7 @@ import { runQueryLoop, type ToolStep } from "../../agent/query-loop.js";
 import { runActionLoop } from "../../agent/action-loop.js";
 import { discoverTools } from "../../agent/tool-discovery.js";
 import { validateSemantics } from "../../governance/semantic-validator.js";
+import { RBAC_ENABLED, checkErpPolicy } from "../../governance/rbac.js";
 import { modifyWorkflow } from "../../agent/workflow-modifier.js";
 import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
 import { correctToolNamesInYaml } from "../../synthesis/service.js";
@@ -255,20 +256,24 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   const augmentedPriorMessages = workflowContextYaml
     ? [`assistant: I have the following workflow loaded for context:\n**${workflowContextName}**\n\`\`\`yaml\n${workflowContextYaml}\n\`\`\``, ...stored.priorMessages]
     : stored.priorMessages;
-  // ── Feasibility check against workflows catalog ──────────────────────────
-  const feasibility = checkFeasibility(content, user.role);
-  if (!feasibility.feasible) {
-    const denialText = feasibility.matchedWorkflow
-      ? `**Request blocked by policy.**\n\n${feasibility.reason}`
-      : `**Request blocked.**\n\n${feasibility.reason ?? "This action is not permitted in this system."}`;
-    const assistantMessage = await services.repository.mutate((state) => {
-      const chat = state.chats[requestParam(request, "id")];
-      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
-      const message = { id: nextID(state, "msg"), role: "assistant", text: denialText, artifacts: { intent: "POLICY_DENIAL", blockedWorkflow: feasibility.matchedWorkflow?.id ?? null }, createdAt: now(), traceId };
-      chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
-      return message;
-    });
-    return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: denialText, intent: "POLICY_DENIAL" }, "Message processed", null));
+  // ── Feasibility / role-policy check ─────────────────────────────────────
+  // Controlled by RBAC_ENABLED in src/governance/rbac.ts.
+  // Set RBAC_ENABLED = true there to enforce the catalog-based feasibility gate.
+  if (RBAC_ENABLED) {
+    const feasibility = checkFeasibility(content, user.role);
+    if (!feasibility.feasible) {
+      const denialText = feasibility.matchedWorkflow
+        ? `**Request blocked by policy.**\n\n${feasibility.reason}`
+        : `**Request blocked.**\n\n${feasibility.reason ?? "This action is not permitted in this system."}`;
+      const assistantMessage = await services.repository.mutate((state) => {
+        const chat = state.chats[requestParam(request, "id")];
+        if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+        const message = { id: nextID(state, "msg"), role: "assistant", text: denialText, artifacts: { intent: "POLICY_DENIAL", blockedWorkflow: feasibility.matchedWorkflow?.id ?? null }, createdAt: now(), traceId };
+        chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+        return message;
+      });
+      return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: denialText, intent: "POLICY_DENIAL" }, "Message processed", null));
+    }
   }
   const intent = classifyIntent(content);
   if (intent === "CAPABILITIES") {
@@ -287,11 +292,18 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     // Gather ERP tools if bridge is available; fall back to empty (pure conversational)
     let readOnlyTools: readonly import("../../registry/schemas.js").ToolDefinition[] = [];
     if (services.erpbridgeSession !== undefined) {
-      const staticReadOnly = services.registries.readOnlyTools();
-      const allReadOnlyTools = staticReadOnly.length > 0
-        ? staticReadOnly
-        : (await discoverTools(services.erpbridgeSession, services.registries)).filter((t) => t.is_read_only === true);
-      readOnlyTools = selectRelevantTools(content, allReadOnlyTools, 15);
+      // ── RBAC toggle — controls whether QUERY is restricted to read-only tools.
+      // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce read-only mode.
+      if (RBAC_ENABLED) {
+        const staticReadOnly = services.registries.readOnlyTools();
+        const allReadOnlyTools = staticReadOnly.length > 0
+          ? staticReadOnly
+          : (await discoverTools(services.erpbridgeSession, services.registries)).filter((t) => t.is_read_only === true);
+        readOnlyTools = selectRelevantTools(content, allReadOnlyTools, 15);
+      } else {
+        const allLiveTools = await discoverTools(services.erpbridgeSession, services.registries);
+        readOnlyTools = selectRelevantTools(content, allLiveTools, 15);
+      }
     }
     const sessionId = requestParam(request, "id");
     const chatHistory = augmentedPriorMessages.map((line) => {
@@ -358,13 +370,20 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
         { userMessage: content, chatHistory, sessionId: requestParam(request, "id"), actorId: user.id, actorRole: user.role, user: governanceUser, signal: request.signal, traceId },
         allTools,
         async (toolName, args) => bridgeSession.callToolDirect(toolName, args),
-        async (toolName, toolDef, args, govUser) => {
-          const semResult = await validateSemantics(
-            { toolName, toolDisplayName: toolDef.display_name ?? toolName, arguments: args, userRole: govUser.role, userId: govUser.id },
-            bridgeSession,
-          );
-          return semResult.reason !== undefined ? { allowed: semResult.allowed, reason: semResult.reason } : { allowed: semResult.allowed };
-        },
+        // ── RBAC toggle — controls operation-level governance for TOOL_CALL.
+        // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce ERP policy.
+        // When enabled, calls policy-gate-evaluate in ERP Bridge (not env/config).
+        // When disabled, all tool calls are allowed through.
+        RBAC_ENABLED
+          ? async (toolName, toolDef, args, govUser) =>
+              checkErpPolicy(bridgeSession, {
+                userId: govUser.id,
+                userRole: govUser.role,
+                action: toolName,
+                prompt: `User "${govUser.id}" (${govUser.role}) wants to execute: ${toolDef.display_name ?? toolName}`,
+                context: { tool: toolName, arguments: args },
+              })
+          : async () => ({ allowed: true }),
         services.providerRuntime,
       );
     } catch (error) {
@@ -725,7 +744,26 @@ async function generateWorkflowNarrative(
 
 function requirePlatformAdmin(user: CurrentUser): void { if (user.role !== "Platform Admin") throw new HandlerFailure(403, "Only Platform Admin can manage providers"); }
 async function listProviders(reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const providers = await services.repository.read((state) => Object.values(state.providers).map((item) => withoutSecretFields(item))); return reply.send(ok(providers, "Provider configurations loaded", null)); }
-function providerInput(body: Record<string, unknown>, id: string, existing?: Record<string, unknown>): Record<string, unknown> { const name = stringValue(body.name).trim(); const model = stringValue(body.model).trim(); if (name === "" || model === "") throw new HandlerFailure(422, "Provider name and model are required"); const type = stringValue(body.type).trim(); if (!["gemini", "ollama", "openai_compatible"].includes(type)) throw new HandlerFailure(422, "Provider type must be gemini, ollama, or openai_compatible"); return { id, name, type, ...(stringValue(body.baseUrl).trim() === "" ? {} : { baseUrl: stringValue(body.baseUrl).trim() }), model, temperature: typeof body.temperature === "number" ? body.temperature : 0, apiKey: typeof body.apiKey === "string" && body.apiKey !== "" ? body.apiKey : existing?.apiKey ?? "", active: existing?.active === true, createdAt: stringValue(existing?.createdAt) === "" ? now() : existing!.createdAt }; }
+function providerInput(body: Record<string, unknown>, id: string, existing?: Record<string, unknown>): Record<string, unknown> {
+  const name = stringValue(body.name).trim();
+  const model = stringValue(body.model).trim();
+  if (name === "" || model === "") throw new HandlerFailure(422, "Provider name and model are required");
+  const type = stringValue(body.type).trim();
+  if (!["gemini", "ollama", "openai_compatible"].includes(type)) throw new HandlerFailure(422, "Provider type must be gemini, ollama, or openai_compatible");
+  // additionalModels — list of extra model IDs selectable in the chat UI
+  const rawAdditional = Array.isArray(body.additionalModels) ? body.additionalModels : (Array.isArray(existing?.additionalModels) ? existing!.additionalModels : []);
+  const additionalModels = (rawAdditional as unknown[]).filter((m): m is string => typeof m === "string" && m.trim() !== "").map((m) => m.trim());
+  return {
+    id, name, type,
+    ...(stringValue(body.baseUrl).trim() === "" ? {} : { baseUrl: stringValue(body.baseUrl).trim() }),
+    model,
+    ...(additionalModels.length > 0 ? { additionalModels } : {}),
+    temperature: typeof body.temperature === "number" ? body.temperature : 0,
+    apiKey: typeof body.apiKey === "string" && body.apiKey !== "" ? body.apiKey : existing?.apiKey ?? "",
+    active: existing?.active === true,
+    createdAt: stringValue(existing?.createdAt) === "" ? now() : existing!.createdAt,
+  };
+}
 async function createProvider(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const body = bodyRecord(request); if (body === null) throw new HandlerFailure(400, "Invalid request body"); const provider = await services.repository.mutate((state) => { if (Object.values(state.providers).some((item) => stringValue(item.name).toLowerCase() === stringValue(body.name).trim().toLowerCase())) throw new HandlerFailure(409, "A provider with this name already exists"); const id = nextID(state, "provider"); const value = providerInput(body, id); state.providers[id] = value; appendAudit(state, user, "provider.created", "provider", id, null, withoutSecretFields(value) as Record<string, unknown>, request); return value; }); return reply.status(201).send(ok(withoutSecretFields(provider), "Provider created", null)); }
 async function updateProvider(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const body = bodyRecord(request); if (body === null) throw new HandlerFailure(400, "Invalid request body"); const id = requestParam(request, "id"); const provider = await services.repository.mutate((state) => { const existing = state.providers[id]; if (existing === undefined) throw new HandlerFailure(404, "Provider configuration not found"); const value = providerInput(body, id, existing); state.providers[id] = value; appendAudit(state, user, "provider.updated", "provider", id, withoutSecretFields(existing) as Record<string, unknown>, withoutSecretFields(value) as Record<string, unknown>, request); return value; }); return reply.send(ok(withoutSecretFields(provider), "Provider updated", null)); }
 async function activateProvider(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const id = requestParam(request, "id"); const current = await services.repository.read((state) => state.providers[id] ?? null); if (current === null) throw new HandlerFailure(404, "Provider configuration not found"); const configuration = providerConfigurationFromRecord(current, services.config.generationTimeoutMs ?? 30_000); try { validateRuntimeProviderConfiguration(configuration); } catch (error) { throw new HandlerFailure(422, errorText(error)); } if (services.providerRuntime === undefined) throw new HandlerFailure(503, "Provider runtime is unavailable"); const provider = await services.repository.mutate((state) => { const item = state.providers[id]; if (item === undefined) throw new HandlerFailure(404, "Provider configuration not found"); for (const value of Object.values(state.providers)) value.active = false; item.active = true; appendAudit(state, user, "provider.activated", "provider", id, null, { active: true }, request); return structuredClone(item); }); services.providerRuntime.activate(configuration); return reply.send(ok(withoutSecretFields(provider), "Provider activated", null)); }

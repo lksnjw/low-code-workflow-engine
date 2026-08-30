@@ -105,6 +105,32 @@ function CodeBlock({ lang, code }) {
   );
 }
 
+/** Split a GFM table row on unescaped pipes, trimming the outer pipes */
+/*******************************************************************************
+ * Function: parseTableRow
+ *
+ * Performs the parse Table Row operation on table row for the MessageMarkdown module.
+ ******************************************************************************/
+function parseTableRow(line) {
+  let trimmed = line.trim();
+  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+/** A GFM header-separator row looks like | --- | :--: | ---: | */
+/*******************************************************************************
+ * Function: isTableSeparator
+ *
+ * Performs the is Table Separator operation on table separator for the MessageMarkdown module.
+ ******************************************************************************/
+function isTableSeparator(line) {
+  const trimmed = line.trim();
+  if (!trimmed.includes("-") || !trimmed.includes("|")) return false;
+  const cells = parseTableRow(trimmed);
+  return cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell));
+}
+
 /** Parse raw markdown text into block tokens */
 /*******************************************************************************
  * Function: tokenize
@@ -171,6 +197,19 @@ function tokenize(text) {
       continue;
     }
 
+    // GFM table: a pipe row followed immediately by a valid separator row
+    if (line.includes("|") && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const header = parseTableRow(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|")) {
+        rows.push(parseTableRow(lines[i]));
+        i++;
+      }
+      blocks.push({ type: "table", header, rows });
+      continue;
+    }
+
     // empty line → skip
     if (line.trim() === "") { i++; continue; }
 
@@ -219,6 +258,32 @@ function MessageMarkdown({ text }) {
           </blockquote>
         );
         if (block.type === "code") return <CodeBlock key={idx} lang={block.lang} code={block.code} />;
+        if (block.type === "table") return (
+          <div key={idx} className="my-2 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+            <table className="w-full min-w-max border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-50 dark:bg-gray-800/60">
+                  {block.header.map((cell, ci) => (
+                    <th key={ci} className="whitespace-nowrap border-b border-gray-200 px-3 py-2 text-left font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
+                      <InlineContent text={cell} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {block.rows.map((row, ri) => (
+                  <tr key={ri} className="border-b border-gray-100 last:border-0 dark:border-gray-800">
+                    {row.map((cell, ci) => (
+                      <td key={ci} className="px-3 py-2 text-gray-700 [font-variant-numeric:tabular-nums] dark:text-gray-300">
+                        <InlineContent text={cell} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
         if (block.type === "ul") return (
           <ul key={idx} className="ml-4 list-none space-y-0.5">
             {block.items.map((item, ii) => (
