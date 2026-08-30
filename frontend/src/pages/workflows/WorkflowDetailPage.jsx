@@ -13,6 +13,11 @@ import { executionService } from "../../services/execution.service";
 import { workflowService } from "../../services/workflow.service";
 import { Icon } from "@iconify/react";
 
+/*******************************************************************************
+ * Function: WorkflowDetailPage
+ *
+ * Performs the Workflow Detail Page operation on detail page for the WorkflowDetailPage module.
+ ******************************************************************************/
 function WorkflowDetailPage() {
   const { selectedWorkflowId, navigateTo } = useRoute();
   const { has } = usePermissions();
@@ -30,6 +35,11 @@ function WorkflowDetailPage() {
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!workflow) return <EmptyState title="Workflow not found" />;
 
+/*******************************************************************************
+ * Function: handleRun
+ *
+ * Handles run for the WorkflowDetailPage module.
+ ******************************************************************************/
   const handleRun = async () => {
     setRunState({ loading: true, result: null, error: null });
     try {
@@ -41,6 +51,11 @@ function WorkflowDetailPage() {
     }
   };
 
+/*******************************************************************************
+ * Function: handleSaveSchedule
+ *
+ * Handles save schedule for the WorkflowDetailPage module.
+ ******************************************************************************/
   const handleSaveSchedule = async () => {
     setScheduleState({ saving: true, saved: false });
     try {

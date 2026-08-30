@@ -12,6 +12,11 @@ const queryClient = new QueryClient({
   },
 });
 
+/*******************************************************************************
+ * Function: App
+ *
+ * Performs the App operation on the application for the App module.
+ ******************************************************************************/
 function App() {
   return (
     <ErrorBoundary name="application root">

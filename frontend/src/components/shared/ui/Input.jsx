@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Input
+ *
+ * Performs the Input operation on the application for the Input module.
+ ******************************************************************************/
 function Input({ className = "", ...props }) {
   return (
     <input

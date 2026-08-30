@@ -3,6 +3,7 @@ import { Icon } from "@iconify/react";
 import ChatMessage from "./ChatMessage";
 import ChatWelcome from "./ChatWelcome";
 import { settingsService } from "../../services/settings.service";
+import { peekWorkflowForChatEdit, clearWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
 
 /** Animated streaming-style thinking indicator */
 /*******************************************************************************
@@ -80,6 +81,7 @@ function ChatWindow({ messages, onSend, loading, error }) {
   const [draft, setDraft] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [availableModels, setAvailableModels] = useState([]);
+  const [editContext, setEditContext] = useState(() => peekWorkflowForChatEdit());
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -144,6 +146,27 @@ function ChatWindow({ messages, onSend, loading, error }) {
           <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">Ready</span>
         </div>
       </div>
+
+      {/* ── Workflow edit context banner ── */}
+      {editContext && (
+        <div className="flex shrink-0 items-center gap-3 border-b border-indigo-100 bg-indigo-50 px-4 py-2.5 dark:border-indigo-900/40 dark:bg-indigo-900/20">
+          <Icon icon="mdi:pencil-box-outline" className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+              Editing: <span className="font-bold">{editContext.workflowName || "Workflow"}</span>
+            </p>
+            <p className="text-[10px] text-indigo-500">Describe your changes — the AI will modify the workflow and save it.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { clearWorkflowForChatEdit(); setEditContext(null); }}
+            className="shrink-0 rounded p-1 text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200"
+            title="Dismiss"
+          >
+            <Icon icon="mdi:close" className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-4 py-4">

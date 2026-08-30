@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import MessageMarkdown from "./MessageMarkdown";
-import { saveWorkflowForCanvas } from "../../utils/workflowCanvas.utils";
+import { saveWorkflowForCanvas, peekWorkflowForChatEdit, clearWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
+import { workflowService } from "../../services/workflow.service";
 
 // ── Inline validation badge ─────────────────────────────────────────────────
 /*******************************************************************************
@@ -134,6 +135,96 @@ function InlineSources({ sources, boundHit }) {
   );
 }
 
+// ── Save button after WORKFLOW_MODIFY ──────────────────────────────────────
+function SaveModifiedWorkflowButton({ yaml, workflowName }) {
+  const navigate = useNavigate();
+  const [status, setStatus] = useState("idle"); // idle | saving | saved | error
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  const handleSave = useCallback(async () => {
+    if (!yaml || status === "saving" || status === "saved") return;
+    setStatus("saving");
+    setErrorMsg(null);
+    try {
+      const editCtx = peekWorkflowForChatEdit();
+      if (editCtx?.workflowId) {
+        await workflowService.saveYAML(editCtx.workflowId, yaml);
+      } else {
+        await workflowService.create({ name: workflowName || "Modified Workflow", description: "Modified via chat", yaml });
+      }
+      clearWorkflowForChatEdit();
+      setStatus("saved");
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message ?? err.message ?? "Save failed");
+      setStatus("error");
+    }
+  }, [yaml, workflowName, status]);
+
+  if (!yaml) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={status === "saving" || status === "saved"}
+        className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300"
+      >
+        <Icon icon={status === "saved" ? "mdi:check" : status === "saving" ? "mdi:loading" : "mdi:content-save"} className={`h-3.5 w-3.5 shrink-0 ${status === "saving" ? "animate-spin" : ""}`} />
+        {status === "saved" ? "Saved" : status === "saving" ? "Saving…" : "Save Changes"}
+      </button>
+      {status === "saved" && (
+        <button
+          type="button"
+          onClick={() => { saveWorkflowForCanvas({ yaml, name: workflowName || "Modified Workflow" }); navigate("/workflows/canvas"); }}
+          className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800/40 dark:bg-indigo-900/20 dark:text-indigo-300"
+        >
+          <Icon icon="mdi:vector-square" className="h-3.5 w-3.5 shrink-0" />
+          View in Canvas
+        </button>
+      )}
+      {errorMsg && <p className="text-[10px] text-red-500">{errorMsg}</p>}
+    </div>
+  );
+}
+
+// ── Action agent step list (TOOL_CALL intent) ──────────────────────────────
+function ActionStepsList({ steps, blocked }) {
+  const [open, setOpen] = useState(false);
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-xl border border-violet-100 dark:border-violet-900/40">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+      >
+        <Icon icon={blocked ? "mdi:shield-alert" : "mdi:check-all"} className={`h-3.5 w-3.5 shrink-0 ${blocked ? "text-amber-500" : "text-violet-500"}`} />
+        <span className="flex-1 text-xs font-semibold text-violet-700 dark:text-violet-300">
+          {steps.length} action{steps.length !== 1 ? "s" : ""}{blocked ? " · blocked" : " · executed"}
+        </span>
+        <Icon icon={open ? "mdi:chevron-up" : "mdi:chevron-down"} className="h-3.5 w-3.5 text-gray-400" />
+      </button>
+      {open && (
+        <div className="border-t border-violet-100 px-3 pb-2 pt-1.5 dark:border-violet-900/40">
+          <div className="space-y-1">
+            {steps.map((step, i) => (
+              <div key={i} className="flex items-center gap-2 text-[11px]">
+                <Icon
+                  icon={step.governanceStatus === "blocked" ? "mdi:shield-alert" : step.error ? "mdi:alert-circle" : step.isReadOnly ? "mdi:eye-outline" : "mdi:check-circle"}
+                  className={`h-3 w-3 shrink-0 ${step.governanceStatus === "blocked" ? "text-amber-500" : step.error ? "text-red-500" : "text-emerald-500"}`}
+                />
+                <span className="font-semibold text-gray-700 dark:text-gray-300">{step.displayName ?? step.toolName}</span>
+                {step.governanceReason && <span className="truncate text-gray-400">{step.governanceReason}</span>}
+                {step.error && <span className="truncate text-red-400">{step.error}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── View in Canvas handoff button (query / tool-call results) ──────────────
 function CanvasHandoffButton({ workflowDraft, toolSteps, userPrompt }) {
   const navigate = useNavigate();
@@ -153,6 +244,21 @@ function CanvasHandoffButton({ workflowDraft, toolSteps, userPrompt }) {
     >
       <Icon icon="mdi:vector-square" className="h-3.5 w-3.5 shrink-0" />
       {sent ? "Opening canvas…" : `View in Canvas (${toolSteps.length} step${toolSteps.length !== 1 ? "s" : ""})`}
+    </button>
+  );
+}
+
+// ── Open saved workflow button ────────────────────────────────────────────
+function OpenWorkflowButton({ workflowId }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/workflows/${workflowId}`)}
+      className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+    >
+      <Icon icon="mdi:open-in-app" className="h-3.5 w-3.5 shrink-0" />
+      Open Workflow
     </button>
   );
 }
@@ -211,6 +317,7 @@ function ChatMessage({ message }) {
   // ── Assistant message ──
   const isWorkflow = intent === "WORKFLOW" || (artifacts && artifacts.yaml);
   const isQuery = intent === "QUERY" || intent === "AUDIT";
+  const isToolCall = intent === "TOOL_CALL";
 
   return (
     <div className="flex flex-col items-start gap-1 pl-1">
@@ -220,7 +327,7 @@ function ChatMessage({ message }) {
           <Icon icon="hugeicons:ai-magic" className="h-3 w-3 text-primary" />
         </div>
         <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">
-          {isQuery ? "Data Agent" : "Workflow Assistant"}
+          {isQuery ? "Data Agent" : isToolCall ? "Action Agent" : "Workflow Assistant"}
         </span>
         {message.createdAt && (
           <span className="text-[10px] text-gray-400">
@@ -233,23 +340,45 @@ function ChatMessage({ message }) {
       <div className="max-w-[92%]">
         <MessageMarkdown text={message.text} />
 
-        {/* ── Query: inline sources + chart + canvas handoff ── */}
+        {/* ── Query: inline sources + chart only ── */}
         {isQuery && (
           <>
             {artifacts?.visualisation && <InlineBarChart vis={artifacts.visualisation} />}
             <InlineSources sources={artifacts?.sources} boundHit={artifacts?.boundHit} />
-            <CanvasHandoffButton
-              workflowDraft={artifacts?.workflowDraft}
-              toolSteps={artifacts?.toolSteps}
-            />
           </>
         )}
 
-        {/* ── Workflow: inline validation + YAML preview ── */}
+        {/* ── Tool call: action steps only — no canvas handoff (direct actions, not workflow creation) ── */}
+        {isToolCall && (
+          <ActionStepsList steps={artifacts?.steps} blocked={artifacts?.blocked} />
+        )}
+
+        {/* ── Workflow: inline validation + YAML preview + save-after-edit ── */}
         {isWorkflow && (
           <>
+            {Array.isArray(artifacts?.missing_tools) && artifacts.missing_tools.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800/40 dark:bg-amber-900/20">
+                <div className="flex items-center gap-2 font-semibold text-amber-700 dark:text-amber-300">
+                  <Icon icon="mdi:alert-circle-outline" className="h-3.5 w-3.5 shrink-0" />
+                  Some steps use tools not available in your ERP system
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-1">
+                  {artifacts.missing_tools.map((t) => (
+                    <span key={t} className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{t}</span>
+                  ))}
+                </div>
+                <p className="text-[10px] text-amber-600 dark:text-amber-400">These steps will fail at runtime. Remove them in the canvas or ask for an alternative.</p>
+              </div>
+            )}
             <ValidationBadge canExecute={artifacts?.can_execute} failedRules={artifacts?.validation?.failed_rules ?? []} />
             <InlineYamlPreview yaml={artifacts?.yaml || artifacts?.selected_workflow_yaml} />
+            {(artifacts?.yaml || artifacts?.selected_workflow_yaml) && peekWorkflowForChatEdit() && (
+              <SaveModifiedWorkflowButton
+                yaml={artifacts?.yaml || artifacts?.selected_workflow_yaml}
+                workflowName={peekWorkflowForChatEdit()?.workflowName}
+              />
+            )}
+            {artifacts?.workflowId && <OpenWorkflowButton workflowId={artifacts.workflowId} />}
           </>
         )}
       </div>

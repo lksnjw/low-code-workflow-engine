@@ -1,6 +1,11 @@
 import { Icon } from "@iconify/react";
 import { FAILURE_CATEGORY, isGovernanceBlock } from "../../constants/workflowStatus";
 
+/*******************************************************************************
+ * Function: Field
+ *
+ * Performs the Field operation on the application for the GovernanceBlockPanel module.
+ ******************************************************************************/
 function Field({ label, value, mono }) {
   if (!value) return null;
   return (
@@ -16,6 +21,11 @@ function Field({ label, value, mono }) {
  * dispatch, so this is deliberately NOT the tool-failure red: nothing crashed,
  * the gate refused to let the call happen.
  */
+/*******************************************************************************
+ * Function: GovernanceBlockPanel
+ *
+ * Performs the Governance Block Panel operation on block panel for the GovernanceBlockPanel module.
+ ******************************************************************************/
 function GovernanceBlockPanel({ failure }) {
   if (!failure) return null;
 

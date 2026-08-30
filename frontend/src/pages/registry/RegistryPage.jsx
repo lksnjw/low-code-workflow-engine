@@ -69,8 +69,18 @@ const NEW_RULE = {
   enabled: true,
 };
 
+/*******************************************************************************
+ * Function: pretty
+ *
+ * Performs the pretty operation on the application for the RegistryPage module.
+ ******************************************************************************/
 const pretty = (value) => JSON.stringify(value, null, 2);
 
+/*******************************************************************************
+ * Function: RegistryPage
+ *
+ * Performs the Registry Page operation on page for the RegistryPage module.
+ ******************************************************************************/
 function RegistryPage({ initialKind = "tools" }) {
   const [kind, setKind] = useState(initialKind);
   const [selected, setSelected] = useState(null);
@@ -86,6 +96,11 @@ function RegistryPage({ initialKind = "tools" }) {
   const query = useQuery({ queryKey: ["admin-registry"], queryFn: registryService.load });
 
   const items = query.data?.[kind] ?? [];
+/*******************************************************************************
+ * Function: columns
+ *
+ * Performs the columns operation on the application for the RegistryPage module.
+ ******************************************************************************/
   const columns = useMemo(
     () => [
       { key: "name", label: kind === "tools" ? "Tool" : "Rule" },
@@ -95,11 +110,21 @@ function RegistryPage({ initialKind = "tools" }) {
     ],
     [kind]
   );
+/*******************************************************************************
+ * Function: rows
+ *
+ * Performs the rows operation on the application for the RegistryPage module.
+ ******************************************************************************/
   const rows = items.map((item) => ({
     ...item,
     id: kind === "tools" ? item.tool_id : item.rule_id,
   }));
 
+/*******************************************************************************
+ * Function: rebuild
+ *
+ * Performs the rebuild operation on the application for the RegistryPage module.
+ ******************************************************************************/
   const rebuild = async () => {
     try {
       await semanticService.rebuild();
@@ -109,6 +134,11 @@ function RegistryPage({ initialKind = "tools" }) {
     }
   };
 
+/*******************************************************************************
+ * Function: mutation
+ *
+ * Performs the mutation operation on the application for the RegistryPage module.
+ ******************************************************************************/
   const mutation = useMutation({
     mutationFn: ({ value }) =>
       editor?.id
@@ -133,18 +163,33 @@ function RegistryPage({ initialKind = "tools" }) {
     onError: (error) => notify(apiErrorMessage(error, "Registry change failed."), "error"),
   });
 
+/*******************************************************************************
+ * Function: openCreate
+ *
+ * Performs the open Create operation on create for the RegistryPage module.
+ ******************************************************************************/
   const openCreate = () => {
     setEditor({ id: null });
     setDraft(pretty(kind === "tools" ? NEW_TOOL : NEW_RULE));
     setParseError("");
   };
 
+/*******************************************************************************
+ * Function: openEdit
+ *
+ * Performs the open Edit operation on edit for the RegistryPage module.
+ ******************************************************************************/
   const openEdit = (item) => {
     setEditor({ id: kind === "tools" ? item.tool_id : item.rule_id });
     setDraft(pretty(item));
     setParseError("");
   };
 
+/*******************************************************************************
+ * Function: save
+ *
+ * Saves the application for the RegistryPage module.
+ ******************************************************************************/
   const save = () => {
     try {
       const value = JSON.parse(draft);

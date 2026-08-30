@@ -6,6 +6,11 @@ import { apiErrorMessage } from "../../services/api";
 import { registryService } from "../../services/registry.service";
 import Button from "../shared/ui/Button";
 
+/*******************************************************************************
+ * Function: RegistryBulkImportPanel
+ *
+ * Performs the Registry Bulk Import Panel operation on bulk import panel for the RegistryBulkImportPanel module.
+ ******************************************************************************/
 function RegistryBulkImportPanel({ kind }) {
   const { has } = usePermissions();
   const queryClient = useQueryClient();
@@ -15,6 +20,11 @@ function RegistryBulkImportPanel({ kind }) {
   const [result, setResult] = useState(null);
   const canImport = has("settings:manage");
 
+/*******************************************************************************
+ * Function: mutation
+ *
+ * Performs the mutation operation on the application for the RegistryBulkImportPanel module.
+ ******************************************************************************/
   const mutation = useMutation({
     mutationFn: (values) => registryService.bulkImport(kind, values, allowUpdates),
     onSuccess: async (value) => {
@@ -41,6 +51,11 @@ function RegistryBulkImportPanel({ kind }) {
 
   if (!canImport) return null;
 
+/*******************************************************************************
+ * Function: importBatch
+ *
+ * Performs the import Batch operation on batch for the RegistryBulkImportPanel module.
+ ******************************************************************************/
   const importBatch = () => {
     try {
       const values = JSON.parse(draft);
@@ -58,6 +73,11 @@ function RegistryBulkImportPanel({ kind }) {
     }
   };
 
+/*******************************************************************************
+ * Function: loadFile
+ *
+ * Loads file for the RegistryBulkImportPanel module.
+ ******************************************************************************/
   const loadFile = async (event) => {
     const [file] = event.target.files || [];
     if (!file) return;
@@ -117,6 +137,11 @@ function RegistryBulkImportPanel({ kind }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ImportResult
+ *
+ * Performs the Import Result operation on result for the RegistryBulkImportPanel module.
+ ******************************************************************************/
 function ImportResult({ result }) {
   if (!result) {
     return (

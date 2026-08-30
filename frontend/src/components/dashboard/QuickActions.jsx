@@ -3,6 +3,11 @@ import Card from "../shared/ui/Card";
 import Button from "../shared/ui/Button";
 import { useRoute } from "../../context/RouteContext";
 
+/*******************************************************************************
+ * Function: QuickActions
+ *
+ * Performs the Quick Actions operation on actions for the QuickActions module.
+ ******************************************************************************/
 function QuickActions() {
   const { navigateTo, startWorkflow } = useRoute();
   const actions = [

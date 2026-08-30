@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import Input from "../shared/ui/Input";
 import Select from "../shared/ui/Select";
 
+/*******************************************************************************
+ * Function: WorkflowFilters
+ *
+ * Performs the Workflow Filters operation on filters for the WorkflowFilters module.
+ ******************************************************************************/
 function WorkflowFilters({ query, status, onQueryChange, onStatusChange }) {
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

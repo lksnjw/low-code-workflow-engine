@@ -1,6 +1,11 @@
 import Button from "./Button";
 import Modal from "./Modal";
 
+/*******************************************************************************
+ * Function: ConfirmDialog
+ *
+ * Performs the Confirm Dialog operation on dialog for the ConfirmDialog module.
+ ******************************************************************************/
 function ConfirmDialog({ open, title = "Confirm action", onConfirm, children }) {
   return (
     <Modal open={open} title={title}>

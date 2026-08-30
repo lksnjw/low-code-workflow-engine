@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Textarea
+ *
+ * Performs the Textarea operation on the application for the Textarea module.
+ ******************************************************************************/
 function Textarea({ className = "", ...props }) {
   return (
     <textarea

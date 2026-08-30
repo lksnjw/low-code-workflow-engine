@@ -1,13 +1,28 @@
+/*******************************************************************************
+ * Function: ruleIdFor
+ *
+ * Performs the rule Id For operation on id for for the GateRejectionAlert module.
+ ******************************************************************************/
 function ruleIdFor(value) {
   if (typeof value === "string") return value;
   return value?.rule_id || value?.ruleId || value?.id || "";
 }
 
+/*******************************************************************************
+ * Function: failureItems
+ *
+ * Performs the failure Items operation on items for the GateRejectionAlert module.
+ ******************************************************************************/
 function failureItems(meta) {
   if (!meta || typeof meta !== "object") return [];
 
   const errors = Array.isArray(meta.errors) ? meta.errors : [];
   const failedRules = Array.isArray(meta.failed_rules) ? meta.failed_rules : [];
+/*******************************************************************************
+ * Function: items
+ *
+ * Performs the items operation on the application for the GateRejectionAlert module.
+ ******************************************************************************/
   const items = errors.map((error, index) => {
     const entry = error && typeof error === "object" ? error : {};
     const ruleId = ruleIdFor(entry) || ruleIdFor(failedRules[index]);
@@ -24,6 +39,11 @@ function failureItems(meta) {
     };
   });
 
+/*******************************************************************************
+ * Function: represented
+ *
+ * Performs the represented operation on the application for the GateRejectionAlert module.
+ ******************************************************************************/
   const represented = new Set(items.map((item) => item.ruleId).filter(Boolean));
   failedRules.forEach((rule, index) => {
     const ruleId = ruleIdFor(rule);
@@ -40,6 +60,11 @@ function failureItems(meta) {
   return items;
 }
 
+/*******************************************************************************
+ * Function: GateExplanationPanel
+ *
+ * Performs the Gate Explanation Panel operation on explanation panel for the GateRejectionAlert module.
+ ******************************************************************************/
 function GateExplanationPanel({ gateExplanation }) {
   if (!gateExplanation || !Array.isArray(gateExplanation.explanations) || gateExplanation.explanations.length === 0) return null;
   return (
@@ -61,6 +86,11 @@ function GateExplanationPanel({ gateExplanation }) {
   );
 }
 
+/*******************************************************************************
+ * Function: GateRejectionAlert
+ *
+ * Performs the Gate Rejection Alert operation on rejection alert for the GateRejectionAlert module.
+ ******************************************************************************/
 function GateRejectionAlert({ details }) {
   if (!details?.message) return null;
   const failures = failureItems(details.meta);

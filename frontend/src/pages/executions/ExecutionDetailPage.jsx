@@ -10,6 +10,11 @@ import Card from "../../components/shared/ui/Card";
 import { useExecution } from "../../hooks/useExecution";
 import TraceIdentifier from "../../components/shared/TraceIdentifier";
 
+/*******************************************************************************
+ * Function: ExecutionDetailPage
+ *
+ * Performs the Execution Detail Page operation on detail page for the ExecutionDetailPage module.
+ ******************************************************************************/
 function ExecutionDetailPage() {
   const { executionId } = useParams();
   const { execution, logs, timeline, healingReport, loading, error, reload } = useExecution(executionId);
@@ -59,6 +64,11 @@ function ExecutionDetailPage() {
   );
 }
 
+/*******************************************************************************
+ * Function: Metric
+ *
+ * Performs the Metric operation on the application for the ExecutionDetailPage module.
+ ******************************************************************************/
 function Metric({ label, value }) {
   return (
     <div>

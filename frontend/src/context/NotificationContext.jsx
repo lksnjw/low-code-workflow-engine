@@ -2,9 +2,19 @@ import { createContext, useContext, useMemo, useState } from "react";
 
 const NotificationContext = createContext(null);
 
+/*******************************************************************************
+ * Function: NotificationProvider
+ *
+ * Performs the Notification Provider operation on provider for the NotificationContext module.
+ ******************************************************************************/
 export function NotificationProvider({ children }) {
   const [notifications, setNotifications] = useState([]);
 
+/*******************************************************************************
+ * Function: notify
+ *
+ * Performs the notify operation on the application for the NotificationContext module.
+ ******************************************************************************/
   const notify = (message, tone = "info", action = null) => {
     const id = crypto.randomUUID?.() ?? `${Date.now()}`;
     setNotifications((items) => [...items, { id, message, tone, action }]);
@@ -13,6 +23,11 @@ export function NotificationProvider({ children }) {
     }, 3400);
   };
 
+/*******************************************************************************
+ * Function: value
+ *
+ * Performs the value operation on the application for the NotificationContext module.
+ ******************************************************************************/
   const value = useMemo(() => ({ notifications, notify }), [notifications]);
 
   return (
@@ -46,6 +61,11 @@ export function NotificationProvider({ children }) {
   );
 }
 
+/*******************************************************************************
+ * Function: useNotifications
+ *
+ * Provides notifications for the NotificationContext module.
+ ******************************************************************************/
 export function useNotifications() {
   const context = useContext(NotificationContext);
   if (!context) {

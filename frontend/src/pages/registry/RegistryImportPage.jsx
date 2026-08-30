@@ -16,6 +16,11 @@ const REVIEW_GROUPS = [
   ["orphaned", "Orphaned", "text-red-700 dark:text-red-300"],
 ];
 
+/*******************************************************************************
+ * Function: WizardSteps
+ *
+ * Performs the Wizard Steps operation on steps for the RegistryImportPage module.
+ ******************************************************************************/
 function WizardSteps({ active }) {
   return (
     <ol className="grid gap-3 sm:grid-cols-3" aria-label="Import progress">
@@ -43,6 +48,11 @@ function WizardSteps({ active }) {
   );
 }
 
+/*******************************************************************************
+ * Function: FileDrop
+ *
+ * Performs the File Drop operation on drop for the RegistryImportPage module.
+ ******************************************************************************/
 function FileDrop({ file, onFile }) {
   const inputRef = useRef(null);
   return (
@@ -76,6 +86,11 @@ function FileDrop({ file, onFile }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ImportHistory
+ *
+ * Performs the Import History operation on history for the RegistryImportPage module.
+ ******************************************************************************/
 function ImportHistory({ query }) {
   if (query.isLoading) return <LoadingState label="Loading import history…" />;
   if (query.isError) return <ErrorState message="Import history could not be loaded." onRetry={query.refetch} />;
@@ -103,6 +118,11 @@ function ImportHistory({ query }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ChangeList
+ *
+ * Performs the Change List operation on list for the RegistryImportPage module.
+ ******************************************************************************/
 function ChangeList({ changes }) {
   if (!changes?.length) return <span className="text-xs text-gray-400">No field changes</span>;
   return (
@@ -123,6 +143,11 @@ function ChangeList({ changes }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ReviewTable
+ *
+ * Performs the Review Table operation on table for the RegistryImportPage module.
+ ******************************************************************************/
 function ReviewTable({ name, label, tone, records, selected, onToggle }) {
   if (!records.length) {
     return (
@@ -186,6 +211,11 @@ function ReviewTable({ name, label, tone, records, selected, onToggle }) {
   );
 }
 
+/*******************************************************************************
+ * Function: RegistryImportPage
+ *
+ * Performs the Registry Import Page operation on import page for the RegistryImportPage module.
+ ******************************************************************************/
 function RegistryImportPage() {
   const queryClient = useQueryClient();
   const [step, setStep] = useState(1);
@@ -199,6 +229,11 @@ function RegistryImportPage() {
   const [commitResult, setCommitResult] = useState(null);
   const historyQuery = useQuery({ queryKey: ["registry-import-history"], queryFn: registryService.importHistory });
 
+/*******************************************************************************
+ * Function: analyseMutation
+ *
+ * Performs the analyse Mutation operation on mutation for the RegistryImportPage module.
+ ******************************************************************************/
   const analyseMutation = useMutation({
     mutationFn: registryService.analyseImport,
     onSuccess: (value) => {
@@ -209,6 +244,11 @@ function RegistryImportPage() {
     },
     onError: () => setLocalError("The file could not be analysed. Check its format and try again."),
   });
+/*******************************************************************************
+ * Function: commitMutation
+ *
+ * Performs the commit Mutation operation on mutation for the RegistryImportPage module.
+ ******************************************************************************/
   const commitMutation = useMutation({
     mutationFn: () => registryService.commitImport(analysis.id, [...selected]),
     onSuccess: async (value) => {
@@ -221,11 +261,21 @@ function RegistryImportPage() {
     onError: (error) => setLocalError(apiErrorMessage(error, "The selected records could not be committed. Review the selection and try again.")),
   });
 
+/*******************************************************************************
+ * Function: counts
+ *
+ * Performs the counts operation on the application for the RegistryImportPage module.
+ ******************************************************************************/
   const counts = useMemo(() => {
     const preview = analysis?.preview || {};
     return Object.fromEntries(REVIEW_GROUPS.map(([name]) => [name, preview[name]?.length || 0]));
   }, [analysis]);
 
+/*******************************************************************************
+ * Function: chooseFile
+ *
+ * Performs the choose File operation on file for the RegistryImportPage module.
+ ******************************************************************************/
   const chooseFile = (nextFile) => {
     if (nextFile && nextFile.size > MAX_UPLOAD_BYTES) {
       setFile(null);
@@ -235,6 +285,11 @@ function RegistryImportPage() {
     setFile(nextFile);
     setLocalError("");
   };
+/*******************************************************************************
+ * Function: analyse
+ *
+ * Performs the analyse operation on the application for the RegistryImportPage module.
+ ******************************************************************************/
   const analyse = () => {
     if (!file) {
       setLocalError("Choose a registry file before continuing.");
@@ -246,6 +301,11 @@ function RegistryImportPage() {
     }
     analyseMutation.mutate({ file, kind, prefix, allowUpdates });
   };
+/*******************************************************************************
+ * Function: toggle
+ *
+ * Performs the toggle operation on the application for the RegistryImportPage module.
+ ******************************************************************************/
   const toggle = (recordID) => {
     setSelected((current) => {
       const next = new Set(current);

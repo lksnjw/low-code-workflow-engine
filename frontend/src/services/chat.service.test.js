@@ -15,9 +15,13 @@ test("sendMessage no longer sends the previously ignored workflowId option", asy
     workflowId: "wf-ignored",
   });
 
-  expect(post).toHaveBeenCalledWith("/chat/sessions/chat-1/messages", {
-    content: "hello",
-    mode: "guided",
-    model: "test-model",
-  });
+  expect(post).toHaveBeenCalledWith(
+    "/chat/sessions/chat-1/messages",
+    {
+      content: "hello",
+      mode: "guided",
+      model: "test-model",
+    },
+    { timeout: 180000 },
+  );
 });

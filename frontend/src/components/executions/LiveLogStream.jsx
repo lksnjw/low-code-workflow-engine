@@ -1,10 +1,20 @@
 import Card from "../shared/ui/Card";
 
+/*******************************************************************************
+ * Function: logLine
+ *
+ * Performs the log Line operation on line for the LiveLogStream module.
+ ******************************************************************************/
 function logLine(log) {
   const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "--:--:--";
   return `[${timestamp}] ${log.level || "info"} ${log.nodeId || "system"} ${log.message || ""}`;
 }
 
+/*******************************************************************************
+ * Function: LiveLogStream
+ *
+ * Performs the Live Log Stream operation on log stream for the LiveLogStream module.
+ ******************************************************************************/
 function LiveLogStream({ logs = [], executionId }) {
   return (
     <Card className="bg-gray-950 text-gray-100 dark:bg-black">

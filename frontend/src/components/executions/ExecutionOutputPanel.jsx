@@ -4,6 +4,11 @@ import Card from "../shared/ui/Card";
 
 const TRUNCATE_AT = 2000;
 
+/*******************************************************************************
+ * Function: format
+ *
+ * Formats the application for the ExecutionOutputPanel module.
+ ******************************************************************************/
 function format(value) {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
@@ -14,6 +19,11 @@ function format(value) {
   }
 }
 
+/*******************************************************************************
+ * Function: OutputBlock
+ *
+ * Performs the Output Block operation on block for the ExecutionOutputPanel module.
+ ******************************************************************************/
 function OutputBlock({ value }) {
   const [expanded, setExpanded] = useState(false);
   const text = format(value);
@@ -46,6 +56,11 @@ function OutputBlock({ value }) {
  * a run that stopped part way the steps that did complete are still shown, so
  * partial results are never lost behind the failure message.
  */
+/*******************************************************************************
+ * Function: ExecutionOutputPanel
+ *
+ * Performs the Execution Output Panel operation on output panel for the ExecutionOutputPanel module.
+ ******************************************************************************/
 function ExecutionOutputPanel({ execution }) {
   if (!execution) return null;
   const { finalOutput, stepOutputs, status } = execution;

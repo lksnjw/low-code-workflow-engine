@@ -38,6 +38,13 @@ const environmentSchema = z
     GOVERNANCE_FALLBACK_LLM_API_KEY: z.string().optional(),
     GOVERNANCE_FALLBACK_LLM_MODEL: z.string().optional(),
     GOVERNANCE_FALLBACK_LLM_TIMEOUT_MS: z.string().optional(),
+    FIRESTORE_PROJECT_ID: z.string().optional(),
+    FIRESTORE_KEY_FILE: z.string().optional(),
+    FIRESTORE_KEY_JSON: z.string().optional(),
+    FIRESTORE_ENCRYPTION_KEY: z.string().optional(),
+    POLICY_GATE_URL: z.string().optional(),
+    POLICY_GATE_API_KEY: z.string().optional(),
+    POLICY_GATE_TIMEOUT_MS: z.string().optional(),
     CORS_ORIGINS: z.string().optional(),
     PLATFORM_ADMIN_EMAIL: z.string().optional(),
     PLATFORM_ADMIN_PASSWORD: z.string().optional(),
@@ -56,7 +63,11 @@ export type AppConfig = {
   allowPublicRegistration: boolean;
   toolRegistryPath: string;
   ruleRegistryPath: string;
-  storageDriver: "memory" | "postgres";
+  storageDriver: "memory" | "postgres" | "firestore";
+  firestoreProjectId?: string;
+  firestoreKeyFile?: string;
+  firestoreKeyJson?: Record<string, unknown>;
+  firestoreEncryptionKey?: string;
   databaseURL: string;
   storageEncryptionKey: string;
   mcpBaseURL: string;
@@ -81,6 +92,9 @@ export type AppConfig = {
   governanceFallbackLlmApiKey: string;
   governanceFallbackLlmModel: string;
   governanceFallbackLlmTimeoutMs: number;
+  policyGateURL?: string;
+  policyGateAPIKey?: string;
+  policyGateTimeoutMs: number;
   corsOrigins: string[];
   platformAdminEmail: string;
   platformAdminPassword: string;
@@ -147,13 +161,18 @@ export function loadConfig(
     15_000,
     "GOVERNANCE_FALLBACK_LLM_TIMEOUT_MS",
   );
+  const policyGateTimeoutMs = parseInteger(
+    source.POLICY_GATE_TIMEOUT_MS,
+    10_000,
+    "POLICY_GATE_TIMEOUT_MS",
+  );
   const storageDriver = nonblank(
     source.STORAGE_DRIVER?.trim().toLowerCase(),
     "memory",
   ) as AppConfig["storageDriver"];
-  if (storageDriver !== "memory" && storageDriver !== "postgres")
+  if (storageDriver !== "memory" && storageDriver !== "postgres" && storageDriver !== "firestore")
     throw new Error(
-      `unsupported STORAGE_DRIVER ${JSON.stringify(storageDriver)} (allowed values: memory or postgres)`,
+      `unsupported STORAGE_DRIVER ${JSON.stringify(storageDriver)} (allowed values: memory, postgres, or firestore)`,
     );
   const mcpMode = nonblank(
     source.MCP_MODE?.trim().toLowerCase(),
@@ -195,6 +214,10 @@ export function loadConfig(
     storageDriver,
     databaseURL: source.DATABASE_URL?.trim() ?? "",
     storageEncryptionKey: source.STORAGE_ENCRYPTION_KEY?.trim() ?? "",
+    ...(source.FIRESTORE_PROJECT_ID?.trim() ? { firestoreProjectId: source.FIRESTORE_PROJECT_ID.trim() } : {}),
+    ...(source.FIRESTORE_KEY_FILE?.trim() ? { firestoreKeyFile: source.FIRESTORE_KEY_FILE.trim() } : {}),
+    ...(source.FIRESTORE_KEY_JSON?.trim() ? { firestoreKeyJson: JSON.parse(source.FIRESTORE_KEY_JSON.trim()) as Record<string, unknown> } : {}),
+    ...(source.FIRESTORE_ENCRYPTION_KEY?.trim() ? { firestoreEncryptionKey: source.FIRESTORE_ENCRYPTION_KEY.trim() } : {}),
     mcpBaseURL: source.MCP_BASE_URL?.trim() ?? "",
     mcpMode,
     mcpTransport,
@@ -225,6 +248,9 @@ export function loadConfig(
       "deepseek/deepseek-chat-v3-0324",
     ),
     governanceFallbackLlmTimeoutMs,
+    policyGateURL: source.POLICY_GATE_URL?.trim() ?? "",
+    policyGateAPIKey: source.POLICY_GATE_API_KEY?.trim() ?? "",
+    policyGateTimeoutMs,
     corsOrigins: nonblank(source.CORS_ORIGINS, "http://localhost:5173")
       .split(",")
       .map((item) => item.trim())
@@ -248,9 +274,9 @@ export function validateConfig(config: AppConfig): void {
   if (config.storageDriver === "postgres" && config.databaseURL === "")
     throw new Error("DATABASE_URL is required when STORAGE_DRIVER=postgres");
   if (config.storageDriver === "postgres" && config.storageEncryptionKey === "")
-    throw new Error(
-      "STORAGE_ENCRYPTION_KEY is required for PostgreSQL storage",
-    );
+    throw new Error("STORAGE_ENCRYPTION_KEY is required for PostgreSQL storage");
+  if (config.storageDriver === "firestore" && !config.firestoreProjectId)
+    throw new Error("FIRESTORE_PROJECT_ID is required when STORAGE_DRIVER=firestore");
   if (
     config.mcpMode === "remote" &&
     config.environment === "production" &&
@@ -427,10 +453,13 @@ function parseRoleMap(value: string | undefined): Record<string, string> {
   try {
     decoded = JSON.parse(raw);
   } catch {
-    throw new Error("ERPBRIDGE_ROLE_MAP must be valid JSON");
+    console.warn("[config] ERPBRIDGE_ROLE_MAP is not valid JSON — role mapping disabled");
+    return {};
   }
-  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded))
-    throw new Error("ERPBRIDGE_ROLE_MAP must be a JSON object");
+  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
+    console.warn("[config] ERPBRIDGE_ROLE_MAP must be a JSON object — role mapping disabled");
+    return {};
+  }
   const map: Record<string, string> = {};
   for (const [localRole, remoteRoleValue] of Object.entries(decoded)) {
     if (!knownLocalRoles.has(localRole))

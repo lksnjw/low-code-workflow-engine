@@ -5,11 +5,21 @@ import useSemanticStatus from "../../hooks/useSemanticStatus";
 import { usePermissions } from "../../hooks/usePermissions";
 import { semanticService } from "../../services/semantic.service";
 
+/*******************************************************************************
+ * Function: DatafeedPage
+ *
+ * Performs the Datafeed Page operation on page for the DatafeedPage module.
+ ******************************************************************************/
 function DatafeedPage() {
   const queryClient = useQueryClient();
   const { has } = usePermissions();
   const canRebuild = has("settings:manage");
   const status = useSemanticStatus();
+/*******************************************************************************
+ * Function: rebuild
+ *
+ * Performs the rebuild operation on the application for the DatafeedPage module.
+ ******************************************************************************/
   const rebuild = useMutation({
     mutationFn: semanticService.rebuild,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["semantic-index"] }),
@@ -44,8 +54,23 @@ function DatafeedPage() {
   );
 }
 
+/*******************************************************************************
+ * Function: Metric
+ *
+ * Performs the Metric operation on the application for the DatafeedPage module.
+ ******************************************************************************/
 function Metric({ label, value }) { return <div className="surface-panel rounded-2xl p-5"><p className="text-sm font-semibold text-gray-500">{label}</p><p className="mt-2 text-2xl font-black text-gray-950 dark:text-white">{value}</p></div>; }
+/*******************************************************************************
+ * Function: Details
+ *
+ * Performs the Details operation on the application for the DatafeedPage module.
+ ******************************************************************************/
 function Details({ title, icon, rows }) { return <div className="surface-panel rounded-2xl p-5"><h2 className="section-title flex items-center gap-2"><Icon icon={icon} className="h-5 w-5 text-primary" />{title}</h2><dl className="mt-5 space-y-3">{rows.map(([label, value]) => <div key={label} className="flex items-center justify-between border-b border-gray-100 pb-3 last:border-0 dark:border-gray-800"><dt className="text-sm text-gray-500">{label}</dt><dd className="max-w-[65%] break-all text-right text-sm font-semibold text-gray-950 dark:text-white">{value ?? "—"}</dd></div>)}</dl></div>; }
+/*******************************************************************************
+ * Function: formatSeconds
+ *
+ * Formats seconds for the DatafeedPage module.
+ ******************************************************************************/
 function formatSeconds(value) { return Number.isFinite(value) ? `${Number(value).toFixed(2)}s` : "—"; }
 
 export default DatafeedPage;

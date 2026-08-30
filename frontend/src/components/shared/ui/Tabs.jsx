@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Tabs
+ *
+ * Performs the Tabs operation on the application for the Tabs module.
+ ******************************************************************************/
 function Tabs({ tabs = [], active = tabs[0]?.id, onChange }) {
   return (
     <div className="flex gap-2 overflow-x-auto scrollbar-hide">

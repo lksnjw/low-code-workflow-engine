@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { dump as dumpYaml } from "js-yaml";
 import {
@@ -38,6 +39,7 @@ import {
   takeWorkflowForCanvas,
   workflowCreationPayload,
   workflowYamlToCanvas,
+  saveWorkflowForChatEdit,
 } from "../../utils/workflowCanvas.utils";
 import { catalogService } from "../../services/catalog.service";
 import { workflowService } from "../../services/workflow.service";
@@ -112,7 +114,7 @@ const toneClasses = {
  ******************************************************************************/
 function getInitialCanvasState() {
   const pendingWorkflow = takeWorkflowForCanvas();
-  if (pendingWorkflow?.canExecute && pendingWorkflow.yaml) {
+  if (pendingWorkflow?.yaml) {
     const canvas = workflowYamlToCanvas(pendingWorkflow.yaml, {
       candidateId: pendingWorkflow.candidateId,
       chatSessionId: pendingWorkflow.chatSessionId,
@@ -420,7 +422,7 @@ function ExecutionResultPanel({ result, onClose }) {
  *
  * Performs the Builder Header operation on header for the WorkflowBuilderCanvas module.
  ******************************************************************************/
-function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly, statusCounts, workflow }) {
+function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly, statusCounts, workflow, onEditInChat }) {
   const stateCopy = {
     idle: "Ready",
     running: "Running workflow",
@@ -446,12 +448,24 @@ function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly,
           </div>
         </div>
       </div>
-      <BuilderModeControls
-        readOnly={readOnly}
-        isExecuting={isExecuting}
-        onDeploy={onDeploy}
-        onRun={onRun}
-      />
+      <div className="flex items-center gap-2">
+        {readOnly && onEditInChat && (
+          <button
+            type="button"
+            onClick={onEditInChat}
+            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-none stroke-current stroke-2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+            Edit in Chat
+          </button>
+        )}
+        <BuilderModeControls
+          readOnly={readOnly}
+          isExecuting={isExecuting}
+          onDeploy={onDeploy}
+          onRun={onRun}
+        />
+      </div>
     </header>
   );
 }
@@ -462,6 +476,7 @@ function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly,
  * Performs the Workflow Builder Surface operation on builder surface for the WorkflowBuilderCanvas module.
  ******************************************************************************/
 function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedded = false }) {
+  const navigate = useNavigate();
   const reactFlowWrapper = useRef(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [initialCanvasState] = useState(() => initialState ?? getInitialCanvasState());
@@ -718,6 +733,15 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     finally { setIsExecuting(false); }
   }, [deployWorkflow, notify]);
 
+  const handleEditInChat = useCallback(() => {
+    let yaml = workflow.yaml || "";
+    if (!yaml && nodes.length > 0) {
+      try { yaml = workflowYAML(); } catch { /* cycle or empty */ }
+    }
+    saveWorkflowForChatEdit({ yaml, workflowId: workflow.id ?? null, workflowName: workflow.name });
+    navigate("/chat?new=1");
+  }, [workflow, nodes, workflowYAML, navigate]);
+
   return (
     <div className={`${embedded ? "relative h-full" : "fixed inset-y-0 right-0 left-0 z-50 md:left-16"} flex overflow-hidden bg-slate-100 text-slate-950`}>
       {!readOnly && !embedded ? <BuilderSidebar groups={catalogQuery.data || []} loading={catalogQuery.isLoading} error={catalogQuery.error} /> : null}
@@ -730,6 +754,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
           readOnly={readOnly}
           statusCounts={statusCounts}
           workflow={workflow}
+          onEditInChat={nodes.length > 0 ? handleEditInChat : undefined}
         />
         {runError ? <div className="shrink-0 bg-white px-6 py-2"><GateRejectionAlert details={runError} /></div> : null}
         <div className="min-h-0 flex-1 bg-slate-100 p-4">

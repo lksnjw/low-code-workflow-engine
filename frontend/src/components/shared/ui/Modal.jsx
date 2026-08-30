@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Modal
+ *
+ * Performs the Modal operation on the application for the Modal module.
+ ******************************************************************************/
 function Modal({ title, children, open = false }) {
   if (!open) return null;
 

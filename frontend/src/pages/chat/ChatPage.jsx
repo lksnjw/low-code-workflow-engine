@@ -1,16 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ChatHistory from "../../components/chat/ChatHistory";
 import ChatWindow from "../../components/chat/ChatWindow";
 import ChatArtifactPanel from "../../components/chat/ChatArtifactPanel";
 import { useChat } from "../../hooks/useChat";
 import { useChatSessions } from "../../hooks/useChatSessions";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { peekWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
 
 function ChatPage() {
   const { sessionId = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const sessions = useChatSessions(sessionId);
   const chat = useChat(sessions.selectedSessionId);
+
+  // Auto-create a new session when redirected from "Edit in Chat"
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    const editCtx = peekWorkflowForChatEdit();
+    const title = editCtx ? `Edit: ${editCtx.workflowName || "Workflow"}` : "New conversation";
+    sessions.createSession(title).then((session) => {
+      navigate(`/chat/${encodeURIComponent(session.id)}`, { replace: true });
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [showArtifact, setShowArtifact] = useState(true);
 
@@ -36,7 +49,11 @@ function ChatPage() {
       sid = session.id;
       navigate(`/chat/${encodeURIComponent(sid)}`);
     }
-    return chat.send(text, sid, options);
+    const editCtx = peekWorkflowForChatEdit();
+    const sendOptions = editCtx?.yaml
+      ? { ...options, workflowContext: { yaml: editCtx.yaml, name: editCtx.workflowName || "Workflow" } }
+      : options;
+    return chat.send(text, sid, sendOptions);
   };
 
   return (

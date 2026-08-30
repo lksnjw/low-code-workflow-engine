@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: TypingIndicator
+ *
+ * Performs the Typing Indicator operation on indicator for the TypingIndicator module.
+ ******************************************************************************/
 function TypingIndicator() {
   return (
     <div className="flex items-center gap-1 rounded-full bg-backgroundLight px-3 py-2 dark:bg-darkBackgroundVery">

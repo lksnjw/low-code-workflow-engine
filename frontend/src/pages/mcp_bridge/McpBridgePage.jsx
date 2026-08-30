@@ -4,7 +4,17 @@ import { ErrorState, EmptyState, LoadingState } from "../../components/shared/Re
 import { catalogService } from "../../services/catalog.service";
 import { dashboardService } from "../../services/dashboard.service";
 
+/*******************************************************************************
+ * Function: McpBridgePage
+ *
+ * Performs the Mcp Bridge Page operation on bridge page for the McpBridgePage module.
+ ******************************************************************************/
 function McpBridgePage() {
+/*******************************************************************************
+ * Function: query
+ *
+ * Performs the query operation on the application for the McpBridgePage module.
+ ******************************************************************************/
   const query = useQuery({
     queryKey: ["mcp-bridge"],
     queryFn: async () => {
@@ -16,6 +26,11 @@ function McpBridgePage() {
 
   if (query.isLoading) return <LoadingState label="Loading MCP bridge status…" />;
   if (query.error) return <ErrorState error={query.error} onRetry={query.refetch} />;
+/*******************************************************************************
+ * Function: mcp
+ *
+ * Performs the mcp operation on the application for the McpBridgePage module.
+ ******************************************************************************/
   const mcp = query.data.health.services?.find((service) => service.name === "MCP Bridge");
   const configured = mcp?.status === "healthy";
 
@@ -65,6 +80,11 @@ function McpBridgePage() {
   );
 }
 
+/*******************************************************************************
+ * Function: Metric
+ *
+ * Performs the Metric operation on the application for the McpBridgePage module.
+ ******************************************************************************/
 function Metric({ label, value }) {
   return <div className="surface-panel rounded-2xl p-5"><p className="text-sm font-semibold text-gray-500 dark:text-gray-400">{label}</p><p className="mt-2 text-2xl font-black capitalize text-gray-950 dark:text-white">{value}</p></div>;
 }

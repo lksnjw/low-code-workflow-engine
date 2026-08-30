@@ -1,5 +1,10 @@
 import Card from "../shared/ui/Card";
 
+/*******************************************************************************
+ * Function: MetricCard
+ *
+ * Performs the Metric Card operation on card for the MetricCard module.
+ ******************************************************************************/
 function MetricCard({ label, value, detail }) {
   return (
     <Card>

@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Select
+ *
+ * Performs the Select operation on the application for the Select module.
+ ******************************************************************************/
 function Select({ children, className = "", ...props }) {
   return (
     <select

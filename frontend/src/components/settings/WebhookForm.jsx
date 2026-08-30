@@ -5,11 +5,21 @@ import { settingsService } from "../../services/settings.service";
 import { apiErrorMessage } from "../../services/api";
 import { useNotifications } from "../../context/NotificationContext";
 
+/*******************************************************************************
+ * Function: WebhookForm
+ *
+ * Performs the Webhook Form operation on form for the WebhookForm module.
+ ******************************************************************************/
 function WebhookForm({ onCreated }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const { notify } = useNotifications();
+/*******************************************************************************
+ * Function: submit
+ *
+ * Performs the submit operation on the application for the WebhookForm module.
+ ******************************************************************************/
   const submit = async (event) => {
     event.preventDefault();
     setSaving(true);

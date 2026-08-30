@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: StepLogItem
+ *
+ * Performs the Step Log Item operation on log item for the StepLogItem module.
+ ******************************************************************************/
 function StepLogItem({ log, index, tone }) {
   const blocked = tone === "blocked";
   return (

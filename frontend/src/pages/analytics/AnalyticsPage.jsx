@@ -9,6 +9,11 @@ import UsageTrendCard from "../../components/analytics/UsageTrendCard";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useAnalytics } from "../../hooks/useAnalytics";
 
+/*******************************************************************************
+ * Function: AnalyticsPage
+ *
+ * Performs the Analytics Page operation on page for the AnalyticsPage module.
+ ******************************************************************************/
 function AnalyticsPage({ view = "performance" }) {
   const { data, loading, error, reload } = useAnalytics();
   if (loading) return <LoadingState label="Loading measured analytics…" />;

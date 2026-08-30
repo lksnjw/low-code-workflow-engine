@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Checkbox
+ *
+ * Performs the Checkbox operation on the application for the Checkbox module.
+ ******************************************************************************/
 function Checkbox({ label, ...props }) {
   return (
     <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">

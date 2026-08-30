@@ -9,6 +9,11 @@ const toneClasses = {
     "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300",
 };
 
+/*******************************************************************************
+ * Function: StatsCard
+ *
+ * Performs the Stats Card operation on card for the StatsCard module.
+ ******************************************************************************/
 function StatsCard({ metric }) {
   return (
     <Card className="min-h-[142px]">

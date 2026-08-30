@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import { useQuery } from "@tanstack/react-query";
 import { registryService } from "../../services/registry.service";
 
+/*******************************************************************************
+ * Function: RegistryStatusBanner
+ *
+ * Performs the Registry Status Banner operation on status banner for the RegistryStatusBanner module.
+ ******************************************************************************/
 function RegistryStatusBanner() {
   const query = useQuery({ queryKey: ["registry-status"], queryFn: registryService.status });
 

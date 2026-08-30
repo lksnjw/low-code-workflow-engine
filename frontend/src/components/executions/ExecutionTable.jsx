@@ -11,6 +11,11 @@ const columns = [
   { key: "cost", label: "Cost" },
 ];
 
+/*******************************************************************************
+ * Function: ExecutionTable
+ *
+ * Performs the Execution Table operation on table for the ExecutionTable module.
+ ******************************************************************************/
 function ExecutionTable({ executions }) {
   return (
     <DataTable

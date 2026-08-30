@@ -9,6 +9,11 @@ import { apiErrorMessage } from "../../services/api";
 
 const BUILT_IN_ROLE_IDS = new Set(["role_admin", "role_system_admin", "role_builder", "role_client"]);
 
+/*******************************************************************************
+ * Function: RolePermissionEditor
+ *
+ * Performs the Role Permission Editor operation on permission editor for the RolePermissionEditor module.
+ ******************************************************************************/
 function RolePermissionEditor({
   roles = [],
   permissions = [],
@@ -22,13 +27,33 @@ function RolePermissionEditor({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+/*******************************************************************************
+ * Function: role
+ *
+ * Performs the role operation on the application for the RolePermissionEditor module.
+ ******************************************************************************/
   const role = useMemo(() => roles.find((item) => item.id === roleId) || roles[0], [roleId, roles]);
+/*******************************************************************************
+ * Function: availableKeys
+ *
+ * Performs the available Keys operation on keys for the RolePermissionEditor module.
+ ******************************************************************************/
   const availableKeys = useMemo(() => new Set(permissions.map((permission) => permission.key)), [permissions]);
+/*******************************************************************************
+ * Function: selected
+ *
+ * Performs the selected operation on the application for the RolePermissionEditor module.
+ ******************************************************************************/
   const selected = (role
     ? drafts[role.id] ?? (Array.isArray(role.permissions) ? role.permissions : [])
     : []).filter((permission) => availableKeys.has(permission));
   const builtIn = role ? BUILT_IN_ROLE_IDS.has(role.id) : false;
 
+/*******************************************************************************
+ * Function: toggle
+ *
+ * Performs the toggle operation on the application for the RolePermissionEditor module.
+ ******************************************************************************/
   const toggle = (permissionKey) => {
     if (!role) return;
     setDrafts((current) => ({
@@ -39,12 +64,22 @@ function RolePermissionEditor({
     }));
   };
 
+/*******************************************************************************
+ * Function: closeDelete
+ *
+ * Performs the close Delete operation on delete for the RolePermissionEditor module.
+ ******************************************************************************/
   const closeDelete = () => {
     if (deleting) return;
     setDeleteOpen(false);
     setDeleteError("");
   };
 
+/*******************************************************************************
+ * Function: confirmDelete
+ *
+ * Performs the confirm Delete operation on delete for the RolePermissionEditor module.
+ ******************************************************************************/
   const confirmDelete = async () => {
     if (!role) return;
     setDeleting(true);

@@ -1,6 +1,11 @@
 import Card from "../shared/ui/Card";
 import Progress from "../shared/ui/Progress";
 
+/*******************************************************************************
+ * Function: SystemHealth
+ *
+ * Performs the System Health operation on health for the SystemHealth module.
+ ******************************************************************************/
 function SystemHealth({ services = [] }) {
   return (
     <Card>

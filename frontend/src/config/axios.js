@@ -15,6 +15,11 @@ export const AUTH_STORAGE = {
   user: "workflow.user",
 };
 
+/*******************************************************************************
+ * Function: clearStoredSession
+ *
+ * Clears stored session for the axios module.
+ ******************************************************************************/
 export function clearStoredSession() {
   localStorage.removeItem(AUTH_STORAGE.token);
   localStorage.removeItem(AUTH_STORAGE.refresh);
@@ -26,6 +31,11 @@ export function clearStoredSession() {
  * connection refused). This is never an authentication failure and must never
  * clear the session.
  */
+/*******************************************************************************
+ * Function: isNetworkError
+ *
+ * Determines whether network error for the axios module.
+ ******************************************************************************/
 export function isNetworkError(error) {
   if (!error) return false;
   if (error.response) return false;
@@ -33,6 +43,11 @@ export function isNetworkError(error) {
 }
 
 /** The API is unreachable only when no HTTP response was received. */
+/*******************************************************************************
+ * Function: isServerUnavailable
+ *
+ * Determines whether server unavailable for the axios module.
+ ******************************************************************************/
 export function isServerUnavailable(error) {
   return isNetworkError(error);
 }
@@ -55,10 +70,20 @@ apiClient.interceptors.request.use((config) => {
 // ---------------------------------------------------------------------------
 let refreshPromise = null;
 
+/*******************************************************************************
+ * Function: getRefreshInFlight
+ *
+ * Gets refresh in flight for the axios module.
+ ******************************************************************************/
 export function getRefreshInFlight() {
   return refreshPromise;
 }
 
+/*******************************************************************************
+ * Function: refreshSession
+ *
+ * Refreshes session for the axios module.
+ ******************************************************************************/
 export function refreshSession() {
   if (refreshPromise) return refreshPromise;
 
@@ -104,6 +129,11 @@ apiClient.interceptors.response.use(
     }
 
     const url = originalRequest.url || "";
+/*******************************************************************************
+ * Function: canRefresh
+ *
+ * Determines whether refresh for the axios module.
+ ******************************************************************************/
     const canRefresh =
       error.response?.status === 401 &&
       !originalRequest._retry &&

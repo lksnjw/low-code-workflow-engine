@@ -10,6 +10,11 @@ const tones = {
   amber: "text-amber-600 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-300",
 };
 
+/*******************************************************************************
+ * Function: ActivityFeed
+ *
+ * Performs the Activity Feed operation on feed for the ActivityFeed module.
+ ******************************************************************************/
 function ActivityFeed({ items = [] }) {
   return (
     <Card>

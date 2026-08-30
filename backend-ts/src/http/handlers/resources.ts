@@ -11,6 +11,13 @@ import type { RouteDefinition } from "../generated-routes.js";
 import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, paginate, requestParam, stringValue } from "./common.js";
 import { classifyIntent } from "../../agent/intent-classifier.js";
 import { runQueryLoop, type ToolStep } from "../../agent/query-loop.js";
+import { runActionLoop } from "../../agent/action-loop.js";
+import { discoverTools } from "../../agent/tool-discovery.js";
+import { validateSemantics } from "../../governance/semantic-validator.js";
+import { modifyWorkflow } from "../../agent/workflow-modifier.js";
+import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
+import { correctToolNamesInYaml } from "../../synthesis/service.js";
+import { stringify as yamlStringify } from "yaml";
 
 function buildWorkflowYamlFromSteps(steps: ToolStep[], userPrompt: string): string {
   const safeName = userPrompt.trim().slice(0, 60).replace(/[^a-zA-Z0-9 ]/g, "").trim() || "Chat Workflow";
@@ -230,6 +237,9 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
   const content = stringValue(body.content).trim() === "" ? stringValue(body.message).trim() : stringValue(body.content).trim();
   if (content === "") throw new HandlerFailure(400, "message is required");
+  const bodyWorkflowCtx = isRecord(body.workflowContext) ? body.workflowContext : null;
+  const workflowContextYaml = typeof bodyWorkflowCtx?.yaml === "string" && bodyWorkflowCtx.yaml.trim() ? bodyWorkflowCtx.yaml.trim() : null;
+  const workflowContextName = typeof bodyWorkflowCtx?.name === "string" && bodyWorkflowCtx.name ? bodyWorkflowCtx.name : "Workflow";
   const traceId = requestTraceId(request);
   const stored = await services.repository.mutate((state) => {
     const id = requestParam(request, "id");
@@ -241,6 +251,10 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     chat.messages.push(userMessage); chat.messageCount = chat.messages.length; chat.updatedAt = now();
     return { session: chatSummary(chat), userMessage, priorMessages };
   });
+  // Prepend workflow YAML context as a synthetic assistant message so the LLM can answer questions about it
+  const augmentedPriorMessages = workflowContextYaml
+    ? [`assistant: I have the following workflow loaded for context:\n**${workflowContextName}**\n\`\`\`yaml\n${workflowContextYaml}\n\`\`\``, ...stored.priorMessages]
+    : stored.priorMessages;
   // ── Feasibility check against workflows catalog ──────────────────────────
   const feasibility = checkFeasibility(content, user.role);
   if (!feasibility.feasible) {
@@ -258,7 +272,8 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   }
   const intent = classifyIntent(content);
   if (intent === "CAPABILITIES") {
-    const capText = buildCapabilitiesResponse(services.registries.snapshot().tools);
+    const liveCapTools = await discoverTools(services.erpbridgeSession ?? null, services.registries);
+    const capText = buildCapabilitiesResponse(liveCapTools);
     const assistantMessage = await services.repository.mutate((state) => {
       const chat = state.chats[requestParam(request, "id")];
       if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
@@ -268,44 +283,150 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     });
     return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: capText, intent }, "Message processed", null));
   }
-  if ((intent === "QUERY" || intent === "AUDIT") && services.erpbridgeSession !== undefined && services.providerRuntime?.configured === true) {
-    const allReadOnlyTools = services.registries.readOnlyTools();
-    const readOnlyTools = selectRelevantTools(content, allReadOnlyTools, 15);
-    if (readOnlyTools.length > 0) {
-      const sessionId = requestParam(request, "id");
-      const chatHistory = stored.priorMessages.map((line) => {
-        const sep = line.indexOf(": ");
-        return sep > -1 ? { role: line.slice(0, sep), text: line.slice(sep + 2) } : { role: "user", text: line };
-      });
-      let loopResult;
-      try {
-        const bridgeSession = services.erpbridgeSession;
-        loopResult = await runQueryLoop(
-          { userMessage: content, chatHistory, sessionId, actorId: user.id, actorRole: user.role, signal: request.signal, traceId },
-          readOnlyTools,
-          async (toolName, args) => bridgeSession.callToolDirect(toolName, args),
-          services.providerRuntime,
-        );
-      } catch (error) {
-        throw new HandlerFailure(502, `Query agent failed: ${errorText(error)}`);
+  if ((intent === "QUERY" || intent === "AUDIT") && services.providerRuntime?.configured === true) {
+    // Gather ERP tools if bridge is available; fall back to empty (pure conversational)
+    let readOnlyTools: readonly import("../../registry/schemas.js").ToolDefinition[] = [];
+    if (services.erpbridgeSession !== undefined) {
+      const staticReadOnly = services.registries.readOnlyTools();
+      const allReadOnlyTools = staticReadOnly.length > 0
+        ? staticReadOnly
+        : (await discoverTools(services.erpbridgeSession, services.registries)).filter((t) => t.is_read_only === true);
+      readOnlyTools = selectRelevantTools(content, allReadOnlyTools, 15);
+    }
+    const sessionId = requestParam(request, "id");
+    const chatHistory = augmentedPriorMessages.map((line) => {
+      const sep = line.indexOf(": ");
+      return sep > -1 ? { role: line.slice(0, sep), text: line.slice(sep + 2) } : { role: "user", text: line };
+    });
+    let loopResult;
+    try {
+      const bridgeSession = services.erpbridgeSession;
+      loopResult = await runQueryLoop(
+        { userMessage: content, chatHistory, sessionId, actorId: user.id, actorRole: user.role, signal: request.signal, traceId },
+        readOnlyTools,
+        async (toolName, args) => bridgeSession !== undefined ? bridgeSession.callToolDirect(toolName, args) : {},
+        services.providerRuntime,
+      );
+    } catch (error) {
+      throw new HandlerFailure(502, `Query agent failed: ${errorText(error)}`);
+    }
+    const workflowDraft = loopResult.toolSteps.length > 0
+      ? buildWorkflowYamlFromSteps(loopResult.toolSteps, content)
+      : undefined;
+    const queryArtifacts = {
+      intent,
+      sources: loopResult.toolCallLog,
+      toolSteps: loopResult.toolSteps,
+      boundHit: loopResult.boundHit,
+      iterationsUsed: loopResult.iterationsUsed,
+      latencyMs: loopResult.latencyMs,
+      ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
+      ...(workflowDraft !== undefined ? { workflowDraft } : {}),
+    };
+    const assistantMessage = await services.repository.mutate((state) => {
+      const chat = state.chats[requestParam(request, "id")];
+      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+      const message = { id: nextID(state, "msg"), role: "assistant", text: loopResult.text, artifacts: queryArtifacts, createdAt: now(), traceId };
+      chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      return message;
+    });
+    return reply.send(ok({
+      session: stored.session,
+      userMessage: stored.userMessage,
+      assistantMessage,
+      answer: loopResult.text,
+      intent,
+      sources: loopResult.toolCallLog,
+      toolSteps: loopResult.toolSteps,
+      ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
+      ...(workflowDraft !== undefined ? { workflowDraft } : {}),
+      boundHit: loopResult.boundHit,
+      usage: { inputTokens: loopResult.totalTokens.input, outputTokens: loopResult.totalTokens.output, measured: true },
+    }, "Message processed", null));
+  }
+  if (intent === "TOOL_CALL" && services.erpbridgeSession !== undefined && services.providerRuntime?.configured === true) {
+    const bridgeSession = services.erpbridgeSession;
+    const allTools = await discoverTools(bridgeSession, services.registries);
+    const chatHistory = augmentedPriorMessages.map((line) => {
+      const sep = line.indexOf(": ");
+      return sep > -1 ? { role: line.slice(0, sep), text: line.slice(sep + 2) } : { role: "user", text: line };
+    });
+    const governanceUser = { id: user.id, role: user.role, department: user.departmentId };
+    let actionResult;
+    try {
+      actionResult = await runActionLoop(
+        { userMessage: content, chatHistory, sessionId: requestParam(request, "id"), actorId: user.id, actorRole: user.role, user: governanceUser, signal: request.signal, traceId },
+        allTools,
+        async (toolName, args) => bridgeSession.callToolDirect(toolName, args),
+        async (toolName, toolDef, args, govUser) => {
+          const semResult = await validateSemantics(
+            { toolName, toolDisplayName: toolDef.display_name ?? toolName, arguments: args, userRole: govUser.role, userId: govUser.id },
+            bridgeSession,
+          );
+          return semResult.reason !== undefined ? { allowed: semResult.allowed, reason: semResult.reason } : { allowed: semResult.allowed };
+        },
+        services.providerRuntime,
+      );
+    } catch (error) {
+      throw new HandlerFailure(502, `Action agent failed: ${errorText(error)}`);
+    }
+    const actionArtifacts = {
+      intent: "TOOL_CALL",
+      steps: actionResult.steps,
+      blocked: actionResult.blocked,
+      workflowDraft: actionResult.workflowYaml,
+      toolSteps: actionResult.steps.map((s) => ({ toolName: s.toolName, arguments: s.arguments, result: s.result })),
+    };
+    const assistantMessage = await services.repository.mutate((state) => {
+      const chat = state.chats[requestParam(request, "id")];
+      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+      const message = { id: nextID(state, "msg"), role: "assistant", text: actionResult.text, artifacts: actionArtifacts, createdAt: now(), traceId };
+      chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      return message;
+    });
+    return reply.send(ok({
+      session: stored.session,
+      userMessage: stored.userMessage,
+      assistantMessage,
+      answer: actionResult.text,
+      intent,
+      steps: actionResult.steps,
+      blocked: actionResult.blocked,
+      workflowDraft: actionResult.workflowYaml,
+      usage: { inputTokens: actionResult.totalTokens.input, outputTokens: actionResult.totalTokens.output, measured: true },
+    }, "Message processed", null));
+  }
+
+  if (intent === "WORKFLOW_MODIFY" && services.providerRuntime?.configured === true) {
+    const sessionId = requestParam(request, "id");
+    const lastWorkflowYaml = await services.repository.read((state) => {
+      const chat = state.chats[sessionId];
+      if (chat === undefined) return null;
+      for (let i = chat.messages.length - 1; i >= 0; i--) {
+        const msg = chat.messages[i] as Record<string, unknown>;
+        const artifacts = msg.artifacts as Record<string, unknown> | undefined;
+        const yaml = artifacts?.yaml ?? artifacts?.selected_workflow_yaml ?? artifacts?.workflowDraft;
+        if (typeof yaml === "string" && yaml.trim().length > 0) return yaml;
+        if (typeof yaml === "object" && yaml !== null && typeof (yaml as Record<string, unknown>).yaml === "string") {
+          return (yaml as Record<string, unknown>).yaml as string;
+        }
       }
-      const workflowDraft = loopResult.toolSteps.length > 0
-        ? buildWorkflowYamlFromSteps(loopResult.toolSteps, content)
-        : undefined;
-      const queryArtifacts = {
-        intent,
-        sources: loopResult.toolCallLog,
-        toolSteps: loopResult.toolSteps,
-        boundHit: loopResult.boundHit,
-        iterationsUsed: loopResult.iterationsUsed,
-        latencyMs: loopResult.latencyMs,
-        ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
-        ...(workflowDraft !== undefined ? { workflowDraft } : {}),
-      };
+      return null;
+    });
+
+    const effectiveYaml = lastWorkflowYaml ?? workflowContextYaml;
+    if (effectiveYaml !== null) {
+      const modResult = await modifyWorkflow(effectiveYaml, content, services.providerRuntime, request.signal);
+      const responseText = modResult.ok
+        ? `I've updated the workflow: ${modResult.changeDescription}\n\nThe modified YAML is ready in the panel.`
+        : `I wasn't able to apply that modification: ${modResult.errorMessage ?? "Unknown error"}`;
+      const modArtifacts = modResult.ok
+        ? { intent: "WORKFLOW", yaml: modResult.yaml, selected_workflow_yaml: modResult.yaml, can_execute: false, validation: { passed: false, failed_rules: [], warnings: [] } }
+        : { intent: "WORKFLOW_MODIFY_ERROR" };
       const assistantMessage = await services.repository.mutate((state) => {
-        const chat = state.chats[requestParam(request, "id")];
+        const chat = state.chats[sessionId];
         if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
-        const message = { id: nextID(state, "msg"), role: "assistant", text: loopResult.text, artifacts: queryArtifacts, createdAt: now(), traceId };
+        const message = { id: nextID(state, "msg"), role: "assistant", text: responseText, artifacts: modArtifacts, createdAt: now(), traceId };
         chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
         return message;
       });
@@ -313,20 +434,37 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
         session: stored.session,
         userMessage: stored.userMessage,
         assistantMessage,
-        answer: loopResult.text,
+        answer: responseText,
         intent,
-        sources: loopResult.toolCallLog,
-        toolSteps: loopResult.toolSteps,
-        ...(loopResult.visualisation !== undefined ? { visualisation: loopResult.visualisation } : {}),
-        ...(workflowDraft !== undefined ? { workflowDraft } : {}),
-        boundHit: loopResult.boundHit,
-        usage: { inputTokens: loopResult.totalTokens.input, outputTokens: loopResult.totalTokens.output, measured: true },
+        ...(modResult.ok ? { yaml: modResult.yaml } : {}),
       }, "Message processed", null));
     }
+    // Fall through to synthesis if no previous workflow found in chat
   }
+
+  if (intent !== "ACTION") {
+    // Non-ACTION intents that reached here (e.g. TOOL_CALL with no bridge) — reply conversationally.
+    const fallbackMessage = await services.repository.mutate((state) => {
+      const chat = state.chats[requestParam(request, "id")];
+      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+      const msg = {
+        id: nextID(state, "msg"),
+        role: "assistant",
+        text: "I'm not sure how to help with that. Try asking me to list data from the ERP system, create a workflow, or describe what you need.",
+        artifacts: { intent },
+        createdAt: now(),
+        traceId,
+      };
+      chat.messages.push(msg); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      return msg;
+    });
+    return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage: fallbackMessage, answer: fallbackMessage.text, intent }, "Message processed", null));
+  }
+
   if (services.synthesis === undefined) throw new HandlerFailure(502, "Chat orchestration is not configured");
+  const liveToolsForSynthesis = await discoverTools(services.erpbridgeSession ?? null, services.registries);
   let result;
-  try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, user: { id: user.id, role: user.role, department: user.departmentId }, model: stringValue(body.model), priorMessages: stored.priorMessages, signal: request.signal, traceId, sessionId: requestParam(request, "id"), messageId: stringValue(stored.userMessage.id) }); }
+  try { result = await services.synthesis.synthesize({ prompt: content, userRole: user.role, user: { id: user.id, role: user.role, department: user.departmentId }, model: stringValue(body.model), priorMessages: augmentedPriorMessages, signal: request.signal, traceId, sessionId: requestParam(request, "id"), messageId: stringValue(stored.userMessage.id), liveTools: liveToolsForSynthesis }); }
   catch (error) {
     const errText = errorText(error);
     const errorDetail = errText.split(":").at(-1)?.trim() || errText;
@@ -342,11 +480,101 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     });
     return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage: errMessage, answer: friendlyText, intent: "WORKFLOW_ERROR" }, "Message processed", null));
   }
-  // Generate Claude Code-style narrative response
-  const assistantText = await generateWorkflowNarrative(content, result, stored.priorMessages, services.providerRuntime, request.signal);
+  // LLM self-correction pass: re-prompt the model to fix any tool names it got wrong.
+  try {
+    if (services.providerRuntime === undefined) throw new Error("no runtime");
+    const correction = await correctToolNamesInYaml(result.yaml, liveToolsForSynthesis, services.providerRuntime, request.signal);
+    if (correction.corrected) {
+      result = { ...result, yaml: correction.yaml, selected_workflow_yaml: correction.yaml };
+    }
+  } catch { /* non-fatal — post-processing normalization below catches remaining issues */ }
+
+  // Correct hallucinated/misnamed tool names in generated YAML.
+  // The LLM may generate snake_case when the real tool uses kebab-case (e.g. send_email → send-email).
+  // 1. Try normalising hyphens↔underscores to find a real match and rewrite the action.
+  // 2. Only flag as truly missing if no normalisation variant exists.
+  const liveToolNameSet = new Set(liveToolsForSynthesis.map((t) => t.name));
+  let missingTools: string[] = [];
+  try {
+    const bp = parseWorkflowYAMLStrict(result.yaml);
+    let rewritten = false;
+    const correctedSteps = bp.steps.map((s) => {
+      const action = s.action;
+      if (typeof action !== "string") return s;
+      if (liveToolNameSet.has(action)) return s;
+      // Try hyphen/underscore normalisation variants
+      const hyphenated = action.replace(/_/g, "-");
+      if (liveToolNameSet.has(hyphenated)) { rewritten = true; return { ...s, action: hyphenated }; }
+      const underscored = action.replace(/-/g, "_");
+      if (liveToolNameSet.has(underscored)) { rewritten = true; return { ...s, action: underscored }; }
+      // Strip LLM hallucination prefixes (dynamic_, static_, auto_) and retry
+      const stripped = action.replace(/^(dynamic|static|auto)_/, "");
+      if (stripped !== action) {
+        if (liveToolNameSet.has(stripped)) { rewritten = true; return { ...s, action: stripped }; }
+        const sh = stripped.replace(/_/g, "-");
+        if (liveToolNameSet.has(sh)) { rewritten = true; return { ...s, action: sh }; }
+        const su = stripped.replace(/-/g, "_");
+        if (liveToolNameSet.has(su)) { rewritten = true; return { ...s, action: su }; }
+      }
+      // Truly missing — record it and strip the step
+      missingTools.push(action);
+      return null;
+    }).filter((s): s is NonNullable<typeof s> => s !== null);
+
+    if (rewritten || missingTools.length > 0) {
+      if (correctedSteps.length > 0) {
+        const cleanedYaml = yamlStringify({ ...bp, steps: correctedSteps }).trim();
+        result = { ...result, yaml: cleanedYaml, selected_workflow_yaml: cleanedYaml };
+      }
+    }
+  } catch { /* ignore parse errors — validation will catch them */ }
+
+  // Auto-save the generated workflow immediately — no validation gate, always creates.
   const chatSessionId = requestParam(request, "id");
   const chatMessageId = stringValue(stored.userMessage.id);
-  const artifacts = compactWorkflowArtifacts(result, chatSessionId, chatMessageId, traceId);
+  let autoSavedWorkflowId: string | null = null;
+  try {
+    let blueprint;
+    try { blueprint = parseWorkflowYAMLStrict(result.yaml); } catch { blueprint = null; }
+    if (blueprint !== null) {
+      autoSavedWorkflowId = await services.repository.mutate((state) => {
+        state.counter += 1;
+        const wfId = `wf_${state.counter}_${randomBytes(4).toString("hex")}`;
+        const nowTs = new Date().toISOString();
+        const wf = {
+          id: wfId,
+          name: blueprint!.name || content.slice(0, 60) || "Generated Workflow",
+          description: (blueprint as Record<string, unknown>).description as string ?? "",
+          owner: { id: user.id, name: user.name },
+          assignedUserIds: [],
+          status: "PENDING",
+          trigger: blueprint!.trigger,
+          steps: blueprint!.steps.length,
+          successRate: 0,
+          lastRunAt: null,
+          publishedVersion: 1,
+          draftVersion: 1,
+          tags: [],
+          domainTags: [],
+          canRun: true,
+          createdAt: nowTs,
+          updatedAt: nowTs,
+          yaml: result.yaml,
+          archived: false,
+          chatSessionId,
+          chatMessageId: stringValue(stored.userMessage.id),
+          prompt: content,
+          traceId,
+        };
+        state.workflows[wfId] = wf as unknown as import("../../models/schemas.js").Workflow;
+        return wfId;
+      });
+    }
+  } catch { /* non-fatal — workflow shown in chat even if save fails */ }
+
+  // Generate Claude Code-style narrative response
+  const assistantText = await generateWorkflowNarrative(content, result, stored.priorMessages, services.providerRuntime, request.signal);
+  const artifacts = compactWorkflowArtifacts(result, chatSessionId, chatMessageId, traceId, autoSavedWorkflowId, missingTools);
   const assistantMessage = await services.repository.mutate((state) => {
     const chat = state.chats[requestParam(request, "id")];
     if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
@@ -376,6 +604,8 @@ function compactWorkflowArtifacts(
   chatSessionId: string,
   chatMessageId: string,
   traceId: string,
+  workflowId: string | null = null,
+  missingTools: string[] = [],
 ): Record<string, unknown> {
   const retrieval = result.retrieval as {
     tools?: unknown[];
@@ -402,6 +632,8 @@ function compactWorkflowArtifacts(
       status: candidate.status,
       score: candidate.score,
     })),
+    ...(workflowId !== null ? { workflowId } : {}),
+    ...(missingTools.length > 0 ? { missing_tools: missingTools } : {}),
     retrieval: {
       tools: pickArtifactRecords(retrieval.tools, [
         "tool_id", "name", "display_name", "description", "endpoint",
@@ -517,27 +749,24 @@ function errorText(error: unknown): string { return error instanceof Error ? err
 
 // Builds a plain-English summary of what the user can do in the ERP, grouped by module.
 function buildCapabilitiesResponse(tools: readonly import("../../registry/schemas.js").ToolDefinition[]): string {
-  // Group by module
-  const groups = new Map<string, { reads: string[]; writes: string[] }>();
+  if (tools.length === 0)
+    return "No ERP tools are currently available. Please check the ERP Bridge connection.";
+
+  const groups = new Map<string, string[]>();
   for (const tool of tools) {
-    const module = (tool.module ?? "General").trim() || "General";
-    if (!groups.has(module)) groups.set(module, { reads: [], writes: [] });
-    const display = (tool.display_name ?? tool.name).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 60);
-    if (tool.is_read_only) groups.get(module)!.reads.push(display);
-    else groups.get(module)!.writes.push(display);
+    const mod = (tool.module ?? "General").trim() || "General";
+    if (!groups.has(mod)) groups.set(mod, []);
+    const display = (tool.display_name ?? tool.name)
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .slice(0, 80);
+    groups.get(mod)!.push(display);
   }
 
-  const lines: string[] = ["Here's what you can do in the ERP:\n"];
-  for (const [module, { reads, writes }] of groups.entries()) {
-    lines.push(`## ${module}`);
-    if (reads.length > 0) {
-      lines.push("**View / Query:**");
-      reads.slice(0, 10).forEach((r) => lines.push(`- ${r}`));
-    }
-    if (writes.length > 0) {
-      lines.push("**Create / Update / Action:**");
-      writes.slice(0, 10).forEach((w) => lines.push(`- ${w}`));
-    }
+  const lines: string[] = [`Here are the **${tools.length} ERP tools** available:\n`];
+  for (const [mod, names] of groups.entries()) {
+    lines.push(`## ${mod} (${names.length} tools)`);
+    names.sort().forEach((n) => lines.push(`- ${n}`));
     lines.push("");
   }
   lines.push("Just ask me in plain language — for example: *\"Show me open purchase orders\"* or *\"Approve the pending request\"*.");

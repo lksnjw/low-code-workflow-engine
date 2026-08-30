@@ -7,6 +7,11 @@ const CAPABILITIES = [
   { icon: "mdi:graph-outline", label: "Pass to Canvas", desc: "Validated workflows go straight to the executor" },
 ];
 
+/*******************************************************************************
+ * Function: ChatWelcome
+ *
+ * Performs the Chat Welcome operation on welcome for the ChatWelcome module.
+ ******************************************************************************/
 function ChatWelcome({ onPrompt = () => {}, prompts = [] }) {
   return (
     <div className="space-y-6 py-4">

@@ -6,6 +6,11 @@ const variants = {
     "text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-black dark:hover:text-white",
 };
 
+/*******************************************************************************
+ * Function: Button
+ *
+ * Performs the Button operation on the application for the Button module.
+ ******************************************************************************/
 function Button({ children, variant = "primary", className = "", type = "button", ...props }) {
   return (
     <button

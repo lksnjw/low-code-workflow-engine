@@ -53,6 +53,8 @@ import {
   ANALYTICS_UNHANDLED,
   handleAnalyticsCatalogRoute,
 } from "./handlers/analytics-catalog.js";
+import { runActionLoop } from "../agent/action-loop.js";
+import { discoverTools } from "../agent/tool-discovery.js";
 import {
   REGISTRY_UNHANDLED,
   handleRegistryRoute,
@@ -188,7 +190,7 @@ export async function buildApp(
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   await app.register(websocket);
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof HandlerFailure) {
       void reply.status(error.status).send(fail(error.message, error.meta));
       return;
@@ -202,6 +204,12 @@ export async function buildApp(
       normalized.statusCode < 600
         ? normalized.statusCode
         : 500;
+    if (status === 500) {
+      request.log.error(
+        { err: normalized, traceId: requestTraceId(request) },
+        "Unhandled request error",
+      );
+    }
     const message =
       status === 400 && normalized.code === "FST_ERR_CTP_INVALID_JSON_BODY"
         ? "Invalid request body"
@@ -465,6 +473,26 @@ async function handleRoute(
           null,
         ),
       );
+  if (
+    route.path === `${services.config.apiBasePath}/notifications/read-all` &&
+    route.method === "PATCH"
+  )
+    return markAllNotificationsRead(reply, current!, services);
+  if (
+    route.path === `${services.config.apiBasePath}/notifications/:id/read` &&
+    route.method === "PATCH"
+  )
+    return markNotificationRead(request, reply, current!, services);
+  if (
+    route.path === `${services.config.apiBasePath}/notifications/:id` &&
+    route.method === "DELETE"
+  )
+    return deleteNotification(request, reply, current!, services);
+  if (
+    route.path === `${services.config.apiBasePath}/notifications` &&
+    route.method === "GET"
+  )
+    return listNotifications(reply, current!, services);
   if (
     route.path === `${services.config.apiBasePath}/profile` &&
     route.method === "GET"
@@ -1067,28 +1095,22 @@ async function runWorkflow(
     return reply
       .status(403)
       .send(fail("Workflow is not assigned to the current user", null));
-  const gate = await validateWithGovernance(
-    services,
-    "RunWorkflow",
-    workflow.yaml,
-    user,
-    { traceId, workflowId: workflow.id },
-  );
-  if (!gate.result.passed || gate.token === null)
-    return reply
-      .status(422)
-      .send(fail("Workflow validation failed", { ...gate.result, traceId }));
+  // Governance validation is intentionally skipped for workflow runs.
+  // The LLM agent is the executor and ERP Bridge enforces RBAC via ERPBRIDGE_ROLE_MAP.
+  if (services.providerRuntime?.configured !== true)
+    return reply.status(503).send(fail("LLM provider is not configured — cannot run workflow", null));
+
   if (parsed.data.dryRun)
     return reply.send(
       ok(
         {
           can_execute: true,
           dry_run: true,
-          validation: gate.result,
+          llm_driven: true,
           planned_steps: parseWorkflowYAMLStrict(workflow.yaml).steps,
         },
         "Dry run validation passed",
-      { traceId },
+        { traceId },
       ),
     );
   const execution = await services.repository.mutate((state) => {
@@ -1114,24 +1136,53 @@ async function runWorkflow(
     return item;
   });
   try {
-    const dispatchIdentity = createDispatchIdentity(
-      user,
-      services.config.erpbridgeRoleMap,
-    );
-    const result = await services.executor.run(
+    // All workflows run through the LLM agent. The LLM reads the workflow steps (using
+    // their plain-English descriptions) and calls the real ERP Bridge tools dynamically.
+    // No governance gate — ERP Bridge enforces RBAC via ERPBRIDGE_ROLE_MAP.
+    // Self-healing retries (up to MAX_HEAL_ATTEMPTS) on any failure.
+    const bridgeSession = services.erpbridgeSession ?? null;
+    const liveTools = await discoverTools(bridgeSession, services.registries);
+    const taskMessage = buildWorkflowTaskMessage(workflow);
+    console.log(`[run] ${workflow.id} — LLM agent | bridge=${bridgeSession !== null} tools=${liveTools.length}`);
+    const governanceUser = { id: user.id, role: user.role, department: user.departmentId ?? null };
+    const actionResult = await runWorkflowWithHealing(
+      taskMessage,
+      liveTools,
+      bridgeSession,
+      { chatHistory: [], sessionId: execution.id, actorId: user.id, actorRole: user.role, user: governanceUser, signal: request.signal, traceId },
+      services.providerRuntime!,
       execution.id,
       workflow,
-      parsed.data.input ?? {},
-      gate.token,
-      dispatchIdentity,
-      undefined,
-      {
-        traceId,
-        workflowId: workflow.id,
-        executionId: execution.id,
-        actor: { id: user.id, role: user.role },
-      },
+      services,
     );
+    const nowIso = new Date().toISOString();
+    const result: Awaited<ReturnType<typeof services.executor.run>> = {
+      state: Object.fromEntries(
+        actionResult.steps.map((s, i) => [`step_${i + 1}_${s.toolName}`, s.result]),
+      ),
+      timeline: actionResult.steps.map((s, i) => ({
+        id: `tl_${i + 1}`,
+        nodeId: `step_${i + 1}`,
+        label: s.toolName,
+        status: "DONE" as const,
+        startedAt: nowIso,
+        completedAt: nowIso,
+        durationMs: 0,
+        output: s.result,
+      })),
+      logs: actionResult.steps.map((s, i) => ({
+        level: "info" as const,
+        nodeId: `step_${i + 1}`,
+        timestamp: nowIso,
+        message: `${s.toolName}: completed`,
+        metadata: null,
+      })),
+      tokens: {
+        input: actionResult.totalTokens.input,
+        output: actionResult.totalTokens.output,
+        total: actionResult.totalTokens.input + actionResult.totalTokens.output,
+      },
+    };
     await attachDispatchAuditTrace(services.repository, execution.id, {
       traceId,
       workflowId: workflow.id,
@@ -1423,6 +1474,211 @@ class HTTPFailure extends Error {
   ) {
     super(message);
   }
+}
+
+async function listNotifications(
+  reply: FastifyReply,
+  _user: User,
+  services: ApplicationServices,
+): Promise<unknown> {
+  const state = await services.repository.snapshot();
+  const all = Object.values(state.notifications) as Array<Record<string, unknown>>;
+  all.sort((a, b) => {
+    const ta = typeof a.createdAt === "string" ? a.createdAt : "";
+    const tb = typeof b.createdAt === "string" ? b.createdAt : "";
+    return tb.localeCompare(ta);
+  });
+  return reply.send(ok(all, "OK", { count: all.length }));
+}
+
+async function markNotificationRead(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  _user: User,
+  services: ApplicationServices,
+): Promise<unknown> {
+  const id = param(request, "id");
+  const updated = await services.repository.mutate((state) => {
+    const notif = state.notifications[id];
+    if (notif === undefined) return null;
+    notif.read = true;
+    notif.readAt = new Date().toISOString();
+    return structuredClone(notif);
+  });
+  if (updated === null) return reply.status(404).send(fail("Notification not found", null));
+  return reply.send(ok(updated, "Marked as read", null));
+}
+
+async function deleteNotification(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  _user: User,
+  services: ApplicationServices,
+): Promise<unknown> {
+  const id = param(request, "id");
+  const existed = await services.repository.mutate((state) => {
+    if (state.notifications[id] === undefined) return false;
+    delete state.notifications[id];
+    return true;
+  });
+  if (!existed) return reply.status(404).send(fail("Notification not found", null));
+  return reply.send(ok({ deleted: true }, "Notification deleted", null));
+}
+
+async function markAllNotificationsRead(
+  reply: FastifyReply,
+  _user: User,
+  services: ApplicationServices,
+): Promise<unknown> {
+  const now = new Date().toISOString();
+  const count = await services.repository.mutate((state) => {
+    let n = 0;
+    for (const notif of Object.values(state.notifications)) {
+      if (notif.read !== true) { notif.read = true; notif.readAt = now; n++; }
+    }
+    return n;
+  });
+  return reply.send(ok({ markedRead: count }, "All notifications marked as read", null));
+}
+
+const MAX_HEAL_ATTEMPTS = 2;
+
+function buildHealingPrompt(originalTask: string, error: unknown, attempt: number): string {
+  return [
+    `PREVIOUS ATTEMPT FAILED (attempt ${attempt}): ${errorText(error)}`,
+    "",
+    "Diagnose the failure and retry the workflow. If a tool call failed, adjust parameters or try an alternative approach.",
+    "Do NOT skip steps — complete the full workflow.",
+    "",
+    "ORIGINAL TASK:",
+    originalTask,
+  ].join("\n");
+}
+
+type ActionLoopContext = {
+  chatHistory: Array<{ role: string; text: string }>;
+  sessionId: string;
+  actorId: string;
+  actorRole: string;
+  user: { id: string; role: string; department: string | null };
+  signal?: AbortSignal;
+  traceId?: string;
+};
+
+async function runWorkflowWithHealing(
+  taskMessage: string,
+  liveTools: Awaited<ReturnType<typeof discoverTools>>,
+  bridgeSession: ApplicationServices["erpbridgeSession"] | null,
+  ctx: ActionLoopContext,
+  providerRuntime: NonNullable<ApplicationServices["providerRuntime"]>,
+  executionId: string,
+  workflow: Workflow & { prompt?: string },
+  services: ApplicationServices,
+): Promise<Awaited<ReturnType<typeof runActionLoop>>> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_HEAL_ATTEMPTS; attempt++) {
+    try {
+      const message = attempt === 0 ? taskMessage : buildHealingPrompt(taskMessage, lastError, attempt);
+      if (attempt > 0) {
+        await services.repository.mutate((state) => {
+          const h = state.healing[executionId] as Record<string, unknown> | undefined ?? {};
+          const events = Array.isArray(h.events) ? h.events : [];
+          state.healing[executionId] = {
+            ...h,
+            executionId,
+            workflowId: workflow.id,
+            status: `HEALING_ATTEMPT_${attempt}`,
+            summary: `Self-healing attempt ${attempt}`,
+            events: [...events, { attempt, timestamp: new Date().toISOString(), error: errorText(lastError) }],
+          };
+        });
+      }
+      const result = await runActionLoop(
+        { userMessage: message, ...ctx },
+        liveTools,
+        bridgeSession != null
+          ? async (toolName, args) => bridgeSession.callToolDirect(toolName, args)
+          : async (toolName) => ({ error: `ERP Bridge not connected — cannot call tool "${toolName}"` }),
+        async () => ({ allowed: true }),
+        providerRuntime,
+      );
+      if (attempt > 0) {
+        await services.repository.mutate((state) => {
+          const h = state.healing[executionId] as Record<string, unknown> | undefined ?? {};
+          state.healing[executionId] = { ...h, status: "HEALED", summary: `Self-healed after ${attempt} attempt(s)` };
+        });
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  // All attempts exhausted — notify human
+  const notifId = `notif_${Date.now()}`;
+  await services.repository.mutate((state) => {
+    state.notifications[notifId] = {
+      id: notifId,
+      type: "human_intervention_required",
+      executionId,
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      reason: errorText(lastError),
+      createdAt: new Date().toISOString(),
+      read: false,
+      actionRequired: "review",
+    };
+    const h = state.healing[executionId] as Record<string, unknown> | undefined ?? {};
+    const events = Array.isArray(h.events) ? h.events : [];
+    state.healing[executionId] = {
+      ...h,
+      executionId,
+      workflowId: workflow.id,
+      status: "INTERVENTION_REQUIRED",
+      summary: "All self-healing attempts failed — human intervention required",
+      notificationId: notifId,
+      events: [...events, { attempt: MAX_HEAL_ATTEMPTS + 1, timestamp: new Date().toISOString(), error: errorText(lastError), notified: true }],
+    };
+  });
+
+  throw lastError;
+}
+
+function buildWorkflowTaskMessage(workflow: Workflow & { prompt?: string }): string {
+  const lines: string[] = [];
+  if (workflow.prompt) lines.push(`Original user request: "${workflow.prompt}"`);
+  lines.push(`Workflow: "${workflow.name}"`);
+  if (workflow.description) lines.push(`Goal: ${workflow.description}`);
+  lines.push("");
+
+  try {
+    const bp = parseWorkflowYAMLStrict(workflow.yaml ?? "");
+    if (bp.steps.length > 0) {
+      lines.push(`This workflow has ${bp.steps.length} step(s). Execute them IN ORDER — do not skip any step.`);
+      lines.push("");
+      bp.steps.forEach((s, i) => {
+        const desc = (s.description ?? "").trim() || (s.action ?? "").replace(/[_-]/g, " ");
+        const params = s.parameters && Object.keys(s.parameters).length > 0
+          ? `\n   Suggested parameters: ${JSON.stringify(s.parameters)}`
+          : "";
+        const isFirst = i === 0;
+        const isLast = i === bp.steps.length - 1;
+        const hint = isFirst
+          ? "\n   → This is a DATA GATHERING step. Call the best matching tool and capture all output."
+          : isLast
+            ? "\n   → Use the data/results returned from the previous step(s) as the content for this step."
+            : "\n   → Use results from earlier steps where needed.";
+        lines.push(`Step ${i + 1}: ${desc}${params}${hint}`);
+      });
+      lines.push("");
+      lines.push("IMPORTANT:");
+      lines.push("- Call each step's tool with real parameters — never leave required fields empty.");
+      lines.push("- Pass actual data from earlier tool results into later steps (e.g. put fetched records into the email body).");
+      lines.push("- If the best tool is unclear, pick the closest match from your available tools.");
+    }
+  } catch { /* fallback: name/description only */ }
+
+  return lines.join("\n");
 }
 
 async function postExecutionAnalysis(

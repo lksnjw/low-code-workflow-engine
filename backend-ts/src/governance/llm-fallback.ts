@@ -63,16 +63,23 @@ export class LlmPolicyFallback {
       };
     }
 
-    // Try LLM evaluation if a key is configured
+    // Static policy is the authoritative ground truth.
+    // If static allows → return immediately; the LLM never gets the chance to block it.
+    // If static blocks → optionally ask the LLM (it may loosen the block based on context).
+    const staticResult = this.#evaluateStatically(request, readOnly, policy);
+    if (staticResult.allowed) return staticResult;
+
+    // Static blocked — try LLM only as a potential override toward allow.
     if (this.#apiKey !== "" && this.#model !== "") {
       try {
-        return await this.#evaluateWithLlm(request, readOnly, policy, signal);
+        const llmResult = await this.#evaluateWithLlm(request, readOnly, policy, signal);
+        if (llmResult.allowed) return llmResult;
       } catch {
-        // LLM unavailable — fall through to static evaluation
+        // LLM unavailable — keep static block
       }
     }
 
-    return this.#evaluateStatically(request, readOnly, policy);
+    return staticResult;
   }
 
   async #loadPolicy(): Promise<FallbackPolicy> {
@@ -196,36 +203,28 @@ function buildPrompt(
   policy: FallbackPolicy,
 ): string {
   return [
-    "You are a governance policy evaluator operating in OFFLINE mode.",
-    "The external governance service is unavailable. Use ONLY the policy below to decide.",
+    "You are a workflow access control evaluator. Decide whether this workflow request should be allowed or blocked.",
+    "Use ONLY the policy rules below. Do not invent reasons. Do not reference governance systems or error formats.",
     "",
-    "OFFLINE GOVERNANCE POLICY:",
+    "POLICY:",
     JSON.stringify(policy, null, 2),
     "",
-    "WORKFLOW REQUEST TO EVALUATE:",
-    JSON.stringify(
-      {
-        user_role: request.user.role,
-        intent: request.intent,
-        proposed_actions: request.proposedActions,
-        is_read_only: readOnly,
-        context: request.caseContext,
-      },
-      null,
-      2,
-    ),
+    "REQUEST:",
+    `user_role: ${request.user.role}`,
+    `proposed_actions: ${JSON.stringify(request.proposedActions)}`,
+    `is_read_only: ${readOnly}`,
     "",
-    "DECISION RULES:",
-    "1. If user role is not in role_access and there is no 'default' entry → BLOCK",
-    "2. If any proposed action is in globally_blocked_tools → BLOCK",
-    "3. If is_read_only=false and role's allow_write_operations=false → BLOCK",
-    "4. If any proposed action is in the role's blocked_tools → BLOCK",
-    "5. If blocked_tools contains '*' → BLOCK all tools for that role",
+    "RULES (apply in order, stop at first match):",
+    "1. If user_role is not in policy.role_access AND there is no 'default' key → BLOCK",
+    "2. If any proposed_action is in policy.globally_blocked_tools → BLOCK",
+    "3. If is_read_only is false AND the role's allow_write_operations is false → BLOCK",
+    "4. If any proposed_action is in the role's blocked_tools list → BLOCK",
+    "5. If the role's blocked_tools contains '*' → BLOCK",
     "6. Otherwise → ALLOW",
     "",
-    "Return ONLY this exact JSON (no other text, no markdown fence):",
-    '{ "decision": "allow", "reason": "..." }',
-    "OR",
-    '{ "decision": "block", "reason": "..." }',
+    'Respond with ONLY this JSON — no extra text, no markdown:',
+    '{"decision":"allow","reason":"brief plain-English explanation"}',
+    "or",
+    '{"decision":"block","reason":"brief plain-English explanation"}',
   ].join("\n");
 }

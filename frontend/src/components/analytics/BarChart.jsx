@@ -1,6 +1,16 @@
 import Card from "../shared/ui/Card";
 
+/*******************************************************************************
+ * Function: BarChart
+ *
+ * Performs the Bar Chart operation on chart for the BarChart module.
+ ******************************************************************************/
 function BarChart({ data = [] }) {
+/*******************************************************************************
+ * Function: max
+ *
+ * Performs the max operation on the application for the BarChart module.
+ ******************************************************************************/
   const max = Math.max(1, ...data.map((item) => item.runs || 0));
   return (
     <Card className="lg:col-span-2">

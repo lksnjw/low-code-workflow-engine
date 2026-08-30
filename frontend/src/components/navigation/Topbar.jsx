@@ -11,11 +11,21 @@ import { useClickOutside } from "../../hooks/useClickOutside";
 import { notificationService } from "../../services/notification.service";
 import { apiClient } from "../../config/axios";
 
+/*******************************************************************************
+ * Function: UserMenu
+ *
+ * Performs the User Menu operation on menu for the Topbar module.
+ ******************************************************************************/
 function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useClickOutside(ref, () => setOpen(false));
 
+/*******************************************************************************
+ * Function: initials
+ *
+ * Performs the initials operation on the application for the Topbar module.
+ ******************************************************************************/
   const initials = user?.name
     ? user.name
         .split(" ")
@@ -90,15 +100,30 @@ function UserMenu({ user, onLogout }) {
   );
 }
 
+/*******************************************************************************
+ * Function: Topbar
+ *
+ * Performs the Topbar operation on the application for the Topbar module.
+ ******************************************************************************/
 function Topbar() {
   const { isDarkMode, toggleTheme } = useTheme();
   const { notify } = useNotifications();
   const { user, logout } = useAuthContext();
+/*******************************************************************************
+ * Function: notificationQuery
+ *
+ * Performs the notification Query operation on query for the Topbar module.
+ ******************************************************************************/
   const notificationQuery = useQuery({
     queryKey: ["notifications", "unread"],
     queryFn: () => notificationService.list({ unreadOnly: true, limit: 100 }),
     refetchInterval: 30_000,
   });
+/*******************************************************************************
+ * Function: environmentQuery
+ *
+ * Performs the environment Query operation on query for the Topbar module.
+ ******************************************************************************/
   const environmentQuery = useQuery({
     queryKey: ["runtime-environment"],
     queryFn: async () => (await apiClient.get("/health")).data?.data ?? {},

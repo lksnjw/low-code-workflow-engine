@@ -82,7 +82,9 @@ export class GovernedValidationGate implements ValidationGate {
       result.score = 0;
       const ruleID = outcome.decision.status === "HUMAN_REVIEW" ? "GOVERNANCE-HUMAN-REVIEW" : "GOVERNANCE-UNAVAILABLE";
       if (!result.failed_rules.includes(ruleID)) result.failed_rules.push(ruleID);
-      result.errors.push(`${ruleID}: ${outcome.decision.reason ?? "governance policy could not be established"}`);
+      const rawReason = outcome.decision.reason ?? "governance policy could not be established";
+      const cleanReason = rawReason.replace(/^GOVERNANCE-UNAVAILABLE:\s*/i, "").replace(/^GOVERNANCE-HUMAN-REVIEW:\s*/i, "");
+      result.errors.push(`${ruleID}: ${cleanReason}`);
       attachDecision(result, outcome.decision);
       gate = { token: null, result };
     }
@@ -129,7 +131,8 @@ export class GovernedValidationGate implements ValidationGate {
       result.score = 0;
       const ruleID = pg.outcome === "review" ? "GOVERNANCE-HUMAN-REVIEW" : "GOVERNANCE-UNAVAILABLE";
       if (!result.failed_rules.includes(ruleID)) result.failed_rules.push(ruleID);
-      result.errors.push(`${ruleID}: ${pg.reason}`);
+      const cleanPgReason = (pg.reason ?? "").replace(/^GOVERNANCE-UNAVAILABLE:\s*/i, "").replace(/^GOVERNANCE-HUMAN-REVIEW:\s*/i, "");
+      result.errors.push(`${ruleID}: ${cleanPgReason}`);
       attachDecision(result, decision);
       gate = { token: null, result };
     }
@@ -184,7 +187,14 @@ function classifyProposal(rawYAML: string, registries: RegistryService): { actio
       .filter((step) => effectiveStepKind(step) === "tool")
       .map((step) => (step.action ?? "").trim())
       .filter((action) => action !== "");
-    const readOnly = actions.every((action) => registries.findTool(action)?.is_read_only === true);
+    const readOnly = actions.every((action) => {
+      // Normalize hyphens↔underscores when looking up in the static registry
+      return (
+        registries.findTool(action)?.is_read_only === true ||
+        registries.findTool(action.replace(/_/g, "-"))?.is_read_only === true ||
+        registries.findTool(action.replace(/-/g, "_"))?.is_read_only === true
+      );
+    });
     return { actions, readOnly };
   } catch {
     return { actions: [], readOnly: false };

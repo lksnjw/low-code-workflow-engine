@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Spinner
+ *
+ * Performs the Spinner operation on the application for the Spinner module.
+ ******************************************************************************/
 function Spinner({ className = "" }) {
   return (
     <span

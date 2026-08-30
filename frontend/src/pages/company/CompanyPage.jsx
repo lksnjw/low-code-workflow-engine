@@ -22,6 +22,11 @@ const tabs = [
   { id: "approval-tiers", label: "Approval Tiers" },
 ];
 
+/*******************************************************************************
+ * Function: CompanyPage
+ *
+ * Performs the Company Page operation on page for the CompanyPage module.
+ ******************************************************************************/
 function CompanyPage() {
   const { roleId } = usePermissions();
   const canEdit = roleId === "role_admin" || roleId === "role_system_admin";
@@ -60,14 +65,29 @@ function CompanyPage() {
   );
 }
 
+/*******************************************************************************
+ * Function: GeneralTab
+ *
+ * Performs the General Tab operation on tab for the CompanyPage module.
+ ******************************************************************************/
 function GeneralTab({ profile, canEdit, onSaved }) {
   const [form, setForm] = useState(profile);
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+/*******************************************************************************
+ * Function: change
+ *
+ * Performs the change operation on the application for the CompanyPage module.
+ ******************************************************************************/
   const change = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
+/*******************************************************************************
+ * Function: submit
+ *
+ * Performs the submit operation on the application for the CompanyPage module.
+ ******************************************************************************/
   const submit = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -119,19 +139,39 @@ function GeneralTab({ profile, canEdit, onSaved }) {
   );
 }
 
+/*******************************************************************************
+ * Function: DepartmentsTab
+ *
+ * Performs the Departments Tab operation on tab for the CompanyPage module.
+ ******************************************************************************/
 function DepartmentsTab({ profile, canEdit, onChanged }) {
   const [form, setForm] = useState(EMPTY_DEPARTMENT);
   const [editingID, setEditingID] = useState("");
   const mutation = useInlineMutation();
   const departments = profile.departments || [];
+/*******************************************************************************
+ * Function: edit
+ *
+ * Performs the edit operation on the application for the CompanyPage module.
+ ******************************************************************************/
   const edit = (department) => {
     setEditingID(department.id);
     setForm({ ...department, domains: (department.domains || []).join(", ") });
     mutation.clear();
   };
+/*******************************************************************************
+ * Function: save
+ *
+ * Saves the application for the CompanyPage module.
+ ******************************************************************************/
   const save = async (event) => {
     event.preventDefault();
     const payload = { ...form, domains: splitDomains(form.domains) };
+/*******************************************************************************
+ * Function: result
+ *
+ * Performs the result operation on the application for the CompanyPage module.
+ ******************************************************************************/
     const result = await mutation.run(() => editingID
       ? companyService.updateDepartment(editingID, payload)
       : companyService.createDepartment(payload));
@@ -141,6 +181,11 @@ function DepartmentsTab({ profile, canEdit, onChanged }) {
       await onChanged();
     }
   };
+/*******************************************************************************
+ * Function: remove
+ *
+ * Removes the application for the CompanyPage module.
+ ******************************************************************************/
   const remove = async (id) => {
     if (await mutation.run(() => companyService.deleteDepartment(id))) {
       await onChanged();
@@ -175,19 +220,39 @@ function DepartmentsTab({ profile, canEdit, onChanged }) {
   );
 }
 
+/*******************************************************************************
+ * Function: CostCentresTab
+ *
+ * Performs the Cost Centres Tab operation on centres tab for the CompanyPage module.
+ ******************************************************************************/
 function CostCentresTab({ profile, canEdit, onChanged }) {
   const [form, setForm] = useState(EMPTY_COST_CENTRE);
   const [editingCode, setEditingCode] = useState("");
   const mutation = useInlineMutation();
   const items = profile.costCentres || [];
+/*******************************************************************************
+ * Function: edit
+ *
+ * Performs the edit operation on the application for the CompanyPage module.
+ ******************************************************************************/
   const edit = (item) => {
     setEditingCode(item.code);
     setForm({ ...item, budgetAmount: String(item.budgetAmount ?? "") });
     mutation.clear();
   };
+/*******************************************************************************
+ * Function: save
+ *
+ * Saves the application for the CompanyPage module.
+ ******************************************************************************/
   const save = async (event) => {
     event.preventDefault();
     const payload = { ...form, budgetAmount: Number(form.budgetAmount) };
+/*******************************************************************************
+ * Function: result
+ *
+ * Performs the result operation on the application for the CompanyPage module.
+ ******************************************************************************/
     const result = await mutation.run(() => editingCode
       ? companyService.updateCostCentre(editingCode, payload)
       : companyService.createCostCentre(payload));
@@ -197,6 +262,11 @@ function CostCentresTab({ profile, canEdit, onChanged }) {
       await onChanged();
     }
   };
+/*******************************************************************************
+ * Function: remove
+ *
+ * Removes the application for the CompanyPage module.
+ ******************************************************************************/
   const remove = async (code) => {
     if (await mutation.run(() => companyService.deleteCostCentre(code))) await onChanged();
   };
@@ -228,19 +298,39 @@ function CostCentresTab({ profile, canEdit, onChanged }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ApprovalTiersTab
+ *
+ * Performs the Approval Tiers Tab operation on tiers tab for the CompanyPage module.
+ ******************************************************************************/
 function ApprovalTiersTab({ profile, canEdit, onChanged }) {
   const [form, setForm] = useState(EMPTY_APPROVAL_TIER);
   const [editingLabel, setEditingLabel] = useState("");
   const mutation = useInlineMutation();
   const items = profile.approvalTiers || [];
+/*******************************************************************************
+ * Function: edit
+ *
+ * Performs the edit operation on the application for the CompanyPage module.
+ ******************************************************************************/
   const edit = (item) => {
     setEditingLabel(item.label);
     setForm({ ...item, maxAmount: String(item.maxAmount ?? "") });
     mutation.clear();
   };
+/*******************************************************************************
+ * Function: save
+ *
+ * Saves the application for the CompanyPage module.
+ ******************************************************************************/
   const save = async (event) => {
     event.preventDefault();
     const payload = { ...form, maxAmount: Number(form.maxAmount) };
+/*******************************************************************************
+ * Function: result
+ *
+ * Performs the result operation on the application for the CompanyPage module.
+ ******************************************************************************/
     const result = await mutation.run(() => editingLabel
       ? companyService.updateApprovalTier(editingLabel, payload)
       : companyService.createApprovalTier(payload));
@@ -250,6 +340,11 @@ function ApprovalTiersTab({ profile, canEdit, onChanged }) {
       await onChanged();
     }
   };
+/*******************************************************************************
+ * Function: remove
+ *
+ * Removes the application for the CompanyPage module.
+ ******************************************************************************/
   const remove = async (label) => {
     if (await mutation.run(() => companyService.deleteApprovalTier(label))) await onChanged();
   };
@@ -280,6 +375,11 @@ function ApprovalTiersTab({ profile, canEdit, onChanged }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ResourceEditor
+ *
+ * Performs the Resource Editor operation on editor for the CompanyPage module.
+ ******************************************************************************/
 function ResourceEditor({ title, empty, emptyTitle, emptyDescription, list, form, message, error }) {
   return (
     <div className="space-y-4">
@@ -295,6 +395,11 @@ function ResourceEditor({ title, empty, emptyTitle, emptyDescription, list, form
   );
 }
 
+/*******************************************************************************
+ * Function: ResourceRow
+ *
+ * Performs the Resource Row operation on row for the CompanyPage module.
+ ******************************************************************************/
 function ResourceRow({ title, detail, canEdit, onEdit, onDelete }) {
   return (
     <div className="flex flex-col justify-between gap-3 rounded-xl border border-gray-200 p-4 dark:border-gray-800 sm:flex-row sm:items-center">
@@ -304,6 +409,11 @@ function ResourceRow({ title, detail, canEdit, onEdit, onDelete }) {
   );
 }
 
+/*******************************************************************************
+ * Function: EditorActions
+ *
+ * Performs the Editor Actions operation on actions for the CompanyPage module.
+ ******************************************************************************/
 function EditorActions({ editing, busy, onCancel }) {
   return (
     <div className="flex items-end gap-2 md:col-span-3">
@@ -313,10 +423,20 @@ function EditorActions({ editing, busy, onCancel }) {
   );
 }
 
+/*******************************************************************************
+ * Function: InlineMessage
+ *
+ * Performs the Inline Message operation on message for the CompanyPage module.
+ ******************************************************************************/
 function InlineMessage({ message, error }) {
   return <p className={`text-sm font-semibold ${error ? "text-red-600 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}>{message}</p>;
 }
 
+/*******************************************************************************
+ * Function: useInlineMutation
+ *
+ * Provides inline mutation for the CompanyPage module.
+ ******************************************************************************/
 function useInlineMutation() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -349,15 +469,35 @@ function useInlineMutation() {
   }), [busy, message, fieldErrors, error]);
 }
 
+/*******************************************************************************
+ * Function: validationErrors
+ *
+ * Performs the validation Errors operation on errors for the CompanyPage module.
+ ******************************************************************************/
 function validationErrors(error) {
   return error?.response?.data?.data?.fieldErrors || {};
 }
 
+/*******************************************************************************
+ * Function: matchingError
+ *
+ * Performs the matching Error operation on error for the CompanyPage module.
+ ******************************************************************************/
 function matchingError(errors, section, field) {
+/*******************************************************************************
+ * Function: entry
+ *
+ * Performs the entry operation on the application for the CompanyPage module.
+ ******************************************************************************/
   const entry = Object.entries(errors || {}).find(([key]) => key.startsWith(`${section}.`) && key.endsWith(`.${field}`));
   return entry?.[1] || "";
 }
 
+/*******************************************************************************
+ * Function: splitDomains
+ *
+ * Performs the split Domains operation on domains for the CompanyPage module.
+ ******************************************************************************/
 function splitDomains(value) {
   return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
 }

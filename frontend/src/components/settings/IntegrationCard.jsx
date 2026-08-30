@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import Card from "../shared/ui/Card";
 import Button from "../shared/ui/Button";
 
+/*******************************************************************************
+ * Function: IntegrationCard
+ *
+ * Performs the Integration Card operation on card for the IntegrationCard module.
+ ******************************************************************************/
 function IntegrationCard({ integration }) {
   return (
     <Card>

@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: FormField
+ *
+ * Performs the Form Field operation on field for the FormField module.
+ ******************************************************************************/
 function FormField({ label, error, children }) {
   return (
     <label className="block">

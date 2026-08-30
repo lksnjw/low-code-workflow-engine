@@ -1,6 +1,11 @@
 import Input from "../shared/ui/Input";
 import Select from "../shared/ui/Select";
 
+/*******************************************************************************
+ * Function: ExecutionFilters
+ *
+ * Performs the Execution Filters operation on filters for the ExecutionFilters module.
+ ******************************************************************************/
 function ExecutionFilters({ query, status, range, onQueryChange, onStatusChange, onRangeChange }) {
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

@@ -1,6 +1,11 @@
 import { Icon } from "@iconify/react";
 import Card from "../../shared/ui/Card";
 
+/*******************************************************************************
+ * Function: ValidationPanel
+ *
+ * Performs the Validation Panel operation on panel for the ValidationPanel module.
+ ******************************************************************************/
 function ValidationPanel() {
   const checks = ["Schema valid", "RBAC policy attached", "Retry budget configured"];
 

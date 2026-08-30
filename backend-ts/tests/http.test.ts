@@ -55,6 +55,7 @@ describe("complete HTTP route graph", () => {
       governanceFallbackLlmApiKey: "",
       governanceFallbackLlmModel: "",
       governanceFallbackLlmTimeoutMs: 15_000,
+      policyGateTimeoutMs: 10_000,
       corsOrigins: ["http://localhost:5173"],
       platformAdminEmail: "admin@example.test",
       platformAdminPassword: "test-password",

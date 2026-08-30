@@ -45,10 +45,30 @@ export class ToolRegistry {
   }
 
   has(name: string): boolean {
-    return this.#tools.has(name);
+    return this.get(name) !== this.fallback || this.#tools.has(name);
   }
   get(name: string): ExecutableTool | null {
-    return this.#tools.get(name) ?? this.fallback;
+    const exact = this.#tools.get(name);
+    if (exact !== undefined) return exact;
+    // Normalise hyphens↔underscores (send_email → send-email and vice-versa).
+    const hyphenated = name.replace(/_/g, "-");
+    const fromHyphen = this.#tools.get(hyphenated);
+    if (fromHyphen !== undefined) return fromHyphen;
+    const underscored = name.replace(/-/g, "_");
+    const fromUnderscore = this.#tools.get(underscored);
+    if (fromUnderscore !== undefined) return fromUnderscore;
+    // Strip common LLM hallucination prefixes (dynamic_, static_, auto_)
+    // and retry the full normalisation chain on the stripped name.
+    const stripped = name.replace(/^(dynamic|static|auto)_/, "");
+    if (stripped !== name) {
+      const strippedExact = this.#tools.get(stripped);
+      if (strippedExact !== undefined) return strippedExact;
+      const strippedHyphen = this.#tools.get(stripped.replace(/_/g, "-"));
+      if (strippedHyphen !== undefined) return strippedHyphen;
+      const strippedUnderscore = this.#tools.get(stripped.replace(/-/g, "_"));
+      if (strippedUnderscore !== undefined) return strippedUnderscore;
+    }
+    return this.fallback;
   }
   names(): string[] {
     return [...this.#tools.keys()].sort();

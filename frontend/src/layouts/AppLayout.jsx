@@ -4,6 +4,11 @@ import Topbar from "../components/navigation/Topbar";
 import MobileNav from "../components/navigation/MobileNav";
 import ServerUnreachableBanner from "../components/shared/ServerUnreachableBanner";
 
+/*******************************************************************************
+ * Function: AppLayout
+ *
+ * Performs the App Layout operation on layout for the AppLayout module.
+ ******************************************************************************/
 function AppLayout({ children }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 

@@ -4,6 +4,11 @@ import { authService } from "../services/auth.service";
 
 const AuthContext = createContext(null);
 
+/*******************************************************************************
+ * Function: loadStoredUser
+ *
+ * Loads stored user for the AuthContext module.
+ ******************************************************************************/
 function loadStoredUser() {
   try {
     const raw = localStorage.getItem("workflow.user");
@@ -13,6 +18,11 @@ function loadStoredUser() {
   }
 }
 
+/*******************************************************************************
+ * Function: loadCurrentUser
+ *
+ * Loads current user for the AuthContext module.
+ ******************************************************************************/
 async function loadCurrentUser() {
   const refreshInFlight = getRefreshInFlight();
   if (refreshInFlight) {
@@ -21,6 +31,11 @@ async function loadCurrentUser() {
   return authService.me();
 }
 
+/*******************************************************************************
+ * Function: AuthProvider
+ *
+ * Performs the Auth Provider operation on provider for the AuthContext module.
+ ******************************************************************************/
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(loadStoredUser);
   const [loading, setLoading] = useState(false);
@@ -63,7 +78,17 @@ export function AuthProvider({ children }) {
 
   // Listen for session events from the axios interceptor
   useEffect(() => {
+/*******************************************************************************
+ * Function: handleExpired
+ *
+ * Handles expired for the AuthContext module.
+ ******************************************************************************/
     const handleExpired = () => setUser(null);
+/*******************************************************************************
+ * Function: handleUnreachable
+ *
+ * Handles unreachable for the AuthContext module.
+ ******************************************************************************/
     const handleUnreachable = () => setServerUnreachable(true);
     window.addEventListener("auth:expired", handleExpired);
     window.addEventListener("auth:unreachable", handleUnreachable);
@@ -75,10 +100,20 @@ export function AuthProvider({ children }) {
 
   // Re-runs the /auth/me probe. On success the banner clears and the user is
   // back where they were, with no re-authentication.
+/*******************************************************************************
+ * Function: retryConnection
+ *
+ * Performs the retry Connection operation on connection for the AuthContext module.
+ ******************************************************************************/
   const retryConnection = useCallback(() => {
     setReconnectNonce((value) => value + 1);
   }, []);
 
+/*******************************************************************************
+ * Function: login
+ *
+ * Performs the login operation on the application for the AuthContext module.
+ ******************************************************************************/
   const login = useCallback(async (credentials) => {
     setLoading(true);
     setAuthError("");
@@ -95,6 +130,11 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+/*******************************************************************************
+ * Function: register
+ *
+ * Performs the register operation on the application for the AuthContext module.
+ ******************************************************************************/
   const register = useCallback(async (payload) => {
     setLoading(true);
     setAuthError("");
@@ -111,12 +151,22 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+/*******************************************************************************
+ * Function: logout
+ *
+ * Performs the logout operation on the application for the AuthContext module.
+ ******************************************************************************/
   const logout = useCallback(async () => {
     await authService.logout();
     setUser(null);
     setAuthError("");
   }, []);
 
+/*******************************************************************************
+ * Function: refreshUser
+ *
+ * Refreshes user for the AuthContext module.
+ ******************************************************************************/
   const refreshUser = useCallback(async () => {
     const me = await authService.me();
     setUser(me);
@@ -124,8 +174,18 @@ export function AuthProvider({ children }) {
     return me;
   }, []);
 
+/*******************************************************************************
+ * Function: clearError
+ *
+ * Clears error for the AuthContext module.
+ ******************************************************************************/
   const clearError = useCallback(() => setAuthError(""), []);
 
+/*******************************************************************************
+ * Function: value
+ *
+ * Performs the value operation on the application for the AuthContext module.
+ ******************************************************************************/
   const value = useMemo(
     () => ({
       user,
@@ -146,6 +206,11 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/*******************************************************************************
+ * Function: useAuthContext
+ *
+ * Provides auth context for the AuthContext module.
+ ******************************************************************************/
 export function useAuthContext() {
   const context = useContext(AuthContext);
   if (!context) {

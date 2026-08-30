@@ -6,6 +6,11 @@ import { useAuthContext } from "../../context/AuthContext";
  * the session is kept, the user stays on the screen they were on, and Retry
  * restores it once the server is back.
  */
+/*******************************************************************************
+ * Function: ServerUnreachableBanner
+ *
+ * Performs the Server Unreachable Banner operation on unreachable banner for the ServerUnreachableBanner module.
+ ******************************************************************************/
 function ServerUnreachableBanner() {
   const { serverUnreachable, retryConnection } = useAuthContext();
   if (!serverUnreachable) return null;

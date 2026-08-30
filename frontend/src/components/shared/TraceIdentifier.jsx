@@ -1,9 +1,19 @@
 import { useState } from "react";
 
+/*******************************************************************************
+ * Function: TraceIdentifier
+ *
+ * Performs the Trace Identifier operation on identifier for the TraceIdentifier module.
+ ******************************************************************************/
 function TraceIdentifier({ traceId }) {
   const [copied, setCopied] = useState(false);
   if (!traceId) return null;
 
+/*******************************************************************************
+ * Function: copy
+ *
+ * Performs the copy operation on the application for the TraceIdentifier module.
+ ******************************************************************************/
   const copy = async () => {
     await navigator.clipboard?.writeText(traceId);
     setCopied(true);

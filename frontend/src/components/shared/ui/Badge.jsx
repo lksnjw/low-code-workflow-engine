@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Badge
+ *
+ * Performs the Badge operation on the application for the Badge module.
+ ******************************************************************************/
 function Badge({ children, className = "" }) {
   return (
     <span

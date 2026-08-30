@@ -3,6 +3,11 @@ import UserBadge from "./UserBadge";
 import Button from "../shared/ui/Button";
 import Select from "../shared/ui/Select";
 
+/*******************************************************************************
+ * Function: UserRow
+ *
+ * Performs the User Row operation on row for the UserRow module.
+ ******************************************************************************/
 function UserRow({ user, roles = [], departments = [], isCurrentUser = false, canManage = false, busy = false, onRoleChange, onStatusChange, onDepartmentChange }) {
   const suspended = String(user.status).toLowerCase() === "suspended";
   return (

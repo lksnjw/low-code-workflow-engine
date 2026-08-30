@@ -2,6 +2,11 @@ import { useState } from "react";
 import { useAuthContext } from "../../context/AuthContext";
 import AuthLayout from "../../layouts/AuthLayout";
 
+/*******************************************************************************
+ * Function: InputField
+ *
+ * Performs the Input Field operation on field for the RegisterPage module.
+ ******************************************************************************/
 function InputField({ label, id, type = "text", value, onChange, placeholder, autoComplete }) {
   return (
     <div>
@@ -22,6 +27,11 @@ function InputField({ label, id, type = "text", value, onChange, placeholder, au
   );
 }
 
+/*******************************************************************************
+ * Function: RegisterPage
+ *
+ * Performs the Register Page operation on page for the RegisterPage module.
+ ******************************************************************************/
 function RegisterPage({ onNavigate }) {
   const { register, loading, authError } = useAuthContext();
   const [name, setName] = useState("");
@@ -31,6 +41,11 @@ function RegisterPage({ onNavigate }) {
   const [confirm, setConfirm] = useState("");
   const [localError, setLocalError] = useState("");
 
+/*******************************************************************************
+ * Function: handleSubmit
+ *
+ * Handles submit for the RegisterPage module.
+ ******************************************************************************/
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLocalError("");

@@ -1,5 +1,10 @@
 import { Icon } from "@iconify/react";
 
+/*******************************************************************************
+ * Function: TriggerNode
+ *
+ * Performs the Trigger Node operation on node for the TriggerNode module.
+ ******************************************************************************/
 function TriggerNode({ label = "Trigger" }) {
   return (
     <div className="workflow-node p-4">

@@ -1,4 +1,22 @@
-export type Intent = "QUERY" | "AUDIT" | "ACTION" | "CAPABILITIES";
+export type Intent = "QUERY" | "AUDIT" | "ACTION" | "CAPABILITIES" | "TOOL_CALL" | "WORKFLOW_MODIFY";
+
+const WORKFLOW_MODIFY_PATTERNS = [
+  "modify the workflow", "change the workflow", "update the workflow", "edit the workflow",
+  "modify step", "change step", "remove step", "add step",
+  "update step", "edit step", "rename step", "reorder step",
+  "adjust the workflow", "fix the workflow", "tweak the workflow",
+  "modify this workflow", "change this workflow", "update this workflow",
+];
+
+const TOOL_CALL_PATTERNS = [
+  "approve", "reject", "submit", "create a purchase", "create an invoice",
+  "create a vendor", "create a supplier", "create an order", "update the vendor",
+  "update the supplier", "delete the", "remove the vendor", "remove the supplier",
+  "pay the invoice", "process the payment", "execute the", "run the operation",
+  "apply the change", "confirm the", "trigger the", "post the", "close the po",
+  "mark as", "set status", "change status", "flag the", "place the order",
+  "do it now", "go ahead and", "actually do", "actually execute", "proceed with",
+];
 
 const CAPABILITIES_PATTERNS = [
   "what can i do", "what actions", "what can you do", "what can the erp",
@@ -7,6 +25,10 @@ const CAPABILITIES_PATTERNS = [
   "help me understand", "what is possible", "what can be done",
   "things i can do", "things you can do", "what do you support",
   "capabilities", "what operations", "supported operations",
+  "list all tools", "list erp tools", "list the tools", "show all tools",
+  "show me all tools", "show me the tools", "show erp tools",
+  "all available tools", "what tools are available", "all erp tools",
+  "show available tools", "list available tools",
 ];
 
 // Workflow generation requests — must be checked before QUERY patterns
@@ -47,9 +69,17 @@ export function classifyIntent(message: string): Intent {
     if (normalized.includes(pattern)) return "CAPABILITIES";
   }
 
+  for (const pattern of WORKFLOW_MODIFY_PATTERNS) {
+    if (normalized.includes(pattern)) return "WORKFLOW_MODIFY";
+  }
+
   // Check workflow generation before QUERY — "workflow to get/list/..." contains query words
   for (const pattern of WORKFLOW_PATTERNS) {
     if (normalized.includes(pattern)) return "ACTION";
+  }
+
+  for (const pattern of TOOL_CALL_PATTERNS) {
+    if (normalized.includes(pattern)) return "TOOL_CALL";
   }
 
   for (const pattern of AUDIT_PATTERNS) {
@@ -60,6 +90,6 @@ export function classifyIntent(message: string): Intent {
     if (normalized.includes(pattern)) return "QUERY";
   }
 
-  // Default to ACTION — the gated synthesis path is the safer choice on ambiguity
-  return "ACTION";
+  // Default to QUERY — conversational response; only synthesise when user explicitly asks
+  return "QUERY";
 }

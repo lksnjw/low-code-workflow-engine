@@ -1,6 +1,7 @@
 import { MarkerType } from "@xyflow/react";
 
 const CANVAS_WORKFLOW_KEY = "workflow.pendingCanvasWorkflow";
+const CHAT_EDIT_KEY = "workflow.pendingChatEdit";
 
 const actionMeta = {
   "procurement.validate_vendor": {
@@ -49,6 +50,30 @@ export function saveWorkflowForCanvas(payload) {
  *
  * Performs the take Workflow For Canvas operation on workflow for canvas for the workflowCanvas utils module.
  ******************************************************************************/
+// ── Chat-edit round-trip helpers ─────────────────────────────────────────────
+// saveWorkflowForChatEdit: called from canvas when user clicks "Edit in Chat"
+// payload: { yaml, workflowId, workflowName }
+export function saveWorkflowForChatEdit(payload) {
+  localStorage.setItem(CHAT_EDIT_KEY, JSON.stringify(payload));
+}
+
+export function takeWorkflowForChatEdit() {
+  const raw = localStorage.getItem(CHAT_EDIT_KEY);
+  if (!raw) return null;
+  localStorage.removeItem(CHAT_EDIT_KEY);
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export function peekWorkflowForChatEdit() {
+  const raw = localStorage.getItem(CHAT_EDIT_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export function clearWorkflowForChatEdit() {
+  localStorage.removeItem(CHAT_EDIT_KEY);
+}
+
 export function takeWorkflowForCanvas() {
   const raw = localStorage.getItem(CANVAS_WORKFLOW_KEY);
   if (!raw) return null;

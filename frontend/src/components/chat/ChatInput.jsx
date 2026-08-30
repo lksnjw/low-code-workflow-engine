@@ -1,6 +1,11 @@
 import { Icon } from "@iconify/react";
 import Button from "../shared/ui/Button";
 
+/*******************************************************************************
+ * Function: ChatInput
+ *
+ * Performs the Chat Input operation on input for the ChatInput module.
+ ******************************************************************************/
 function ChatInput({ value, onChange, onSend, disabled }) {
   return (
     <div className="flex gap-3 rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-darkBackground">

@@ -19,6 +19,11 @@ const METHOD_COLORS = {
   DELETE: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 
+/*******************************************************************************
+ * Function: Pill
+ *
+ * Performs the Pill operation on the application for the ChatArtifactPanel module.
+ ******************************************************************************/
 function Pill({ children, color = "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" }) {
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold leading-4 ${color}`}>
@@ -27,6 +32,11 @@ function Pill({ children, color = "bg-gray-100 text-gray-600 dark:bg-gray-800 da
   );
 }
 
+/*******************************************************************************
+ * Function: SectionHeader
+ *
+ * Performs the Section Header operation on header for the ChatArtifactPanel module.
+ ******************************************************************************/
 function SectionHeader({ icon, label, count }) {
   return (
     <div className="mb-3 flex items-center gap-2">
@@ -42,6 +52,11 @@ function SectionHeader({ icon, label, count }) {
 }
 
 // ── Collapsible wrapper ─────────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: Collapsible
+ *
+ * Performs the Collapsible operation on the application for the ChatArtifactPanel module.
+ ******************************************************************************/
 function Collapsible({ title, icon, count, defaultOpen = false, children, badge }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -70,6 +85,11 @@ function Collapsible({ title, icon, count, defaultOpen = false, children, badge 
 }
 
 // ── Tool card ───────────────────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: ToolCard
+ *
+ * Performs the Tool Card operation on card for the ChatArtifactPanel module.
+ ******************************************************************************/
 function ToolCard({ tool }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -155,6 +175,11 @@ const ACTION_ICON = {
   require_additional_tool: "mdi:tools",
 };
 
+/*******************************************************************************
+ * Function: RuleCard
+ *
+ * Performs the Rule Card operation on card for the ChatArtifactPanel module.
+ ******************************************************************************/
 function RuleCard({ rule }) {
   return (
     <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5 text-xs dark:border-gray-800 dark:bg-darkBackgroundVery">
@@ -191,6 +216,11 @@ const DECISION_COLORS = {
   allow: "text-emerald-600 dark:text-emerald-400",
 };
 
+/*******************************************************************************
+ * Function: ExampleCard
+ *
+ * Performs the Example Card operation on card for the ChatArtifactPanel module.
+ ******************************************************************************/
 function ExampleCard({ example }) {
   return (
     <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5 text-xs dark:border-gray-800 dark:bg-darkBackgroundVery">
@@ -233,6 +263,11 @@ const NEXT_ACTION_META = {
   },
 };
 
+/*******************************************************************************
+ * Function: NextActionBanner
+ *
+ * Performs the Next Action Banner operation on action banner for the ChatArtifactPanel module.
+ ******************************************************************************/
 function NextActionBanner({ nextAction }) {
   const meta = NEXT_ACTION_META[nextAction] ?? {
     icon: "mdi:information-outline",
@@ -253,8 +288,18 @@ function NextActionBanner({ nextAction }) {
 
 // ── MAIN COMPONENT ──────────────────────────────────────────────────────────
 // ── Simple inline bar chart ─────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: MiniBarChart
+ *
+ * Performs the Mini Bar Chart operation on bar chart for the ChatArtifactPanel module.
+ ******************************************************************************/
 function MiniBarChart({ vis }) {
   if (!vis || !Array.isArray(vis.data) || vis.data.length === 0) return null;
+/*******************************************************************************
+ * Function: max
+ *
+ * Performs the max operation on the application for the ChatArtifactPanel module.
+ ******************************************************************************/
   const max = Math.max(...vis.data.map((d) => d.value), 1);
   return (
     <div className="mt-2 rounded-xl border border-gray-100 bg-white p-3 dark:border-gray-800 dark:bg-darkBackground">
@@ -278,6 +323,11 @@ function MiniBarChart({ vis }) {
 }
 
 // ── Query / Audit result panel ──────────────────────────────────────────────
+/*******************************************************************************
+ * Function: QueryResultPanel
+ *
+ * Performs the Query Result Panel operation on result panel for the ChatArtifactPanel module.
+ ******************************************************************************/
 function QueryResultPanel({ artifact }) {
   const sources = Array.isArray(artifact.sources) ? artifact.sources : [];
   const { visualisation, boundHit, iterationsUsed, latencyMs, intent } = artifact;
@@ -328,6 +378,11 @@ function QueryResultPanel({ artifact }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ChatArtifactPanel
+ *
+ * Performs the Chat Artifact Panel operation on artifact panel for the ChatArtifactPanel module.
+ ******************************************************************************/
 function ChatArtifactPanel({ artifact }) {
   const { startWorkflow } = useRoute();
   const { has } = usePermissions();
@@ -371,8 +426,13 @@ function ChatArtifactPanel({ artifact }) {
   const rules = [...(retrieval.rules ?? []), ...(retrieval.global_rules ?? [])];
   const examples = retrieval.examples ?? [];
 
+/*******************************************************************************
+ * Function: handlePassToCanvas
+ *
+ * Handles pass to canvas for the ChatArtifactPanel module.
+ ******************************************************************************/
   const handlePassToCanvas = () => {
-    if (!can_execute || !selected_workflow_yaml) return;
+    if (!selected_workflow_yaml) return;
 
     saveWorkflowForCanvas({
       yaml: selected_workflow_yaml,
@@ -415,7 +475,7 @@ function ChatArtifactPanel({ artifact }) {
             {can_execute ? "Executable candidate available" : "No executable candidate"}
           </span>
         </div>
-        {canEditWorkflow && can_execute && selected_workflow_yaml && (
+        {canEditWorkflow && selected_workflow_yaml && (
           <button
             type="button"
             onClick={handlePassToCanvas}

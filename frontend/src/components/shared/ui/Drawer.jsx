@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Drawer
+ *
+ * Performs the Drawer operation on the application for the Drawer module.
+ ******************************************************************************/
 function Drawer({ children, open = false }) {
   return (
     <aside

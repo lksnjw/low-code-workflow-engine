@@ -11,6 +11,11 @@ import { useWorkflows } from "../../hooks/useWorkflows";
 import { useDebounce } from "../../hooks/useDebounce";
 import usePermissions from "../../hooks/usePermissions";
 
+/*******************************************************************************
+ * Function: WorkflowListPage
+ *
+ * Performs the Workflow List Page operation on list page for the WorkflowListPage module.
+ ******************************************************************************/
 function WorkflowListPage() {
   const { openWorkflow, startWorkflow } = useRoute();
   const { has, roleId } = usePermissions();
@@ -20,6 +25,11 @@ function WorkflowListPage() {
   const [status, setStatus] = useState("");
   const [relevance, setRelevance] = useState("relevant");
   const debouncedQuery = useDebounce(query);
+/*******************************************************************************
+ * Function: params
+ *
+ * Performs the params operation on the application for the WorkflowListPage module.
+ ******************************************************************************/
   const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined, relevance }), [debouncedQuery, status, relevance]);
   const { workflows, loading, error, reload } = useWorkflows(params);
 

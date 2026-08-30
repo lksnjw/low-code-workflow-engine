@@ -3,6 +3,11 @@ import { formatRelativeTime, unwrap } from "./api";
 import { normalizeWorkflow } from "./workflow.service";
 
 export const dashboardService = {
+/*******************************************************************************
+ * Function: load
+ *
+ * Loads the application for the dashboard service module.
+ ******************************************************************************/
   async load() {
     const [summary, activity, health, workflows] = await Promise.all([
       apiClient.get("/dashboard/summary"),

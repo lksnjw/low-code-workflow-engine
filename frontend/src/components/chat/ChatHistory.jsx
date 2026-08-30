@@ -2,6 +2,11 @@ import ChatSessionItem from "./ChatSessionItem";
 import Button from "../shared/ui/Button";
 import { Icon } from "@iconify/react";
 
+/*******************************************************************************
+ * Function: ChatHistory
+ *
+ * Performs the Chat History operation on history for the ChatHistory module.
+ ******************************************************************************/
 function ChatHistory({
   sessions,
   activeSessionId,

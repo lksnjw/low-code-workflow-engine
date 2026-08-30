@@ -3,6 +3,7 @@ import { fail, ok } from "../../models/schemas.js";
 import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
 import type { RouteDefinition } from "../generated-routes.js";
 import { requestTraceId } from "../../trace/request-trace.js";
+import { discoverTools } from "../../agent/tool-discovery.js";
 import {
   bodyRecord,
   HandlerFailure,
@@ -438,9 +439,8 @@ async function toolsCatalog(
   const moduleName = stringValue(query.module).toLowerCase();
   const role = stringValue(query.role).toLowerCase();
   const status = stringValue(query.status).toLowerCase();
-  const tools = services.registries
-    .snapshot()
-    .tools.filter(
+  const liveTools = await discoverTools(services.erpbridgeSession ?? null, services.registries);
+  const tools = liveTools.filter(
       (tool) =>
         (moduleName === "" || tool.module.toLowerCase() === moduleName) &&
         (status === "" || tool.status.toLowerCase() === status) &&
@@ -581,12 +581,14 @@ async function synthesis(
       "Workflow synthesis service is not configured",
     );
   try {
+    const liveTools = await discoverTools(services.erpbridgeSession ?? null, services.registries);
     const result = await services.synthesis.synthesize({
       prompt: stringValue(body.prompt),
       userRole: user.role,
       user: { id: user.id, role: user.role, department: user.departmentId },
       model: stringValue(body.model),
       signal: request.signal,
+      liveTools,
     });
     const meta = result.canExecute
       ? null

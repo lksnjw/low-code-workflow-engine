@@ -17,6 +17,11 @@ const COLUMNS = [
   { key: "actions", label: "Actions" },
 ];
 
+/*******************************************************************************
+ * Function: ModelsPage
+ *
+ * Performs the Models Page operation on page for the ModelsPage module.
+ ******************************************************************************/
 function ModelsPage() {
   const [editor, setEditor] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -26,7 +31,17 @@ function ModelsPage() {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["providers"], queryFn: settingsService.providers });
 
+/*******************************************************************************
+ * Function: refresh
+ *
+ * Refreshes the application for the ModelsPage module.
+ ******************************************************************************/
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["providers"] });
+/*******************************************************************************
+ * Function: saveMutation
+ *
+ * Saves mutation for the ModelsPage module.
+ ******************************************************************************/
   const saveMutation = useMutation({
     mutationFn: (payload) =>
       editor?.id
@@ -41,11 +56,21 @@ function ModelsPage() {
     onError: (error) => notify(apiErrorMessage(error, "Provider configuration failed."), "error"),
   });
 
+/*******************************************************************************
+ * Function: openCreate
+ *
+ * Performs the open Create operation on create for the ModelsPage module.
+ ******************************************************************************/
   const openCreate = () => {
     setEditor({ id: null });
     setForm(EMPTY_FORM);
   };
 
+/*******************************************************************************
+ * Function: openEdit
+ *
+ * Performs the open Edit operation on edit for the ModelsPage module.
+ ******************************************************************************/
   const openEdit = (provider) => {
     setEditor(provider);
     setForm({
@@ -58,16 +83,31 @@ function ModelsPage() {
     });
   };
 
+/*******************************************************************************
+ * Function: updateField
+ *
+ * Updates field for the ModelsPage module.
+ ******************************************************************************/
   const updateField = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: name === "temperature" ? Number(value) : value }));
   };
 
+/*******************************************************************************
+ * Function: save
+ *
+ * Saves the application for the ModelsPage module.
+ ******************************************************************************/
   const save = (event) => {
     event.preventDefault();
     saveMutation.mutate(form);
   };
 
+/*******************************************************************************
+ * Function: activate
+ *
+ * Performs the activate operation on the application for the ModelsPage module.
+ ******************************************************************************/
   const activate = async (provider) => {
     try {
       await settingsService.activateProvider(provider.id);
@@ -78,6 +118,11 @@ function ModelsPage() {
     }
   };
 
+/*******************************************************************************
+ * Function: testConnection
+ *
+ * Performs the test Connection operation on connection for the ModelsPage module.
+ ******************************************************************************/
   const testConnection = async (provider) => {
     setTestingId(provider.id);
     try {
@@ -151,6 +196,11 @@ function ModelsPage() {
   );
 }
 
+/*******************************************************************************
+ * Function: Field
+ *
+ * Performs the Field operation on the application for the ModelsPage module.
+ ******************************************************************************/
 function Field({ label, hint, children }) {
   return (
     <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">

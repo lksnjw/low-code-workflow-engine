@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import Button from "../shared/ui/Button";
 import { useRoute } from "../../context/RouteContext";
 
+/*******************************************************************************
+ * Function: WelcomeBanner
+ *
+ * Performs the Welcome Banner operation on banner for the WelcomeBanner module.
+ ******************************************************************************/
 function WelcomeBanner() {
   const { navigateTo, startWorkflow } = useRoute();
 

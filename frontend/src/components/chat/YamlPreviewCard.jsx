@@ -1,6 +1,11 @@
 import Card from "../shared/ui/Card";
 import CodeBlock from "../shared/ui/CodeBlock";
 
+/*******************************************************************************
+ * Function: YamlPreviewCard
+ *
+ * Performs the Yaml Preview Card operation on preview card for the YamlPreviewCard module.
+ ******************************************************************************/
 function YamlPreviewCard({ yaml }) {
   return (
     <Card>

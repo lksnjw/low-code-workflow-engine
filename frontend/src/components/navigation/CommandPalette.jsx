@@ -3,6 +3,11 @@ import { NAVIGATION_GROUPS, filterNavigationGroups } from "../../constants/navig
 import { useRoute } from "../../context/RouteContext";
 import usePermissions from "../../hooks/usePermissions";
 
+/*******************************************************************************
+ * Function: CommandPalette
+ *
+ * Performs the Command Palette operation on palette for the CommandPalette module.
+ ******************************************************************************/
 function CommandPalette() {
   const { navigateTo } = useRoute();
   const { hasAny, roleId } = usePermissions();

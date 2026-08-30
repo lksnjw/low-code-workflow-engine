@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { semanticService } from "../services/semantic.service";
 
+/*******************************************************************************
+ * Function: useSemanticStatus
+ *
+ * Provides semantic status for the useSemanticStatus module.
+ ******************************************************************************/
 export function useSemanticStatus() {
   return useQuery({ queryKey: ["semantic-index"], queryFn: () => semanticService.status(), refetchInterval: 30_000 });
 }

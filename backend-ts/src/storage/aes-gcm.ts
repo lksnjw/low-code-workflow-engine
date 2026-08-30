@@ -39,7 +39,7 @@ export class AESGCMCodec {
 
 function decodeEncryptionKey(value: string): Buffer {
   const trimmed = value.trim();
-  if (trimmed === "") throw new Error("STORAGE_ENCRYPTION_KEY is required for PostgreSQL storage");
+  if (trimmed === "") throw new Error("STORAGE_ENCRYPTION_KEY is required");
   const base64 = Buffer.from(trimmed, "base64");
   if (base64.byteLength === 32 && base64.toString("base64").replace(/=+$/, "") === trimmed.replace(/=+$/, "")) return base64;
   if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return Buffer.from(trimmed, "hex");

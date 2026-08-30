@@ -1,11 +1,21 @@
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 
+/*******************************************************************************
+ * Function: ChatSessionItem
+ *
+ * Performs the Chat Session Item operation on session item for the ChatSessionItem module.
+ ******************************************************************************/
 function ChatSessionItem({ id, title, active, onClick, onDelete, onRename }) {
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(title);
 
+/*******************************************************************************
+ * Function: commitRename
+ *
+ * Performs the commit Rename operation on rename for the ChatSessionItem module.
+ ******************************************************************************/
   const commitRename = () => {
     const trimmed = renameValue.trim();
     if (trimmed && trimmed !== title) {
@@ -14,6 +24,11 @@ function ChatSessionItem({ id, title, active, onClick, onDelete, onRename }) {
     setRenaming(false);
   };
 
+/*******************************************************************************
+ * Function: handleKeyDown
+ *
+ * Handles key down for the ChatSessionItem module.
+ ******************************************************************************/
   const handleKeyDown = (e) => {
     if (e.key === "Enter") commitRename();
     if (e.key === "Escape") {

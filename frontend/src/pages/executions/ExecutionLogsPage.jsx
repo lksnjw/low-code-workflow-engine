@@ -5,6 +5,11 @@ import HealingReport from "../../components/executions/HealingReport";
 import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useExecution } from "../../hooks/useExecution";
 
+/*******************************************************************************
+ * Function: ExecutionLogsPage
+ *
+ * Performs the Execution Logs Page operation on logs page for the ExecutionLogsPage module.
+ ******************************************************************************/
 function ExecutionLogsPage({ view = "logs" }) {
   const { executions, selectedId, logs, timeline, healingReport, loading, error, reload } = useExecution();
   if (loading) return <LoadingState label="Loading execution evidence…" />;

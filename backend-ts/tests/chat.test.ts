@@ -63,6 +63,9 @@ describe("chat orchestration", () => {
       "assistant",
     ]);
     expect(chat.messages[1]?.artifacts).toBeDefined();
+    const persistedArtifacts = chat.messages[1]?.artifacts as Record<string, unknown>;
+    expect(persistedArtifacts).not.toHaveProperty("candidate");
+    expect((persistedArtifacts.candidates as Array<Record<string, unknown>>)[0]).not.toHaveProperty("yaml");
 
     await setup.app.inject({
       method: "POST",
@@ -70,8 +73,9 @@ describe("chat orchestration", () => {
       headers: { authorization: `Bearer ${setup.token}` },
       payload: { content: "Do it again" },
     });
-    expect(prompts[1]).toContain("user: Echo hello");
-    expect(prompts[1]).toContain("assistant: I generated a workflow candidate");
+    const followupPrompt = prompts.find((prompt) => prompt.includes("USER_REQUEST\nDo it again"));
+    expect(followupPrompt).toContain("user: Echo hello");
+    expect(followupPrompt).toContain(JSON.stringify(`assistant: ${String(chat.messages[1]?.text)}`));
   });
 
   test("deploys a generated candidate through the existing workflow route and revalidates before persistence", async () => {
@@ -172,7 +176,9 @@ describe("chat orchestration", () => {
     expect(state.executions[run.json().data.id]?.chatSessionId).toBe(
       "chat_e2e",
     );
-    expect(Object.values(state.invocationProvenance)).toHaveLength(1);
+    expect(Object.values(state.invocationProvenance).some((record) =>
+      record.sessionId === "chat_e2e" && record.candidateId === "candidate_1",
+    )).toBe(true);
 
     const correlated = await setup.app.inject({
       method: "GET",
@@ -499,6 +505,7 @@ async function buildTestApplication(
     governanceFallbackLlmApiKey: "",
     governanceFallbackLlmModel: "",
     governanceFallbackLlmTimeoutMs: 15_000,
+    policyGateTimeoutMs: 10_000,
     corsOrigins: ["http://localhost:5173"],
     platformAdminEmail: "admin@example.test",
     platformAdminPassword: "test-password",

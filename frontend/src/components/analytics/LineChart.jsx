@@ -1,8 +1,23 @@
 import Card from "../shared/ui/Card";
 
+/*******************************************************************************
+ * Function: LineChart
+ *
+ * Performs the Line Chart operation on chart for the LineChart module.
+ ******************************************************************************/
 function LineChart({ data = [] }) {
+/*******************************************************************************
+ * Function: max
+ *
+ * Performs the max operation on the application for the LineChart module.
+ ******************************************************************************/
   const max = Math.max(1, ...data.map((item) => Number(item.costUsd || 0)));
   const step = data.length > 1 ? 460 / (data.length - 1) : 0;
+/*******************************************************************************
+ * Function: points
+ *
+ * Performs the points operation on the application for the LineChart module.
+ ******************************************************************************/
   const points = data.map((item, index) => `${index * step + 20},${180 - (Number(item.costUsd || 0) / max) * 140}`).join(" ");
   return (
     <Card><h2 className="section-title">Cost Trend</h2><p className="section-subtitle mt-1">Measured provider spend from executions.</p>

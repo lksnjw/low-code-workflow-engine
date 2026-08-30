@@ -3,10 +3,20 @@ import { NAVIGATION_GROUPS, filterNavigationGroups } from "../../constants/navig
 import { useRoute } from "../../context/RouteContext";
 import usePermissions from "../../hooks/usePermissions";
 
+/*******************************************************************************
+ * Function: Sidebar
+ *
+ * Performs the Sidebar operation on the application for the Sidebar module.
+ ******************************************************************************/
 function Sidebar({ isCollapsed, onToggle }) {
   const { activeMain, activeSub, navigateTo, setActiveSub } = useRoute();
   const { hasAny, roleId } = usePermissions();
   const visibleGroups = filterNavigationGroups(NAVIGATION_GROUPS, hasAny, roleId);
+/*******************************************************************************
+ * Function: activeGroup
+ *
+ * Performs the active Group operation on group for the Sidebar module.
+ ******************************************************************************/
   const activeGroup = visibleGroups.find((group) => group.id === activeMain) ?? visibleGroups[0];
 
   return (

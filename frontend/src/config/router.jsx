@@ -16,6 +16,11 @@ import usePermissions from "../hooks/usePermissions";
 import AppLayout from "../layouts/AppLayout";
 import { features } from "./features";
 
+/*******************************************************************************
+ * Function: lazyRouteComponents
+ *
+ * Performs the lazy Route Components operation on route components for the router module.
+ ******************************************************************************/
 export const lazyRouteComponents = {
   DashboardPage: lazy(() => import("../pages/dashboard/DashboardPage")),
   CompanyPage: lazy(() => import("../pages/company/CompanyPage")),
@@ -23,6 +28,7 @@ export const lazyRouteComponents = {
   WorkflowBuilderPage: lazy(() => import("../pages/workflows/WorkflowBuilderPage")),
   WorkflowTemplatePage: lazy(() => import("../pages/workflows/WorkflowTemplatePage")),
   WorkflowDetailPage: lazy(() => import("../pages/workflows/WorkflowDetailPage")),
+  WorkflowViewCanvasPage: lazy(() => import("../components/canvas/WorkflowViewCanvas")),
   ChatPage: lazy(() => import("../pages/chat/ChatPage")),
   ChatHistoryPage: lazy(() => import("../pages/chat/ChatHistoryPage")),
   ExecutionListPage: lazy(() => import("../pages/executions/ExecutionListPage")),
@@ -60,6 +66,7 @@ const allProtectedRouteDefinitions = [
   { id: "workflows.builder", path: "/builder", Component: C.WorkflowBuilderPage, requiredAny: [PERMISSIONS.WORKFLOW_WRITE], feature: "workflows" },
   { id: "workflows.builder-detail", path: "/builder/:workflowId", Component: C.WorkflowBuilderPage, requiredAny: [PERMISSIONS.WORKFLOW_WRITE], feature: "workflows" },
   { id: "workflows.templates", path: "/workflows/templates", Component: C.WorkflowTemplatePage, requiredAny: [PERMISSIONS.WORKFLOW_READ], feature: "workflows" },
+  { id: "workflows.canvas-view", path: "/workflows/canvas", Component: C.WorkflowViewCanvasPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN], feature: "workflows" },
   { id: "workflows.detail", path: "/workflows/:workflowId", Component: C.WorkflowDetailPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN], feature: "workflows" },
   { id: "chat.session", path: "/chat", Component: C.ChatPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE], feature: "chat" },
   { id: "chat.session-detail", path: "/chat/:sessionId", Component: C.ChatPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE], feature: "chat" },
@@ -95,14 +102,29 @@ export const protectedRouteDefinitions = allProtectedRouteDefinitions.filter(
   (definition) => features[definition.feature] !== false
 );
 
+/*******************************************************************************
+ * Function: navigationRouteIds
+ *
+ * Performs the navigation Route Ids operation on route ids for the router module.
+ ******************************************************************************/
 export const navigationRouteIds = NAVIGATION_GROUPS.flatMap((group) =>
   group.subMenu.map((item) => `${group.id}.${item.id}`)
 );
 
+/*******************************************************************************
+ * Function: RouteLoading
+ *
+ * Performs the Route Loading operation on loading for the router module.
+ ******************************************************************************/
 function RouteLoading({ name }) {
   return <LoadingState label={`Loading ${name}…`} />;
 }
 
+/*******************************************************************************
+ * Function: ProtectedScreen
+ *
+ * Performs the Protected Screen operation on screen for the router module.
+ ******************************************************************************/
 export function ProtectedScreen({ definition }) {
   const { hasAny } = usePermissions();
   const denied = definition.requiredAny?.length && !hasAny(definition.requiredAny);
@@ -117,6 +139,11 @@ export function ProtectedScreen({ definition }) {
   );
 }
 
+/*******************************************************************************
+ * Function: AuthenticatedRoute
+ *
+ * Performs the Authenticated Route operation on route for the router module.
+ ******************************************************************************/
 function AuthenticatedRoute() {
   const { isAuthenticated, loading } = useAuthContext();
   const location = useLocation();
@@ -130,6 +157,11 @@ function AuthenticatedRoute() {
   return <Outlet />;
 }
 
+/*******************************************************************************
+ * Function: AppShell
+ *
+ * Performs the App Shell operation on shell for the router module.
+ ******************************************************************************/
 function AppShell() {
   return (
     <RouteProvider>
@@ -146,6 +178,11 @@ const authPaths = {
   "forgot-password": "/forgot-password",
 };
 
+/*******************************************************************************
+ * Function: PublicScreen
+ *
+ * Performs the Public Screen operation on screen for the router module.
+ ******************************************************************************/
 function PublicScreen(props) {
   const { name } = props;
   const Screen = props.Component;
@@ -164,6 +201,11 @@ function PublicScreen(props) {
   );
 }
 
+/*******************************************************************************
+ * Function: StandaloneScreen
+ *
+ * Performs the Standalone Screen operation on screen for the router module.
+ ******************************************************************************/
 function StandaloneScreen(props) {
   const { name } = props;
   const Screen = props.Component;
@@ -176,6 +218,11 @@ function StandaloneScreen(props) {
   );
 }
 
+/*******************************************************************************
+ * Function: protectedChildren
+ *
+ * Performs the protected Children operation on children for the router module.
+ ******************************************************************************/
 const protectedChildren = protectedRouteDefinitions.map((definition) => ({
   ...(definition.path === "/" ? { index: true } : { path: definition.path.slice(1) }),
   element: <ProtectedScreen definition={definition} />,

@@ -1,6 +1,11 @@
 import { apiClient } from "../config/axios";
 import { formatDuration, formatTokens, unwrap } from "./api";
 
+/*******************************************************************************
+ * Function: normalizeExecution
+ *
+ * Normalizes execution for the execution service module.
+ ******************************************************************************/
 export function normalizeExecution(execution) {
   return {
     ...execution,
@@ -13,36 +18,86 @@ export function normalizeExecution(execution) {
 }
 
 export const executionService = {
+/*******************************************************************************
+ * Function: list
+ *
+ * Lists the application for the execution service module.
+ ******************************************************************************/
   async list(params = {}) {
     const response = await apiClient.get("/executions", { params });
     return (unwrap(response, []) || []).map(normalizeExecution);
   },
+/*******************************************************************************
+ * Function: listByChatSession
+ *
+ * Lists by chat session for the execution service module.
+ ******************************************************************************/
   async listByChatSession(chatSessionId) {
     return this.list({ chatSessionId });
   },
+/*******************************************************************************
+ * Function: get
+ *
+ * Gets the application for the execution service module.
+ ******************************************************************************/
   async get(id) {
     return normalizeExecution(unwrap(await apiClient.get(`/executions/${id}`)));
   },
+/*******************************************************************************
+ * Function: getLogs
+ *
+ * Gets logs for the execution service module.
+ ******************************************************************************/
   async getLogs(id) {
     return unwrap(await apiClient.get(`/executions/${id}/logs`), []);
   },
+/*******************************************************************************
+ * Function: getTimeline
+ *
+ * Gets timeline for the execution service module.
+ ******************************************************************************/
   async getTimeline(id) {
     return unwrap(await apiClient.get(`/executions/${id}/timeline`), []);
   },
+/*******************************************************************************
+ * Function: getHealingReport
+ *
+ * Gets healing report for the execution service module.
+ ******************************************************************************/
   async getHealingReport(id) {
     return unwrap(await apiClient.get(`/executions/${id}/healing-report`));
   },
+/*******************************************************************************
+ * Function: run
+ *
+ * Runs the application for the execution service module.
+ ******************************************************************************/
   async run(workflowId, input = {}, options = {}) {
     return normalizeExecution(
       unwrap(await apiClient.post(`/workflows/${workflowId}/run`, { input, ...options })),
     );
   },
+/*******************************************************************************
+ * Function: retry
+ *
+ * Performs the retry operation on the application for the execution service module.
+ ******************************************************************************/
   async retry(id, input = {}) {
     return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/retry`, { input })));
   },
+/*******************************************************************************
+ * Function: approve
+ *
+ * Performs the approve operation on the application for the execution service module.
+ ******************************************************************************/
   async approve(id, note = "") {
     return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/approve`, { note })));
   },
+/*******************************************************************************
+ * Function: reject
+ *
+ * Performs the reject operation on the application for the execution service module.
+ ******************************************************************************/
   async reject(id, reason = "") {
     return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/reject`, { reason })));
   },
