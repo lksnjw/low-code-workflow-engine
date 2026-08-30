@@ -14,6 +14,7 @@ import { runQueryLoop, type ToolStep } from "../../agent/query-loop.js";
 import { runActionLoop } from "../../agent/action-loop.js";
 import { discoverTools } from "../../agent/tool-discovery.js";
 import { validateSemantics } from "../../governance/semantic-validator.js";
+import { isPolicyCheckerEnabled, checkErpPolicy } from "../../governance/rbac.js";
 import { modifyWorkflow } from "../../agent/workflow-modifier.js";
 import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
 import { correctToolNamesInYaml } from "../../synthesis/service.js";
@@ -255,20 +256,24 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   const augmentedPriorMessages = workflowContextYaml
     ? [`assistant: I have the following workflow loaded for context:\n**${workflowContextName}**\n\`\`\`yaml\n${workflowContextYaml}\n\`\`\``, ...stored.priorMessages]
     : stored.priorMessages;
-  // ── Feasibility check against workflows catalog ──────────────────────────
-  const feasibility = checkFeasibility(content, user.role);
-  if (!feasibility.feasible) {
-    const denialText = feasibility.matchedWorkflow
-      ? `**Request blocked by policy.**\n\n${feasibility.reason}`
-      : `**Request blocked.**\n\n${feasibility.reason ?? "This action is not permitted in this system."}`;
-    const assistantMessage = await services.repository.mutate((state) => {
-      const chat = state.chats[requestParam(request, "id")];
-      if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
-      const message = { id: nextID(state, "msg"), role: "assistant", text: denialText, artifacts: { intent: "POLICY_DENIAL", blockedWorkflow: feasibility.matchedWorkflow?.id ?? null }, createdAt: now(), traceId };
-      chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
-      return message;
-    });
-    return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: denialText, intent: "POLICY_DENIAL" }, "Message processed", null));
+  // ── Feasibility / role-policy check ─────────────────────────────────────
+  // Controlled by the Policy Checker toggle in Settings (state.settings.rbac.enabled).
+  const policyCheckerEnabled = await isPolicyCheckerEnabled(services.repository);
+  if (policyCheckerEnabled) {
+    const feasibility = checkFeasibility(content, user.role);
+    if (!feasibility.feasible) {
+      const denialText = feasibility.matchedWorkflow
+        ? `**Request blocked by policy.**\n\n${feasibility.reason}`
+        : `**Request blocked.**\n\n${feasibility.reason ?? "This action is not permitted in this system."}`;
+      const assistantMessage = await services.repository.mutate((state) => {
+        const chat = state.chats[requestParam(request, "id")];
+        if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
+        const message = { id: nextID(state, "msg"), role: "assistant", text: denialText, artifacts: { intent: "POLICY_DENIAL", blockedWorkflow: feasibility.matchedWorkflow?.id ?? null }, createdAt: now(), traceId };
+        chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+        return message;
+      });
+      return reply.send(ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: denialText, intent: "POLICY_DENIAL" }, "Message processed", null));
+    }
   }
   const intent = classifyIntent(content);
   if (intent === "CAPABILITIES") {
@@ -287,11 +292,20 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     // Gather ERP tools if bridge is available; fall back to empty (pure conversational)
     let readOnlyTools: readonly import("../../registry/schemas.js").ToolDefinition[] = [];
     if (services.erpbridgeSession !== undefined) {
-      const staticReadOnly = services.registries.readOnlyTools();
-      const allReadOnlyTools = staticReadOnly.length > 0
-        ? staticReadOnly
-        : (await discoverTools(services.erpbridgeSession, services.registries)).filter((t) => t.is_read_only === true);
-      readOnlyTools = selectRelevantTools(content, allReadOnlyTools, 15);
+      // ── Policy Checker toggle — controls whether QUERY is restricted to read-only tools.
+      // Always pass the model the FULL live tool list, never a keyword-filtered
+      // subset — a truncated list is how the LLM ends up not knowing a real
+      // tool exists (e.g. "send-email") and inventing a plausible-looking but
+      // fake name instead. The tool pool here is small (tens of tools), well
+      // within normal function-calling limits, so there's no reason to cap it.
+      if (policyCheckerEnabled) {
+        const staticReadOnly = services.registries.readOnlyTools();
+        readOnlyTools = staticReadOnly.length > 0
+          ? staticReadOnly
+          : (await discoverTools(services.erpbridgeSession, services.registries)).filter((t) => t.is_read_only === true);
+      } else {
+        readOnlyTools = await discoverTools(services.erpbridgeSession, services.registries);
+      }
     }
     const sessionId = requestParam(request, "id");
     const chatHistory = augmentedPriorMessages.map((line) => {
@@ -306,6 +320,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
         readOnlyTools,
         async (toolName, args) => bridgeSession !== undefined ? bridgeSession.callToolDirect(toolName, args) : {},
         services.providerRuntime,
+        policyCheckerEnabled,
       );
     } catch (error) {
       throw new HandlerFailure(502, `Query agent failed: ${errorText(error)}`);
@@ -358,13 +373,20 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
         { userMessage: content, chatHistory, sessionId: requestParam(request, "id"), actorId: user.id, actorRole: user.role, user: governanceUser, signal: request.signal, traceId },
         allTools,
         async (toolName, args) => bridgeSession.callToolDirect(toolName, args),
-        async (toolName, toolDef, args, govUser) => {
-          const semResult = await validateSemantics(
-            { toolName, toolDisplayName: toolDef.display_name ?? toolName, arguments: args, userRole: govUser.role, userId: govUser.id },
-            bridgeSession,
-          );
-          return semResult.reason !== undefined ? { allowed: semResult.allowed, reason: semResult.reason } : { allowed: semResult.allowed };
-        },
+        // ── Policy Checker toggle (Settings > Policy Checker) — controls
+        // operation-level governance for TOOL_CALL. When on, calls
+        // policy-gate-evaluate in ERP Bridge (not env/config). When off,
+        // all tool calls are allowed through.
+        policyCheckerEnabled
+          ? async (toolName, toolDef, args, govUser) =>
+              checkErpPolicy(bridgeSession, {
+                userId: govUser.id,
+                userRole: govUser.role,
+                action: toolName,
+                prompt: `User "${govUser.id}" (${govUser.role}) wants to execute: ${toolDef.display_name ?? toolName}`,
+                context: { tool: toolName, arguments: args },
+              })
+          : async () => ({ allowed: true }),
         services.providerRuntime,
       );
     } catch (error) {
@@ -533,14 +555,23 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   const chatSessionId = requestParam(request, "id");
   const chatMessageId = stringValue(stored.userMessage.id);
   let autoSavedWorkflowId: string | null = null;
+  // When the generated workflow contains `kind: approval` checkpoint(s), resolve
+  // them here in chat — NOT at run time. Once approved, the checkpoint steps are
+  // stripped from the saved YAML so the workflow runs straight through on every
+  // future execution ("solved once at generation, never asked again").
+  let pendingGenerationApproval: { steps: Array<{ stepId: string; description: string }>; requestedAt: string } | null = null;
   try {
     let blueprint;
     try { blueprint = parseWorkflowYAMLStrict(result.yaml); } catch { blueprint = null; }
     if (blueprint !== null) {
+      const approvalSteps = blueprint.steps
+        .filter((s) => s.kind === "approval")
+        .map((s) => ({ stepId: s.id, description: (s.description ?? "").trim() || `Approval required for step ${s.id}` }));
+      const nowTs = new Date().toISOString();
+      if (approvalSteps.length > 0) pendingGenerationApproval = { steps: approvalSteps, requestedAt: nowTs };
       autoSavedWorkflowId = await services.repository.mutate((state) => {
         state.counter += 1;
         const wfId = `wf_${state.counter}_${randomBytes(4).toString("hex")}`;
-        const nowTs = new Date().toISOString();
         const wf = {
           id: wfId,
           name: blueprint!.name || content.slice(0, 60) || "Generated Workflow",
@@ -565,6 +596,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
           chatMessageId: stringValue(stored.userMessage.id),
           prompt: content,
           traceId,
+          pendingGenerationApproval,
         };
         state.workflows[wfId] = wf as unknown as import("../../models/schemas.js").Workflow;
         return wfId;
@@ -574,7 +606,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
 
   // Generate Claude Code-style narrative response
   const assistantText = await generateWorkflowNarrative(content, result, stored.priorMessages, services.providerRuntime, request.signal);
-  const artifacts = compactWorkflowArtifacts(result, chatSessionId, chatMessageId, traceId, autoSavedWorkflowId, missingTools);
+  const artifacts = compactWorkflowArtifacts(result, chatSessionId, chatMessageId, traceId, autoSavedWorkflowId, missingTools, pendingGenerationApproval);
   const assistantMessage = await services.repository.mutate((state) => {
     const chat = state.chats[requestParam(request, "id")];
     if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
@@ -606,6 +638,7 @@ function compactWorkflowArtifacts(
   traceId: string,
   workflowId: string | null = null,
   missingTools: string[] = [],
+  pendingGenerationApproval: { steps: Array<{ stepId: string; description: string }>; requestedAt: string } | null = null,
 ): Record<string, unknown> {
   const retrieval = result.retrieval as {
     tools?: unknown[];
@@ -634,6 +667,7 @@ function compactWorkflowArtifacts(
     })),
     ...(workflowId !== null ? { workflowId } : {}),
     ...(missingTools.length > 0 ? { missing_tools: missingTools } : {}),
+    ...(pendingGenerationApproval !== null ? { generationApproval: { workflowId, ...pendingGenerationApproval } } : {}),
     retrieval: {
       tools: pickArtifactRecords(retrieval.tools, [
         "tool_id", "name", "display_name", "description", "endpoint",
@@ -725,7 +759,26 @@ async function generateWorkflowNarrative(
 
 function requirePlatformAdmin(user: CurrentUser): void { if (user.role !== "Platform Admin") throw new HandlerFailure(403, "Only Platform Admin can manage providers"); }
 async function listProviders(reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const providers = await services.repository.read((state) => Object.values(state.providers).map((item) => withoutSecretFields(item))); return reply.send(ok(providers, "Provider configurations loaded", null)); }
-function providerInput(body: Record<string, unknown>, id: string, existing?: Record<string, unknown>): Record<string, unknown> { const name = stringValue(body.name).trim(); const model = stringValue(body.model).trim(); if (name === "" || model === "") throw new HandlerFailure(422, "Provider name and model are required"); const type = stringValue(body.type).trim(); if (!["gemini", "ollama", "openai_compatible"].includes(type)) throw new HandlerFailure(422, "Provider type must be gemini, ollama, or openai_compatible"); return { id, name, type, ...(stringValue(body.baseUrl).trim() === "" ? {} : { baseUrl: stringValue(body.baseUrl).trim() }), model, temperature: typeof body.temperature === "number" ? body.temperature : 0, apiKey: typeof body.apiKey === "string" && body.apiKey !== "" ? body.apiKey : existing?.apiKey ?? "", active: existing?.active === true, createdAt: stringValue(existing?.createdAt) === "" ? now() : existing!.createdAt }; }
+function providerInput(body: Record<string, unknown>, id: string, existing?: Record<string, unknown>): Record<string, unknown> {
+  const name = stringValue(body.name).trim();
+  const model = stringValue(body.model).trim();
+  if (name === "" || model === "") throw new HandlerFailure(422, "Provider name and model are required");
+  const type = stringValue(body.type).trim();
+  if (!["gemini", "ollama", "openai_compatible"].includes(type)) throw new HandlerFailure(422, "Provider type must be gemini, ollama, or openai_compatible");
+  // additionalModels — list of extra model IDs selectable in the chat UI
+  const rawAdditional = Array.isArray(body.additionalModels) ? body.additionalModels : (Array.isArray(existing?.additionalModels) ? existing!.additionalModels : []);
+  const additionalModels = (rawAdditional as unknown[]).filter((m): m is string => typeof m === "string" && m.trim() !== "").map((m) => m.trim());
+  return {
+    id, name, type,
+    ...(stringValue(body.baseUrl).trim() === "" ? {} : { baseUrl: stringValue(body.baseUrl).trim() }),
+    model,
+    ...(additionalModels.length > 0 ? { additionalModels } : {}),
+    temperature: typeof body.temperature === "number" ? body.temperature : 0,
+    apiKey: typeof body.apiKey === "string" && body.apiKey !== "" ? body.apiKey : existing?.apiKey ?? "",
+    active: existing?.active === true,
+    createdAt: stringValue(existing?.createdAt) === "" ? now() : existing!.createdAt,
+  };
+}
 async function createProvider(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const body = bodyRecord(request); if (body === null) throw new HandlerFailure(400, "Invalid request body"); const provider = await services.repository.mutate((state) => { if (Object.values(state.providers).some((item) => stringValue(item.name).toLowerCase() === stringValue(body.name).trim().toLowerCase())) throw new HandlerFailure(409, "A provider with this name already exists"); const id = nextID(state, "provider"); const value = providerInput(body, id); state.providers[id] = value; appendAudit(state, user, "provider.created", "provider", id, null, withoutSecretFields(value) as Record<string, unknown>, request); return value; }); return reply.status(201).send(ok(withoutSecretFields(provider), "Provider created", null)); }
 async function updateProvider(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const body = bodyRecord(request); if (body === null) throw new HandlerFailure(400, "Invalid request body"); const id = requestParam(request, "id"); const provider = await services.repository.mutate((state) => { const existing = state.providers[id]; if (existing === undefined) throw new HandlerFailure(404, "Provider configuration not found"); const value = providerInput(body, id, existing); state.providers[id] = value; appendAudit(state, user, "provider.updated", "provider", id, withoutSecretFields(existing) as Record<string, unknown>, withoutSecretFields(value) as Record<string, unknown>, request); return value; }); return reply.send(ok(withoutSecretFields(provider), "Provider updated", null)); }
 async function activateProvider(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { requirePlatformAdmin(user); const id = requestParam(request, "id"); const current = await services.repository.read((state) => state.providers[id] ?? null); if (current === null) throw new HandlerFailure(404, "Provider configuration not found"); const configuration = providerConfigurationFromRecord(current, services.config.generationTimeoutMs ?? 30_000); try { validateRuntimeProviderConfiguration(configuration); } catch (error) { throw new HandlerFailure(422, errorText(error)); } if (services.providerRuntime === undefined) throw new HandlerFailure(503, "Provider runtime is unavailable"); const provider = await services.repository.mutate((state) => { const item = state.providers[id]; if (item === undefined) throw new HandlerFailure(404, "Provider configuration not found"); for (const value of Object.values(state.providers)) value.active = false; item.active = true; appendAudit(state, user, "provider.activated", "provider", id, null, { active: true }, request); return structuredClone(item); }); services.providerRuntime.activate(configuration); return reply.send(ok(withoutSecretFields(provider), "Provider activated", null)); }
@@ -773,17 +826,3 @@ function buildCapabilitiesResponse(tools: readonly import("../../registry/schema
   return lines.join("\n");
 }
 
-// Picks the most relevant read-only tools for the user's query, capped at `limit`.
-// Scores by how many query words appear in the tool name or description.
-function selectRelevantTools(query: string, tools: readonly import("../../registry/schemas.js").ToolDefinition[], limit: number): readonly import("../../registry/schemas.js").ToolDefinition[] {
-  if (tools.length <= limit) return tools;
-  const words = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
-  if (words.length === 0) return tools.slice(0, limit);
-  const scored = tools.map((tool) => {
-    const haystack = `${tool.name} ${tool.description}`.toLowerCase();
-    const score = words.reduce((n, w) => n + (haystack.includes(w) ? 1 : 0), 0);
-    return { tool, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map((s) => s.tool);
-}

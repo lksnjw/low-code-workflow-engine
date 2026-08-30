@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import ExecutionStatus from "../../components/executions/ExecutionStatus";
+import PendingApprovalCard from "../../components/executions/PendingApprovalCard";
 import ExecutionOutputPanel from "../../components/executions/ExecutionOutputPanel";
 import ExecutionTimeline from "../../components/executions/ExecutionTimeline";
 import GovernanceBlockPanel from "../../components/executions/GovernanceBlockPanel";
@@ -36,6 +37,9 @@ function ExecutionDetailPage() {
         </div>
         <ExecutionStatus status={execution.status} failure={execution.failure} />
       </section>
+      {execution.status === "AWAITING_APPROVAL" ? (
+        <PendingApprovalCard execution={execution} onChanged={reload} />
+      ) : null}
       {execution.failure ? <GovernanceBlockPanel failure={execution.failure} /> : null}
       <Card>
         <dl className="grid gap-4 md:grid-cols-4">

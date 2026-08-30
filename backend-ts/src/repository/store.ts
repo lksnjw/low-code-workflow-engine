@@ -33,6 +33,16 @@ export type Execution = {
   failure?: Record<string, unknown>;
   stepOutputs?: Record<string, unknown>;
   finalOutput?: unknown;
+  // The executing agent's own final narration for this run (e.g. explaining
+  // it stopped at a human approval checkpoint) — distinct from finalOutput,
+  // which may just be the last tool result.
+  agentSummary?: string;
+  // Set while status is AWAITING_APPROVAL — the human-in-the-loop checkpoint
+  // execution is currently paused at.
+  pendingApproval?: { stepId: string; description: string; requestedAt: string };
+  // Every approval granted so far on this execution, oldest first — so a
+  // resumed run (and the agent) knows what's already been authorized.
+  approvals?: Array<{ stepId: string; approvedBy: { id: string; name: string }; approvedAt: string; note?: string }>;
   chatSessionId?: string;
   traceId?: string;
 };
@@ -128,7 +138,15 @@ export class Repository {
     const payload = await persistence.load();
     const restored = payload === null ? initialState() : restoreState(payload);
     const repository = new Repository(persistence, restored);
-    await persistence.save(Buffer.from(JSON.stringify(restored), "utf8"));
+    // Write back only when the restored state actually differs from what was
+    // stored — i.e. first boot, or a schema migration normalised something.
+    // Re-saving a byte-identical multi-megabyte blob on every startup is pure
+    // cost, and once the state grows it is slow enough to trip the startup
+    // timeout and stop the server from ever listening.
+    const serialized = Buffer.from(JSON.stringify(restored), "utf8");
+    if (payload === null || !Buffer.from(payload).equals(serialized)) {
+      await persistence.save(serialized);
+    }
     return repository;
   }
 

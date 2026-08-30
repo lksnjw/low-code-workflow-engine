@@ -39,6 +39,19 @@ import { runActionLoop } from "../agent/action-loop.js";
 import { discoverTools } from "../agent/tool-discovery.js";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 
+// Some external SDKs (the Firestore client, the ERP Bridge MCP client) have no
+// built-in connect timeout — an unresponsive dependency would otherwise hang
+// startup forever with zero log output. Race every such call against a hard
+// deadline so failures are fast and visible instead of silent.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms).unref(),
+    ),
+  ]);
+}
+
 const root = process.cwd();
 const config = loadConfig(process.env, root);
 await ensureRuntimeRegistries({
@@ -61,24 +74,46 @@ const registries = await RegistryService.load(
   config.toolRegistryPath,
   config.ruleRegistryPath,
 );
+console.log(`[startup] Registries loaded — connecting to ${config.storageDriver} storage...`);
+const STORAGE_CONNECT_TIMEOUT_MS = 30_000;
 const persistence =
   config.storageDriver === "postgres"
-    ? await PostgresPersistence.open(config.databaseURL, config.storageEncryptionKey)
+    ? await withTimeout(
+        PostgresPersistence.open(config.databaseURL, config.storageEncryptionKey),
+        STORAGE_CONNECT_TIMEOUT_MS,
+        "Postgres connection",
+      )
     : config.storageDriver === "firestore"
-      ? await FirestorePersistence.open({
-          projectId: config.firestoreProjectId!,
-          ...(config.firestoreKeyFile ? { keyFilename: config.firestoreKeyFile } : {}),
-          ...(config.firestoreKeyJson ? { credentials: config.firestoreKeyJson } : {}),
-          ...(config.firestoreEncryptionKey ? { encryptionKey: config.firestoreEncryptionKey } : {}),
-        })
+      ? await withTimeout(
+          FirestorePersistence.open({
+            projectId: config.firestoreProjectId!,
+            ...(config.firestoreKeyFile ? { keyFilename: config.firestoreKeyFile } : {}),
+            ...(config.firestoreKeyJson ? { credentials: config.firestoreKeyJson } : {}),
+            ...(config.firestoreEncryptionKey ? { encryptionKey: config.firestoreEncryptionKey } : {}),
+          }),
+          STORAGE_CONNECT_TIMEOUT_MS,
+          "Firestore connection",
+        )
       : null;
-const repository = await Repository.open(persistence);
-await bootstrapAdministrator(
-  repository,
-  config.platformAdminEmail,
-  config.platformAdminPassword,
+console.log("[startup] Storage connected.");
+const repository = await withTimeout(
+  Repository.open(persistence),
+  STORAGE_CONNECT_TIMEOUT_MS,
+  "Repository state load",
 );
-await reconcileInterruptedExecutions(repository);
+console.log("[startup] Repository state loaded.");
+await withTimeout(
+  bootstrapAdministrator(repository, config.platformAdminEmail, config.platformAdminPassword),
+  STORAGE_CONNECT_TIMEOUT_MS,
+  "Administrator bootstrap",
+);
+console.log("[startup] Administrator bootstrapped.");
+await withTimeout(
+  reconcileInterruptedExecutions(repository),
+  STORAGE_CONNECT_TIMEOUT_MS,
+  "Execution reconciliation",
+);
+console.log("[startup] Executions reconciled.");
 const validator = new RegistryValidator(registries, repository);
 const legacyMcp =
   config.mcpTransport === "bridge-v1"
@@ -92,12 +127,16 @@ const legacyMcp =
 let erpbridgeSession: ErpbridgeMcpSession | null = null;
 if (config.mcpTransport === "erpbridge-mcp") {
   try {
-    erpbridgeSession = await createErpbridgeMcpSession({
-      baseURL: config.erpbridgeBaseURL,
-      token: config.erpbridgeMcpToken,
-      timeoutMs: config.mcpTimeoutMs,
-      validator,
-    });
+    erpbridgeSession = await withTimeout(
+      createErpbridgeMcpSession({
+        baseURL: config.erpbridgeBaseURL,
+        token: config.erpbridgeMcpToken,
+        timeoutMs: config.mcpTimeoutMs,
+        validator,
+      }),
+      config.mcpTimeoutMs,
+      "ERP Bridge connection",
+    );
   } catch (err) {
     console.warn("[erpbridge] MCP session failed to start — ERP tools will be unavailable:", err instanceof Error ? err.message : String(err));
   }
@@ -243,8 +282,12 @@ async function bootstrapAdministrator(
       (user) => user.email.toLowerCase() === email.toLowerCase(),
     ),
   );
-  if (existing !== undefined) return;
   const passwordHash = await hashPassword(password);
+  if (existing !== undefined) {
+    // Always sync the password from .env so a restart picks up credential changes.
+    await repository.mutate((state) => { state.passwordHashes[String(existing.id)] = passwordHash; });
+    return;
+  }
   await repository.mutate((state) => {
     state.counter += 1;
     const id = `usr_${state.counter}_admin`;

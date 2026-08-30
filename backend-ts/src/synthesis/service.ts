@@ -219,8 +219,10 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
   const snapshot = registries.snapshot();
   const applicableRules = snapshot.rules.filter((rule) => rule.enabled && (rule.applies_to_roles.length === 0 || rule.applies_to_roles.some((role) => normalizeRole(role) === normalizeRole(userRole))));
   const history = priorMessages.length === 0 ? "[]" : JSON.stringify(priorMessages);
-  const toolPool = liveTools !== undefined && liveTools.length > 0 ? liveTools : snapshot.tools;
-  const relevantTools = selectRelevantToolsForSynthesis(userText, toolPool, 20);
+  // Always give the model the FULL live tool list, never a keyword-filtered
+  // subset — a truncated list is how the LLM ends up not knowing a real tool
+  // exists and inventing a plausible-looking but fake action name instead.
+  const relevantTools = liveTools !== undefined && liveTools.length > 0 ? liveTools : snapshot.tools;
   return [
     "SYSTEM",
     "Generate exactly one workflow as strict YAML. Return YAML only — no Markdown fence, no commentary.",
@@ -235,16 +237,22 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
     "  steps:                   # at least one step",
     "    - id: <string>         # REQUIRED — unique snake_case id, e.g. step_1",
     "      description: <string> # REQUIRED — short plain-English label, e.g. 'Fetch all warehouses from ERP'",
-    "      action: <tool_name>  # must be an exact tool name from TOOL_REGISTRY_JSON below",
+    "      action: <tool_name>  # must be an exact tool name from TOOL_REGISTRY_JSON below (omit for kind: approval)",
     "      parameters:          # key/value pairs matching the tool's input schema",
     "        key: value",
+    "      kind: approval        # OPTIONAL — see APPROVAL STEPS below. Omit entirely for a normal tool step.",
     "",
     "STRICT RULES:",
     "- Every step MUST have an id field (string, unique within the workflow).",
     "- Every step MUST have a description field — a short plain-English phrase describing what the step does (e.g. 'Fetch all warehouses from ERP'). Never leave description empty or use a tool name as the description.",
-    "- Every step MUST have action set to an EXACT tool name from TOOL_REGISTRY_JSON below. NO EXCEPTIONS.",
+    "- Every non-approval step MUST have action set to an EXACT tool name from TOOL_REGISTRY_JSON below. NO EXCEPTIONS.",
     "- COPY THE TOOL NAME CHARACTER-FOR-CHARACTER from TOOL_REGISTRY_JSON — including any hyphens. For example, if the registry lists 'send-email', you MUST write action: send-email (with hyphen), NOT send_email (with underscore). Tool names are case-sensitive and hyphen/underscore differences matter.",
-    "- DO NOT use kind: approval, kind: condition, kind: http, or any kind other than tool. The ONLY valid step type is action-based (kind: tool).",
+    "- The ONLY step kinds that exist are the default (tool) and kind: approval. DO NOT use kind: condition, kind: http, or any other kind — nothing in this system interprets them and the workflow will fail.",
+    "",
+    "APPROVAL STEPS (kind: approval):",
+    "- Use a step with kind: approval (no action, no parameters) as a human sign-off checkpoint immediately BEFORE a step whose rule set in APPLICABLE_RULES_JSON requires manual authorization above a stated threshold (e.g. a payment, purchase order, or refund above a limit named in the rule) — never for routine reads or low-risk writes.",
+    "- Give it a description that states exactly what is being authorized and why, e.g. 'Manager approval — payment exceeds the $15,000 auto-approval limit'.",
+    "- Do not invent thresholds that are not stated in APPLICABLE_RULES_JSON or the user's request. If no rule requires sign-off, do not add an approval step.",
     "- ONLY use tools that appear in TOOL_REGISTRY_JSON. Never add tools based on rule instructions — APPLICABLE_RULES_JSON is for reference only, not a source of tool names.",
     "- If a rule mentions a tool (e.g. audit.write_audit_log) that is NOT in TOOL_REGISTRY_JSON, IGNORE that rule completely.",
     "- CRITICAL — DO NOT INVENT TOOL NAMES: If the user requests a capability (e.g. 'send email', 'send SMS', 'notify', 'post to Slack') and NO matching tool exists in TOOL_REGISTRY_JSON, you MUST omit that step entirely. Never create a tool name that is not in TOOL_REGISTRY_JSON. NEVER add prefixes like 'dynamic_', 'static_', or 'auto_' to any tool name — e.g. do NOT write 'dynamic_send-email', write 'send-email' directly. A workflow with fewer steps using real tools is always better than one with invented names.",
@@ -265,21 +273,9 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
   ].join("\n");
 }
 
-function selectRelevantToolsForSynthesis(query: string, tools: readonly ToolDefinition[], limit: number): readonly ToolDefinition[] {
-  const words = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
-  if (words.length === 0) return tools.slice(0, limit);
-  const scored = tools.map((tool) => {
-    const text = `${tool.name} ${tool.description} ${tool.display_name ?? ""}`.toLowerCase();
-    const score = words.reduce((acc, w) => acc + (text.includes(w) ? 1 : 0), 0);
-    return { tool, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map((s) => s.tool);
-}
-
 function directRegistryContext(query: string, registries: RegistryService, userRole: string): Record<string, unknown> {
   const snapshot = registries.snapshot();
-  const tools = selectRelevantToolsForSynthesis(query, snapshot.tools, 20).map((tool) => ({ ...tool, score: 1, match_reason: "direct registry inclusion" }));
+  const tools = snapshot.tools.map((tool) => ({ ...tool, score: 1, match_reason: "direct registry inclusion" }));
   const rules = snapshot.rules.filter((rule) => rule.enabled && !isGlobalRule(rule)).filter((rule) => rule.applies_to_roles.length === 0 || rule.applies_to_roles.some((role) => normalizeRole(role) === normalizeRole(userRole))).map((rule) => ({ ...rule, score: 1, match_reason: "direct registry inclusion" }));
   const globalRules = snapshot.rules.filter((rule) => rule.enabled && isGlobalRule(rule)).map((rule) => ({ ...rule, score: 1, match_reason: "direct registry inclusion" }));
   return { tools, rules, global_rules: globalRules, templates: [], examples: [], query, user_role: userRole, method: "direct_registry", retrieval_method: "direct_registry" };

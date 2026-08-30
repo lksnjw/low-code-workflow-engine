@@ -8,7 +8,7 @@ import { useNotifications } from "../../context/NotificationContext";
 import { apiErrorMessage } from "../../services/api";
 import { settingsService } from "../../services/settings.service";
 
-const EMPTY_FORM = { name: "", type: "gemini", baseUrl: "", model: "", temperature: 0, apiKey: "" };
+const EMPTY_FORM = { name: "", type: "gemini", baseUrl: "", model: "", temperature: 0, apiKey: "", additionalModels: [] };
 const INPUT_CLASS = "w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-1 focus:ring-primary dark:border-gray-700 dark:bg-darkBackgroundVery dark:text-white";
 const COLUMNS = [
   { key: "name", label: "Provider" },
@@ -25,6 +25,7 @@ const COLUMNS = [
 function ModelsPage() {
   const [editor, setEditor] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [modelInput, setModelInput] = useState("");
   const [testingId, setTestingId] = useState("");
   const [testResults, setTestResults] = useState({});
   const { notify } = useNotifications();
@@ -64,6 +65,7 @@ function ModelsPage() {
   const openCreate = () => {
     setEditor({ id: null });
     setForm(EMPTY_FORM);
+    setModelInput("");
   };
 
 /*******************************************************************************
@@ -73,6 +75,7 @@ function ModelsPage() {
  ******************************************************************************/
   const openEdit = (provider) => {
     setEditor(provider);
+    setModelInput("");
     setForm({
       name: provider.name,
       type: provider.type,
@@ -80,6 +83,7 @@ function ModelsPage() {
       model: provider.model,
       temperature: provider.temperature ?? 0,
       apiKey: "",
+      additionalModels: Array.isArray(provider.additionalModels) ? [...provider.additionalModels] : [],
     });
   };
 
@@ -91,6 +95,17 @@ function ModelsPage() {
   const updateField = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: name === "temperature" ? Number(value) : value }));
+  };
+
+  const addSelectableModel = () => {
+    const id = modelInput.trim();
+    if (!id || form.additionalModels.includes(id)) return;
+    setForm((current) => ({ ...current, additionalModels: [...current.additionalModels, id] }));
+    setModelInput("");
+  };
+
+  const removeSelectableModel = (id) => {
+    setForm((current) => ({ ...current, additionalModels: current.additionalModels.filter((m) => m !== id) }));
   };
 
 /*******************************************************************************
@@ -174,6 +189,35 @@ function ModelsPage() {
               <input name="apiKey" type="password" value={form.apiKey} onChange={updateField} className={INPUT_CLASS} placeholder="Write-only credential" autoComplete="new-password" />
             </Field>
           </div>
+
+          {/* Selectable models — extra model IDs shown in the chat model selector */}
+          <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40">
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Selectable models</p>
+            <p className="mt-1 text-xs text-gray-400">Add model IDs that users can pick in the chat interface. These use the same provider credentials.</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={modelInput}
+                onChange={(e) => setModelInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSelectableModel(); } }}
+                placeholder="e.g. deepseek/deepseek-v3-flash"
+                className={INPUT_CLASS + " flex-1"}
+              />
+              <Button type="button" variant="secondary" onClick={addSelectableModel}>Add</Button>
+            </div>
+            {form.additionalModels.length > 0 && (
+              <ul className="mt-3 space-y-1.5">
+                {form.additionalModels.map((id) => (
+                  <li key={id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-darkBackground">
+                    <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{id}</span>
+                    <button type="button" onClick={() => removeSelectableModel(id)} className="ml-3 text-gray-400 hover:text-red-500">
+                      <Icon icon="mdi:close" className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setEditor(null)}>Cancel</Button><Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? "Saving…" : "Save provider"}</Button></div>
         </form>
       ) : null}

@@ -13,6 +13,7 @@ export function normalizeWorkflow(workflow) {
     ...workflow,
     owner: workflow.owner?.name || "Unassigned",
     ownerRecord: workflow.owner,
+    triggerRaw: workflow.trigger,
     trigger:
       workflow.trigger?.displayName || workflow.trigger?.type || workflow.trigger || "Manual",
     successRate: hasRuns ? `${Number(workflow.successRate || 0).toFixed(1)}%` : "—",
@@ -107,6 +108,23 @@ export const workflowService = {
  ******************************************************************************/
   async saveYAML(id, yaml) {
     return unwrap(await apiClient.put(`/workflows/${id}/yaml`, { yaml }));
+  },
+/*******************************************************************************
+ * Function: approveGeneration
+ *
+ * Resolves a generation-time approval checkpoint for the workflow module.
+ * Strips the approval step(s) from the saved YAML so future runs never pause.
+ ******************************************************************************/
+  async approveGeneration(id, note = "") {
+    return normalizeWorkflow(unwrap(await apiClient.post(`/workflows/${id}/approve-generation`, { note }, { timeout: 60000 })));
+  },
+/*******************************************************************************
+ * Function: rejectGeneration
+ *
+ * Rejects a generation-time approval checkpoint for the workflow module.
+ ******************************************************************************/
+  async rejectGeneration(id, reason = "") {
+    return normalizeWorkflow(unwrap(await apiClient.post(`/workflows/${id}/reject-generation`, { reason })));
   },
 /*******************************************************************************
  * Function: saveCanvas

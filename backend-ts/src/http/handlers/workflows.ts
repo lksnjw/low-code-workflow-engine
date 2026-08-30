@@ -1,10 +1,12 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { stringify as yamlStringify } from "yaml";
 import { fail, ok, type Workflow } from "../../models/schemas.js";
 import { workflowCanvasSchema } from "../../models/boundary.js";
 import { checksum, parseWorkflowYAMLStrict, workflowContentHash } from "../../parser/workflow.js";
 import type { RouteDefinition } from "../generated-routes.js";
 import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, publicUser, requestParam, stringValue, validateWorkflow } from "./common.js";
 import { requestTraceId } from "../../trace/request-trace.js";
+import { checkErpPolicy, isPolicyCheckerEnabled } from "../../governance/rbac.js";
 
 export const WORKFLOW_UNHANDLED = Symbol("workflow-unhandled");
 
@@ -37,6 +39,8 @@ export async function handleWorkflowRoute(
     if (path === `${base}/workflows/:id/assign/:userId`) return unassignWorkflow(request, reply, user, services);
     if (path === `${base}/workflows/:id/yaml` && route.method === "GET") return getWorkflowYAML(request, reply, user, services);
     if (path === `${base}/workflows/:id/yaml` && route.method === "PUT") return putWorkflowYAML(request, reply, user, services);
+    if (path === `${base}/workflows/:id/approve-generation`) return approveWorkflowGeneration(request, reply, user, services);
+    if (path === `${base}/workflows/:id/reject-generation`) return rejectWorkflowGeneration(request, reply, user, services);
     if (path === `${base}/workflows/:id/canvas` && route.method === "GET") return getWorkflowCanvas(request, reply, user, services);
     if (path === `${base}/workflows/:id/canvas` && route.method === "PUT") return putWorkflowCanvas(request, reply, services);
     if (path === `${base}/workflows/:id/versions`) return workflowVersions(request, reply, user, services);
@@ -216,6 +220,105 @@ async function putWorkflowYAML(request: FastifyRequest, reply: FastifyReply, use
     return structuredClone(item);
   });
   return reply.send(ok(yamlRecord(workflow), "Workflow YAML updated", null));
+}
+
+// Resolves a generation-time approval checkpoint IN CHAT, before the workflow
+// is ever run — "solved once at generation, never asked again". Strips the
+// `kind: approval` step(s) out of the saved YAML so every future run of this
+// workflow goes straight through with no human-in-the-loop pause.
+async function approveWorkflowGeneration(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
+  const id = requestParam(request, "id");
+  const body = request.body === undefined ? {} : bodyRecord(request);
+  if (body === null) throw new HandlerFailure(400, "Invalid request body");
+  const note = stringValue(body.note).trim();
+
+  const current = await services.repository.read((state) => state.workflows[id] ?? null);
+  if (current === null) throw new HandlerFailure(404, "Workflow not found");
+  const pending = current.pendingGenerationApproval;
+  if (pending === undefined || pending === null || pending.steps.length === 0)
+    throw new HandlerFailure(409, "This workflow has no pending generation approval");
+
+  if (await isPolicyCheckerEnabled(services.repository)) {
+    const gov = await checkErpPolicy(services.erpbridgeSession, {
+      userId: user.id,
+      userRole: user.role,
+      action: "approve_workflow_generation",
+      prompt: `User "${user.id}" (${user.role}) wants to approve workflow "${current.name}" for autonomous execution: ${pending.steps.map((s) => s.description).join("; ")}`,
+      context: { workflowId: id, steps: pending.steps },
+    });
+    if (!gov.allowed) throw new HandlerFailure(403, gov.reason ?? "You are not authorized to approve this workflow");
+  }
+
+  let blueprint; try { blueprint = parseWorkflowYAMLStrict(current.yaml); } catch (error) { throw new HandlerFailure(422, "Workflow YAML failed validation", { error: errorText(error) }); }
+  const resolvedSteps = blueprint.steps.filter((s) => s.kind !== "approval");
+  const newYaml = yamlStringify({ ...blueprint, steps: resolvedSteps }).trim();
+  const traceId = requestTraceId(request, current.traceId);
+  const gate = await validateWorkflow(services, "ApproveWorkflowGeneration", newYaml, user, { traceId, workflowId: id });
+  if (!gate.result.passed) throw new HandlerFailure(422, "Workflow failed validation after resolving approval", { ...gate.result, traceId });
+
+  const approvedAt = now();
+  const workflow = await services.repository.mutate((state) => {
+    const item = state.workflows[id]; if (item === undefined) throw new HandlerFailure(404, "Workflow not found");
+    const before = publicWorkflow(item);
+    item.yaml = newYaml; item.steps = resolvedSteps.length; item.draftVersion += 1; item.status = "PENDING"; item.updatedAt = now();
+    item.canvas = canvasFromBlueprint(id, { ...blueprint, steps: resolvedSteps });
+    item.pendingGenerationApproval = null;
+    item.generationApprovals = [...(item.generationApprovals ?? []), { approvedBy: { id: user.id, name: user.name }, approvedAt, ...(note ? { note } : {}) }];
+    appendAudit(state, user, "workflow.generation_approved", "workflow", id, before, publicWorkflow(item), request);
+    if (item.chatSessionId !== undefined) {
+      const chat = state.chats[item.chatSessionId];
+      if (chat !== undefined) {
+        const msg = {
+          id: nextID(state, "msg"),
+          role: "system",
+          text: `**${item.name}** approved — this workflow is now fully autonomous and will run straight through without pausing for approval again.${note ? `\n\n_Note: ${note}_` : ""}`,
+          artifacts: { intent: "GENERATION_APPROVAL_RESOLVED", workflowId: id, resolution: "approved" },
+          createdAt: now(),
+          traceId,
+        };
+        chat.messages.push(msg); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      }
+    }
+    return structuredClone(item);
+  });
+  return reply.send(ok(publicWorkflow(workflow), "Workflow approved — future runs will not pause for approval", null));
+}
+
+async function rejectWorkflowGeneration(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
+  const id = requestParam(request, "id");
+  const body = request.body === undefined ? {} : bodyRecord(request);
+  if (body === null) throw new HandlerFailure(400, "Invalid request body");
+  const reason = stringValue(body.reason).trim();
+
+  const current = await services.repository.read((state) => state.workflows[id] ?? null);
+  if (current === null) throw new HandlerFailure(404, "Workflow not found");
+  const pending = current.pendingGenerationApproval;
+  if (pending === undefined || pending === null || pending.steps.length === 0)
+    throw new HandlerFailure(409, "This workflow has no pending generation approval");
+
+  const traceId = requestTraceId(request, current.traceId);
+  const workflow = await services.repository.mutate((state) => {
+    const item = state.workflows[id]; if (item === undefined) throw new HandlerFailure(404, "Workflow not found");
+    const before = publicWorkflow(item);
+    item.archived = true; item.status = "REJECTED"; item.canRun = false; item.pendingGenerationApproval = null; item.updatedAt = now();
+    appendAudit(state, user, "workflow.generation_rejected", "workflow", id, before, publicWorkflow(item), request);
+    if (item.chatSessionId !== undefined) {
+      const chat = state.chats[item.chatSessionId];
+      if (chat !== undefined) {
+        const msg = {
+          id: nextID(state, "msg"),
+          role: "system",
+          text: `**${item.name}** was rejected and will not be used.${reason ? `\n\n_Reason: ${reason}_` : ""}`,
+          artifacts: { intent: "GENERATION_APPROVAL_RESOLVED", workflowId: id, resolution: "rejected" },
+          createdAt: now(),
+          traceId,
+        };
+        chat.messages.push(msg); chat.messageCount = chat.messages.length; chat.updatedAt = now();
+      }
+    }
+    return structuredClone(item);
+  });
+  return reply.send(ok(publicWorkflow(workflow), "Workflow rejected", null));
 }
 
 async function getWorkflowCanvas(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {

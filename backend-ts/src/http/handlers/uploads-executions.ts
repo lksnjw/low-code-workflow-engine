@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   fail,
@@ -8,12 +8,10 @@ import {
 } from "../../models/schemas.js";
 import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
 import { withoutSecretFields } from "../../redact/secrets.js";
-import { partialResult } from "../../runner/executor.js";
 import type { RouteDefinition } from "../generated-routes.js";
-import { createDispatchIdentity } from "../../tools/registry.js";
 import { canReadExecution } from "../execution-scope.js";
 import { requestTraceId } from "../../trace/request-trace.js";
-import { attachDispatchAuditTrace } from "../../trace/audit-trace.js";
+import { runWorkflowFor, resumeWorkflowApproval } from "../app.js";
 import {
   appendAudit,
   bodyRecord,
@@ -299,220 +297,9 @@ async function retryExecution(
     (state) => state.workflows[prior.workflowId] ?? null,
   );
   if (workflow === null) throw new HandlerFailure(404, "Workflow not found");
-  const parsed = runWorkflowRequestSchema.safeParse(request.body ?? {});
-  const runRequest = parsed.success
-    ? parsed.data
-    : runWorkflowRequestSchema.parse({});
-  return executeWorkflow(workflow, runRequest, request, reply, user, services);
-}
-
-async function executeWorkflow(
-  workflow: Workflow,
-  runRequest: {
-    input: Record<string, unknown> | null;
-    mode: string;
-    dryRun: boolean;
-    idempotencyKey: string;
-  },
-  request: FastifyRequest,
-  reply: FastifyReply,
-  user: CurrentUser,
-  services: HandlerServices,
-): Promise<unknown> {
-  if (
-    !user.permissions.includes("workflow:run") &&
-    workflow.owner.id !== user.id &&
-    !(workflow.assignedUserIds ?? []).includes(user.id)
-  )
-    throw new HandlerFailure(404, "Execution not found");
-  if (workflow.status === "draft-unvalidated")
-    throw new HandlerFailure(
-      422,
-      "Workflow must be validated before execution",
-      { status: workflow.status },
-    );
-  const traceId = requestTraceId(request, workflow.traceId);
-  const gate = await validateWorkflow(
-    services,
-    "RunWorkflow",
-    workflow.yaml,
-    user,
-    { traceId, workflowId: workflow.id },
-  );
-  if (!gate.result.passed || gate.token === null)
-    throw new HandlerFailure(422, "Workflow validation failed", {
-      ...gate.result,
-      traceId,
-      ...(gate.gateExplanation !== undefined ? { gateExplanation: gate.gateExplanation } : {}),
-    });
-  const blueprint = parseWorkflowYAMLStrict(workflow.yaml);
-  if (runRequest.dryRun)
-    return reply.send(
-      ok(
-        {
-          can_execute: true,
-          dry_run: true,
-          validation: gate.result,
-          planned_steps: blueprint.steps,
-        },
-        "Dry run validation passed",
-        null,
-      ),
-    );
-  const execution = await services.repository.mutate((state) => {
-    const id = `run-${randomBytes(4).toString("hex")}`;
-    const value = {
-      id,
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      status: "RUNNING",
-      startedAt: now(),
-      completedAt: null,
-      durationMs: 0,
-      tokens: { input: 0, output: 0, total: 0 },
-      costUsd: 0,
-      startedBy: { id: user.id, name: user.name },
-      ...(workflow.chatSessionId === undefined
-        ? {}
-        : { chatSessionId: workflow.chatSessionId }),
-      traceId,
-    };
-    state.executions[id] = value;
-    return value;
-  });
-  try {
-    const dispatchIdentity = createDispatchIdentity(
-      user,
-      services.config.erpbridgeRoleMap,
-    );
-    const result = await services.executor.run(
-      execution.id,
-      workflow,
-      runRequest.input ?? {},
-      gate.token,
-      dispatchIdentity,
-      undefined,
-      {
-        traceId,
-        workflowId: workflow.id,
-        executionId: execution.id,
-        actor: { id: user.id, role: user.role },
-      },
-    );
-    await attachDispatchAuditTrace(services.repository, execution.id, {
-      traceId,
-      workflowId: workflow.id,
-      executionId: execution.id,
-      actor: { id: user.id, role: user.role },
-    });
-    const completed = await services.repository.mutate((state) => {
-      const item = state.executions[execution.id]!;
-      item.status = "DONE";
-      item.completedAt = now();
-      item.durationMs = Date.now() - new Date(item.startedAt).getTime();
-      item.tokens = result.tokens;
-      item.stepOutputs = Object.fromEntries(
-        Object.entries(result.state).filter(([key]) => key !== "input"),
-      );
-      item.finalOutput = result.timeline.at(-1)?.output;
-      state.executionLogs[item.id] = result.logs.map((log, index) => ({
-        id: `log_${index + 1}`,
-        executionId: item.id,
-        ...log,
-        traceId,
-      }));
-      state.timelines[item.id] = result.timeline.map((entry) => ({
-        ...entry,
-        traceId,
-      }));
-      const storedWorkflow = state.workflows[workflow.id];
-      if (storedWorkflow !== undefined) {
-        storedWorkflow.lastRunAt = item.completedAt;
-        storedWorkflow.status = "DONE";
-        storedWorkflow.updatedAt = item.completedAt;
-      }
-      appendAudit(
-        state,
-        user,
-        "execution.completed",
-        "execution",
-        item.id,
-        null,
-        { status: item.status },
-        request,
-      );
-      return structuredClone(item);
-    });
-    return reply.send(
-      ok(
-        completed,
-        `Workflow ${workflow.name} completed successfully in ${result.timeline.length} steps`,
-        null,
-      ),
-    );
-  } catch (error) {
-    await attachDispatchAuditTrace(services.repository, execution.id, {
-      traceId,
-      workflowId: workflow.id,
-      executionId: execution.id,
-      actor: { id: user.id, role: user.role },
-    });
-    const partial = partialResult(error);
-    const failed = await services.repository.mutate((state) => {
-      const item = state.executions[execution.id]!;
-      item.status = "FAILED";
-      item.completedAt = now();
-      item.durationMs = Date.now() - new Date(item.startedAt).getTime();
-      item.stepOutputs =
-        partial === null
-          ? {}
-          : Object.fromEntries(
-              Object.entries(partial.state).filter(([key]) => key !== "input"),
-            );
-      item.failure = {
-        failureCategory: "TOOL_FAILURE",
-        failedStepId: partial?.timeline.at(-1)?.nodeId ?? "unknown",
-        failedToolName: "unknown",
-        toolWasCalled: partial?.timeline.length !== 0,
-      };
-      state.executionLogs[item.id] = (partial?.logs ?? []).map(
-        (log, index) => ({
-          id: `log_${index + 1}`,
-          executionId: item.id,
-          ...log,
-          traceId,
-        }),
-      );
-      state.timelines[item.id] = (partial?.timeline ?? []).map((entry) => ({
-        ...entry,
-        traceId,
-      }));
-      state.healing[item.id] = {
-        executionId: item.id,
-        workflowId: item.workflowId,
-        status: "HEALING_NOT_ATTEMPTED",
-        summary: "Automatic healing was not attempted",
-        events: [],
-        metrics: {},
-      };
-      appendAudit(
-        state,
-        user,
-        "execution.failure.classified",
-        "execution",
-        item.id,
-        null,
-        { failure: item.failure },
-        request,
-      );
-      return structuredClone(item);
-    });
-    throw new HandlerFailure(
-      422,
-      `Workflow execution failed: ${errorText(error)}`,
-      { executionId: failed.id, status: failed.status, traceId },
-    );
-  }
+  // Retry reuses the exact same self-healing execution path as POST /workflows/:id/run
+  // (runWorkflowFor in app.ts) — there is only one workflow execution implementation.
+  return runWorkflowFor(workflow, request, reply, user, services);
 }
 
 async function requireExecution(
@@ -536,14 +323,12 @@ async function approveExecution(
   services: HandlerServices,
 ): Promise<unknown> {
   const execution = await requireExecution(requestParam(request, "id"), user, services);
-  const updated = await services.repository.mutate((state) => {
-    const item = state.executions[execution.id];
-    if (item === undefined) throw new HandlerFailure(404, "Execution not found");
-    item.status = "DONE";
-    appendAudit(state, user, "execution.approved", "execution", item.id, null, { status: item.status }, request);
-    return structuredClone(item);
-  });
-  return reply.send(ok(updated, "Execution approved", null));
+  const body = bodyRecord(request);
+  const note = body !== null ? stringValue(body.note) : "";
+  // Resumes the self-healing agent past the checkpoint it stopped at — the
+  // LLM continues the remaining steps knowing this was approved, rather than
+  // this endpoint just flipping a status flag on an already-finished run.
+  return resumeWorkflowApproval(execution, note, request, reply, user, services);
 }
 
 async function rejectExecution(
@@ -553,13 +338,16 @@ async function rejectExecution(
   services: HandlerServices,
 ): Promise<unknown> {
   const execution = await requireExecution(requestParam(request, "id"), user, services);
+  if (execution.status !== "AWAITING_APPROVAL")
+    throw new HandlerFailure(409, "This execution is not awaiting approval");
   const body = bodyRecord(request);
   const reason = body !== null ? stringValue(body.reason) : "Rejected by user";
   const updated = await services.repository.mutate((state) => {
     const item = state.executions[execution.id];
     if (item === undefined) throw new HandlerFailure(404, "Execution not found");
     item.status = "FAILED";
-    item.failure = { failureCategory: "REJECTED", failedStepId: "approval", failedToolName: "human_approval", toolWasCalled: false };
+    item.failure = { failureCategory: "REJECTED", failedStepId: item.pendingApproval?.stepId ?? "approval", failedToolName: "human_approval", toolWasCalled: false };
+    delete item.pendingApproval;
     appendAudit(state, user, "execution.rejected", "execution", item.id, null, { status: item.status, reason }, request);
     return structuredClone(item);
   });

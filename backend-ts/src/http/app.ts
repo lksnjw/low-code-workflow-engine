@@ -24,16 +24,17 @@ import type { ErpbridgeMcpSession } from "../tools/erpbridge-mcp-client.js";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import { withoutSecretFields } from "../redact/secrets.js";
 import type { RegistryService } from "../registry/service.js";
-import type { Repository, User } from "../repository/store.js";
+import type { Execution, Repository, User } from "../repository/store.js";
 import type { ProviderRuntime } from "../providers/runtime.js";
 import type { SynthesisService } from "../synthesis/service.js";
 import type { ValidationGate } from "../governance/gate.js";
 import { AsyncMutex } from "../repository/async-mutex.js";
-import { partialResult, type Executor } from "../runner/executor.js";
+import { type Executor } from "../runner/executor.js";
 import { generateExecutionAnalysis, type ExecutionAnalysisInput } from "../agent/execution-analyst.js";
 import type { RegistryValidator } from "../validator/registry-validator.js";
 import { createDispatchIdentity } from "../tools/registry.js";
 import { routeTable, type RouteDefinition } from "./generated-routes.js";
+import { isPolicyCheckerEnabled, checkErpPolicy } from "../governance/rbac.js";
 import {
   canReadExecution,
   visibleExecutions,
@@ -53,8 +54,9 @@ import {
   ANALYTICS_UNHANDLED,
   handleAnalyticsCatalogRoute,
 } from "./handlers/analytics-catalog.js";
-import { runActionLoop } from "../agent/action-loop.js";
+import { runActionLoop, partialActionSteps } from "../agent/action-loop.js";
 import { discoverTools } from "../agent/tool-discovery.js";
+import { validateWorkflowStatically, analyzeDataFlow } from "../agent/workflow-runtime-validator.js";
 import {
   REGISTRY_UNHANDLED,
   handleRegistryRoute,
@@ -73,6 +75,7 @@ import {
 } from "./handlers/workflows.js";
 import {
   HandlerFailure,
+  appendAudit,
   stringValue,
   validateWorkflow as validateWithGovernance,
 } from "./handlers/common.js";
@@ -263,9 +266,9 @@ export async function buildApp(
             ),
     });
   }
-  if (routeTable.length !== 170)
+  if (routeTable.length !== 172)
     throw new Error(
-      `route table has ${routeTable.length} routes, expected 170`,
+      `route table has ${routeTable.length} routes, expected 172`,
     );
   return app;
 }
@@ -388,17 +391,21 @@ async function handleRoute(
   if (!publicRoutes.has(routeKey) && auth === null) return;
   const current = auth?.user ?? null;
   if (current !== null) {
-    const policy = routePolicy(route);
-    if (
-      policy !== null &&
-      !policy.required.some((permission) =>
-        current.permissions.includes(permission),
-      )
-    ) {
-      const meta = policy.any
-        ? { requiredAny: policy.required }
-        : { required: policy.required[0] };
-      return reply.status(403).send(fail("Permission denied", meta));
+    // Policy Checker toggle (Settings > Policy Checker) — controls
+    // route-level permission enforcement.
+    if (await isPolicyCheckerEnabled(services.repository)) {
+      const policy = routePolicy(route);
+      if (
+        policy !== null &&
+        !policy.required.some((permission) =>
+          current.permissions.includes(permission),
+        )
+      ) {
+        const meta = policy.any
+          ? { requiredAny: policy.required }
+          : { required: policy.required[0] };
+        return reply.status(403).send(fail("Permission denied", meta));
+      }
     }
   }
 
@@ -1078,16 +1085,32 @@ async function runWorkflow(
   user: User & { role: string; permissions: string[] },
   services: ApplicationServices,
 ): Promise<unknown> {
-  const parsed = runWorkflowRequestSchema.safeParse(request.body ?? {});
-  if (!parsed.success)
-    return reply.status(400).send(fail("Invalid request body", null));
   const workflow = await services.repository.read(
     (state) => state.workflows[param(request, "id")] ?? null,
   );
   if (workflow === null)
     return reply.status(404).send(fail("Workflow not found", null));
+  return runWorkflowFor(workflow, request, reply, user, services);
+}
+
+// Shared by POST /workflows/:id/run and POST /executions/:id/retry — the ONLY
+// workflow execution path. No deterministic fallback: every run goes through
+// the self-healing LLM agent loop (runWorkflowWithHealing below).
+export async function runWorkflowFor(
+  workflow: Workflow,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { role: string; permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
+  const parsed = runWorkflowRequestSchema.safeParse(request.body ?? {});
+  if (!parsed.success)
+    return reply.status(400).send(fail("Invalid request body", null));
   const traceId = requestTraceId(request, workflow.traceId);
+  // Policy Checker toggle (Settings > Policy Checker) — controls workflow
+  // ownership / assignment enforcement.
   if (
+    (await isPolicyCheckerEnabled(services.repository)) &&
     !user.permissions.includes("workflow:run") &&
     workflow.owner.id !== user.id &&
     !(workflow.assignedUserIds ?? []).includes(user.id)
@@ -1095,24 +1118,65 @@ async function runWorkflow(
     return reply
       .status(403)
       .send(fail("Workflow is not assigned to the current user", null));
+  // Approval checkpoints are resolved once in chat at generation time — see
+  // approveWorkflowGeneration in handlers/workflows.ts. Until that happens,
+  // running would either bypass the checkpoint or (with the old runtime-pause
+  // design) ask again on every run, which is exactly what this flow avoids.
+  if (workflow.pendingGenerationApproval && workflow.pendingGenerationApproval.steps.length > 0)
+    return reply.status(409).send(
+      fail("This workflow has a pending approval — resolve it in chat before running", {
+        pendingGenerationApproval: workflow.pendingGenerationApproval,
+      }),
+    );
   // Governance validation is intentionally skipped for workflow runs.
   // The LLM agent is the executor and ERP Bridge enforces RBAC via ERPBRIDGE_ROLE_MAP.
   if (services.providerRuntime?.configured !== true)
     return reply.status(503).send(fail("LLM provider is not configured — cannot run workflow", null));
 
-  if (parsed.data.dryRun)
+  // ── Pre-execution validation ─────────────────────────────────────────────
+  // Discover live tools first so we can validate BEFORE creating the execution record.
+  const bridgeSessionEarly = services.erpbridgeSession ?? null;
+  const liveToolsEarly = await discoverTools(bridgeSessionEarly, services.registries);
+  let workflowStepsEarly: Array<{ id: string; kind?: string; action?: string; parameters?: Record<string, unknown>; description?: string }> = [];
+  try { workflowStepsEarly = parseWorkflowYAMLStrict(workflow.yaml ?? "").steps as typeof workflowStepsEarly; } catch { /* handled below */ }
+
+  const preValidation = validateWorkflowStatically(workflowStepsEarly, liveToolsEarly);
+
+  if (parsed.data.dryRun) {
     return reply.send(
       ok(
         {
-          can_execute: true,
+          can_execute: preValidation.valid,
           dry_run: true,
           llm_driven: true,
-          planned_steps: parseWorkflowYAMLStrict(workflow.yaml).steps,
+          planned_steps: workflowStepsEarly,
+          validation: preValidation,
         },
-        "Dry run validation passed",
+        preValidation.valid ? "Dry run validation passed" : "Dry run: validation issues found",
         { traceId },
       ),
     );
+  }
+
+  // Hard-fail on missing tools so the LLM doesn't waste time on an unrunnable workflow.
+  if (!preValidation.valid) {
+    const errors = preValidation.issues.filter((i) => i.severity === "error");
+    console.warn(`[run] ${workflow.id} — pre-run validation FAILED: ${errors.map((e) => e.message).join("; ")}`);
+    return reply.status(422).send(
+      fail(
+        `Workflow cannot run: ${errors.map((e) => e.message).join("; ")}`,
+        { validation: preValidation },
+      ),
+    );
+  }
+
+  // LLM data-flow analysis — runs in parallel with execution record creation.
+  // Non-blocking: if it times out or fails, execution continues without the plan.
+  const dataFlowPlanPromise = workflowStepsEarly.length > 1
+    ? analyzeDataFlow(workflowStepsEarly, preValidation.toolResolutions, services.providerRuntime!, request.signal)
+        .catch(() => "")
+    : Promise.resolve("");
+
   const execution = await services.repository.mutate((state) => {
     state.counter += 1;
     const id = `run-${randomBytes(4).toString("hex")}`;
@@ -1131,6 +1195,7 @@ async function runWorkflow(
         ? {}
         : { chatSessionId: workflow.chatSessionId }),
       traceId,
+      preValidation,
     };
     state.executions[id] = item;
     return item;
@@ -1140,10 +1205,11 @@ async function runWorkflow(
     // their plain-English descriptions) and calls the real ERP Bridge tools dynamically.
     // No governance gate — ERP Bridge enforces RBAC via ERPBRIDGE_ROLE_MAP.
     // Self-healing retries (up to MAX_HEAL_ATTEMPTS) on any failure.
-    const bridgeSession = services.erpbridgeSession ?? null;
-    const liveTools = await discoverTools(bridgeSession, services.registries);
-    const taskMessage = buildWorkflowTaskMessage(workflow);
-    console.log(`[run] ${workflow.id} — LLM agent | bridge=${bridgeSession !== null} tools=${liveTools.length}`);
+    const bridgeSession = bridgeSessionEarly;
+    const liveTools = liveToolsEarly;
+    const dataFlowPlan = await dataFlowPlanPromise;
+    const taskMessage = buildWorkflowTaskMessage(workflow, preValidation.toolResolutions, dataFlowPlan);
+    console.log(`[run] ${workflow.id} — LLM agent | bridge=${bridgeSession !== null} tools=${liveTools.length} validationWarnings=${preValidation.issues.length}`);
     const governanceUser = { id: user.id, role: user.role, department: user.departmentId ?? null };
     const actionResult = await runWorkflowWithHealing(
       taskMessage,
@@ -1189,16 +1255,30 @@ async function runWorkflow(
       executionId: execution.id,
       actor: { id: user.id, role: user.role },
     });
+    let blueprintStepsForApproval: Array<{ id: string; kind?: string | undefined; description?: string | undefined }> = [];
+    try { blueprintStepsForApproval = parseWorkflowYAMLStrict(workflow.yaml ?? "").steps; } catch { /* no approval gate if unparsable */ }
+    const pendingApproval = findPendingApproval(blueprintStepsForApproval, new Set(), actionResult.steps.length);
+
     const completed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
-      item.status = "DONE";
+      item.status = pendingApproval ? "AWAITING_APPROVAL" : "DONE";
       item.completedAt = new Date().toISOString();
       item.durationMs = Date.now() - new Date(item.startedAt).getTime();
       item.tokens = result.tokens;
       item.stepOutputs = Object.fromEntries(
         Object.entries(result.state).filter(([key]) => key !== "input"),
       );
-      item.finalOutput = result.timeline.at(-1)?.output;
+      // The agent's own final narration — e.g. "AWAITING APPROVAL: ...".
+      // When it stopped without calling any tool (a checkpoint reached, not a
+      // failure), this is the ONLY explanation of what happened, so surface
+      // it as the finalOutput rather than leaving the run looking empty.
+      item.agentSummary = actionResult.text;
+      item.finalOutput = result.timeline.at(-1)?.output ?? actionResult.text;
+      if (pendingApproval) {
+        item.pendingApproval = { ...pendingApproval, requestedAt: new Date().toISOString() };
+      } else {
+        delete item.pendingApproval;
+      }
       state.executionLogs[item.id] = result.logs.map((log, index) => ({
         id: `log_${index + 1}`,
         executionId: item.id,
@@ -1209,6 +1289,8 @@ async function runWorkflow(
         ...entry,
         traceId,
       }));
+      const storedWorkflow = state.workflows[workflow.id];
+      if (storedWorkflow !== undefined && pendingApproval) storedWorkflow.status = "PENDING";
       return structuredClone(item);
     });
     if (completed.chatSessionId && services.providerRuntime?.configured) {
@@ -1217,7 +1299,9 @@ async function runWorkflow(
     return reply.send(
       ok(
         completed,
-        `Workflow ${workflow.name} completed successfully in ${result.timeline.length} steps`,
+        pendingApproval
+          ? `Workflow ${workflow.name} is paused — awaiting approval: ${pendingApproval.description}`
+          : `Workflow ${workflow.name} completed successfully in ${result.timeline.length} steps`,
         null,
       ),
     );
@@ -1228,48 +1312,61 @@ async function runWorkflow(
       executionId: execution.id,
       actor: { id: user.id, role: user.role },
     });
-    const partial = partialResult(error);
+    const partialSteps = partialActionSteps(error) ?? [];
+    const nowIso = new Date().toISOString();
+    const partialTimeline = partialSteps.map((s, index) => ({
+      id: `tl_${index + 1}`,
+      nodeId: s.toolName,
+      label: s.displayName,
+      status: (s.error === undefined ? "DONE" : "FAILED") as "DONE" | "FAILED",
+      startedAt: s.startedAt,
+      completedAt: s.completedAt,
+      durationMs: Math.max(0, new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime()),
+      output: s.result,
+    }));
     const failed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
       item.status = "FAILED";
-      item.completedAt = new Date().toISOString();
+      item.completedAt = nowIso;
       item.durationMs = Date.now() - new Date(item.startedAt).getTime();
-      item.stepOutputs =
-        partial === null
-          ? {}
-          : Object.fromEntries(
-              Object.entries(partial.state).filter(([key]) => key !== "input"),
-            );
-      item.failure = {
-        failureCategory: "TOOL_FAILURE",
-        failedStepId: partial?.timeline.at(-1)?.nodeId ?? "unknown",
-        failedToolName: "unknown",
-        toolWasCalled: true,
-      };
-      state.executionLogs[item.id] = (partial?.logs ?? []).map(
-        (log, index) => ({
-          id: `log_${index + 1}`,
-          executionId: item.id,
-          ...log,
-          traceId,
-        }),
+      item.stepOutputs = Object.fromEntries(
+        partialSteps.map((s, i) => [`step_${i + 1}_${s.toolName}`, s.result]),
       );
-      state.timelines[item.id] = (partial?.timeline ?? []).map((entry) => ({
-        ...entry,
+      item.failure = {
+        failureCategory: "AGENT_FAILURE",
+        failedStepId: partialSteps.at(-1)?.toolName ?? "unknown",
+        failedToolName: partialSteps.at(-1)?.toolName ?? "unknown",
+        toolWasCalled: partialSteps.length !== 0,
+      };
+      state.executionLogs[item.id] = partialSteps.map((s, index) => ({
+        id: `log_${index + 1}`,
+        executionId: item.id,
+        timestamp: s.completedAt,
+        level: s.error !== undefined ? "error" : "info",
+        nodeId: s.toolName,
+        message: s.error ?? "Step completed",
+        metadata: null,
         traceId,
       }));
-      state.healing[item.id] = {
-        executionId: item.id,
-        workflowId: item.workflowId,
-        status: "HEALING_NOT_ATTEMPTED",
-        summary: "Automatic healing was not attempted",
-        events: [],
-        metrics: {},
-      };
+      state.timelines[item.id] = partialTimeline.map((entry) => ({ ...entry, traceId }));
+      // runWorkflowWithHealing already records real attempt/event history in
+      // state.healing (HEALING_ATTEMPT_N, INTERVENTION_REQUIRED, etc). Only fall
+      // back to a generic record here if it never got the chance to write one
+      // (e.g. the failure happened before the healing loop started).
+      if (state.healing[item.id] === undefined) {
+        state.healing[item.id] = {
+          executionId: item.id,
+          workflowId: item.workflowId,
+          status: "HEALING_NOT_ATTEMPTED",
+          summary: "Automatic healing was not attempted",
+          events: [],
+          metrics: {},
+        };
+      }
       return structuredClone(item);
     });
     if (failed.chatSessionId && services.providerRuntime?.configured) {
-      void postExecutionAnalysis(failed, partial?.timeline ?? [], services);
+      void postExecutionAnalysis(failed, partialTimeline, services);
     }
     return reply.status(422).send(
       fail(`Workflow execution failed: ${errorText(error)}`, {
@@ -1279,6 +1376,145 @@ async function runWorkflow(
       }),
     );
   }
+}
+
+// Resumes a workflow that stopped at a human approval checkpoint. Re-invokes
+// the self-healing agent with the prior results and the new approval as
+// context, so it continues the remaining steps rather than starting over or
+// asking again — "the LLM handles it, it knows it was approved."
+export async function resumeWorkflowApproval(
+  execution: Execution,
+  note: string,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { role: string; permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
+  if (execution.status !== "AWAITING_APPROVAL" || !execution.pendingApproval)
+    return reply.status(409).send(fail("This execution is not awaiting approval", null));
+  const workflow = await services.repository.read((state) => state.workflows[execution.workflowId] ?? null);
+  if (workflow === null) return reply.status(404).send(fail("Workflow not found", null));
+
+  const pending = execution.pendingApproval;
+  if (await isPolicyCheckerEnabled(services.repository)) {
+    const gov = await checkErpPolicy(services.erpbridgeSession, {
+      userId: user.id,
+      userRole: user.role,
+      action: "approve_workflow_step",
+      prompt: `User "${user.id}" (${user.role}) wants to approve: ${pending.description}`,
+      context: { stepId: pending.stepId, workflowId: workflow.id, executionId: execution.id },
+    });
+    if (!gov.allowed)
+      return reply.status(403).send(fail(gov.reason ?? "You are not authorized to approve this step", null));
+  }
+  if (services.providerRuntime?.configured !== true)
+    return reply.status(503).send(fail("LLM provider is not configured — cannot resume workflow", null));
+
+  const traceId = requestTraceId(request, execution.traceId);
+  const approvedAt = new Date().toISOString();
+  const priorApprovals = [
+    ...(execution.approvals ?? []),
+    { stepId: pending.stepId, approvedBy: { id: user.id, name: user.name }, approvedAt, ...(note ? { note } : {}) },
+  ];
+  const approvedStepIds = new Set(priorApprovals.map((a) => a.stepId));
+  const priorStepCount = Object.keys(execution.stepOutputs ?? {}).length;
+
+  const bridgeSession = services.erpbridgeSession ?? null;
+  const liveTools = await discoverTools(bridgeSession, services.registries);
+  const baseTask = buildWorkflowTaskMessage(workflow);
+  const continuationMessage = [
+    baseTask,
+    "",
+    "APPROVAL UPDATE:",
+    "The following checkpoint(s) have been approved by a human and are now authorized — do NOT ask about them again, proceed past them:",
+    ...priorApprovals.map((a) => `- "${a.stepId}" approved by ${a.approvedBy.name} at ${a.approvedAt}${a.note ? ` (note: ${a.note})` : ""}`),
+    "",
+    "PRIOR STEP RESULTS (already completed in an earlier turn — do not repeat these calls, reuse this data):",
+    JSON.stringify(execution.stepOutputs ?? {}),
+    "",
+    "Continue executing the remaining steps now that the approval above has been granted.",
+  ].join("\n");
+
+  const governanceUser = { id: user.id, role: user.role, department: user.departmentId ?? null };
+  const actionResult = await runWorkflowWithHealing(
+    continuationMessage,
+    liveTools,
+    bridgeSession,
+    { chatHistory: [], sessionId: execution.id, actorId: user.id, actorRole: user.role, user: governanceUser, signal: request.signal, traceId },
+    services.providerRuntime,
+    execution.id,
+    workflow,
+    services,
+  );
+
+  let blueprintSteps: Array<{ id: string; kind?: string | undefined; description?: string | undefined }> = [];
+  try { blueprintSteps = parseWorkflowYAMLStrict(workflow.yaml ?? "").steps; } catch { /* no approval gate if unparsable */ }
+  const nextPending = findPendingApproval(blueprintSteps, approvedStepIds, priorStepCount + actionResult.steps.length);
+
+  const nowIso = new Date().toISOString();
+  const newStepOutputs = Object.fromEntries(
+    actionResult.steps.map((s, i) => [`step_${priorStepCount + i + 1}_${s.toolName}`, s.result]),
+  );
+  const newTimeline = actionResult.steps.map((s, i) => ({
+    id: `tl_${priorStepCount + i + 1}`,
+    nodeId: `step_${priorStepCount + i + 1}`,
+    label: s.toolName,
+    status: "DONE" as const,
+    startedAt: nowIso,
+    completedAt: nowIso,
+    durationMs: 0,
+    output: s.result,
+    traceId,
+  }));
+  const newLogs = actionResult.steps.map((s, i) => ({
+    id: `log_${priorStepCount + i + 1}`,
+    executionId: execution.id,
+    level: "info" as const,
+    nodeId: `step_${priorStepCount + i + 1}`,
+    timestamp: nowIso,
+    message: `${s.toolName}: completed`,
+    metadata: null,
+    traceId,
+  }));
+
+  let mergedTimelineForAnalysis: Array<{ nodeId?: unknown; output?: unknown; durationMs?: unknown }> = [];
+  const completed = await services.repository.mutate((state) => {
+    const item = state.executions[execution.id]!;
+    item.status = nextPending ? "AWAITING_APPROVAL" : "DONE";
+    item.completedAt = nowIso;
+    item.durationMs = Date.now() - new Date(item.startedAt).getTime();
+    item.tokens = {
+      input: (item.tokens?.input ?? 0) + actionResult.totalTokens.input,
+      output: (item.tokens?.output ?? 0) + actionResult.totalTokens.output,
+      total: (item.tokens?.input ?? 0) + (item.tokens?.output ?? 0) + actionResult.totalTokens.input + actionResult.totalTokens.output,
+    };
+    item.stepOutputs = { ...(item.stepOutputs ?? {}), ...newStepOutputs };
+    item.agentSummary = actionResult.text;
+    item.finalOutput = newTimeline.at(-1)?.output ?? actionResult.text;
+    item.approvals = priorApprovals;
+    if (nextPending) item.pendingApproval = { ...nextPending, requestedAt: nowIso };
+    else delete item.pendingApproval;
+    state.executionLogs[item.id] = [...(state.executionLogs[item.id] ?? []), ...newLogs];
+    const mergedTimeline = [...(state.timelines[item.id] ?? []), ...newTimeline];
+    state.timelines[item.id] = mergedTimeline;
+    mergedTimelineForAnalysis = mergedTimeline;
+    appendAudit(state, user, "execution.approved", "execution", item.id, null, { stepId: pending.stepId, status: item.status }, request);
+    const storedWorkflow = state.workflows[workflow.id];
+    if (storedWorkflow !== undefined && !nextPending) storedWorkflow.status = "DONE";
+    return structuredClone(item);
+  });
+  if (completed.chatSessionId && services.providerRuntime?.configured) {
+    void postExecutionAnalysis(completed, mergedTimelineForAnalysis, services);
+  }
+  return reply.send(
+    ok(
+      completed,
+      nextPending
+        ? `Approved "${pending.stepId}" — workflow paused again: ${nextPending.description}`
+        : `Approved "${pending.stepId}" — workflow ${workflow.name} completed`,
+      null,
+    ),
+  );
 }
 
 async function listExecutions(
@@ -1644,45 +1880,111 @@ async function runWorkflowWithHealing(
   throw lastError;
 }
 
-function buildWorkflowTaskMessage(workflow: Workflow & { prompt?: string }): string {
+export type PendingApproval = { stepId: string; description: string };
+
+// Walks the workflow blueprint in order, counting real (tool) steps as it
+// goes. The first kind:approval step it reaches whose preceding tool steps
+// are all accounted for by completedToolCount — and that isn't already in
+// approvedStepIds — is the checkpoint execution is currently sitting at.
+// Returns null once every approval step has either been approved or the
+// agent has gone on to complete tool steps past it.
+export function findPendingApproval(
+  blueprintSteps: ReadonlyArray<{ id: string; kind?: string | undefined; description?: string | undefined }>,
+  approvedStepIds: ReadonlySet<string>,
+  completedToolCount: number,
+): PendingApproval | null {
+  let toolsSeen = 0;
+  for (const step of blueprintSteps) {
+    const kind = step.kind ?? "tool";
+    if (kind === "tool") {
+      toolsSeen += 1;
+      continue;
+    }
+    if (kind !== "approval") continue;
+    if (approvedStepIds.has(step.id)) continue;
+    if (toolsSeen <= completedToolCount) {
+      return {
+        stepId: step.id,
+        description: (step.description ?? "").trim() || `Approval required for step ${step.id}`,
+      };
+    }
+    break;
+  }
+  return null;
+}
+
+function buildWorkflowTaskMessage(
+  workflow: Workflow & { prompt?: string },
+  toolResolutions: import("../agent/workflow-runtime-validator.js").ToolResolution[] = [],
+  dataFlowPlan = "",
+): string {
   const lines: string[] = [];
   if (workflow.prompt) lines.push(`Original user request: "${workflow.prompt}"`);
   lines.push(`Workflow: "${workflow.name}"`);
   if (workflow.description) lines.push(`Goal: ${workflow.description}`);
   lines.push("");
 
+  // Build a map from originalAction → resolvedAction so we can show correct tool names
+  const resolvedMap = new Map(toolResolutions.map((r) => [r.originalAction, r.resolvedAction]));
+
   try {
     const bp = parseWorkflowYAMLStrict(workflow.yaml ?? "");
     if (bp.steps.length > 0) {
       lines.push(`This workflow has ${bp.steps.length} step(s). Execute them IN ORDER — do not skip any step.`);
+      lines.push("Runtime validation is ACTIVE: before each tool call verify the tool name is correct and all required arguments are real values.");
       lines.push("");
+
+      let hasApprovalStep = false;
       bp.steps.forEach((s, i) => {
         const desc = (s.description ?? "").trim() || (s.action ?? "").replace(/[_-]/g, " ");
-        const params = s.parameters && Object.keys(s.parameters).length > 0
-          ? `\n   Suggested parameters: ${JSON.stringify(s.parameters)}`
+        if (s.kind === "approval") {
+          hasApprovalStep = true;
+          lines.push(`Step ${i + 1}: [HUMAN APPROVAL CHECKPOINT — no tool] — ${desc}`);
+          lines.push(`   → STOP HERE. Do not call any more tools. End your response by clearly stating this step requires human approval and naming exactly what is being authorized: "${desc}". Do not assume it is approved.`);
+          return;
+        }
+        // Use the validated (resolved) tool name if available
+        const resolvedAction = resolvedMap.get(s.action as string) ?? s.action;
+        const toolHint = resolvedAction !== s.action
+          ? ` [use tool: "${resolvedAction}" — validated name]`
+          : ` [tool: "${resolvedAction}"]`;
+        const params = s.parameters && Object.keys(s.parameters as Record<string, unknown>).length > 0
+          ? `\n   Parameters: ${JSON.stringify(s.parameters)}`
           : "";
         const isFirst = i === 0;
         const isLast = i === bp.steps.length - 1;
         const hint = isFirst
-          ? "\n   → This is a DATA GATHERING step. Call the best matching tool and capture all output."
+          ? "\n   → DATA GATHERING: Call this tool and capture ALL fields from the result — you will need them in later steps."
           : isLast
-            ? "\n   → Use the data/results returned from the previous step(s) as the content for this step."
-            : "\n   → Use results from earlier steps where needed.";
-        lines.push(`Step ${i + 1}: ${desc}${params}${hint}`);
+            ? "\n   → ACTION STEP: Use the actual data fetched in earlier steps as the content. Do NOT use placeholders."
+            : "\n   → INTERMEDIATE: Extract needed values from prior step results and pass them here.";
+        lines.push(`Step ${i + 1}:${toolHint} — ${desc}${params}${hint}`);
       });
+
       lines.push("");
-      lines.push("IMPORTANT:");
-      lines.push("- Call each step's tool with real parameters — never leave required fields empty.");
-      lines.push("- Pass actual data from earlier tool results into later steps (e.g. put fetched records into the email body).");
-      lines.push("- If the best tool is unclear, pick the closest match from your available tools.");
+      lines.push("EXECUTION RULES:");
+      lines.push("- Use ONLY the validated tool names listed above. Do NOT invent new tool names.");
+      lines.push("- If a tool returns an error, check the <runtime_validation> block in the result and fix the arguments.");
+      lines.push("- Pass REAL field values from prior tool results — never use [PLACEHOLDER], <value>, or 'example'.");
+      lines.push("- After all steps, report each step: DONE / FAILED with exact output or error.");
+      if (hasApprovalStep) {
+        lines.push("- This workflow contains a HUMAN APPROVAL CHECKPOINT. You MUST NOT call any tool listed after that checkpoint until a human has explicitly approved it. Reaching the checkpoint and reporting it is a successful, complete run — it is not a failure and not something to route around.");
+      }
     }
   } catch { /* fallback: name/description only */ }
+
+  // Append LLM-generated data-flow plan when available
+  if (dataFlowPlan.trim()) {
+    lines.push("");
+    lines.push("DATA FLOW PLAN (generated by pre-run analysis — follow this):");
+    lines.push(dataFlowPlan);
+  }
 
   return lines.join("\n");
 }
 
 async function postExecutionAnalysis(
-  execution: { id: string; workflowId: string; workflowName?: string; status: string; startedAt: string; completedAt: string | null; durationMs: number; stepOutputs?: Record<string, unknown>; failure?: Record<string, unknown>; chatSessionId?: string; tokens?: { input: number; output: number; total: number } },
+  execution: { id: string; workflowId: string; workflowName?: string; status: string; startedAt: string; completedAt: string | null; durationMs: number; stepOutputs?: Record<string, unknown>; agentSummary?: string; failure?: Record<string, unknown>; chatSessionId?: string; tokens?: { input: number; output: number; total: number } },
   timeline: Array<{ nodeId?: unknown; output?: unknown; durationMs?: unknown }>,
   services: ApplicationServices,
 ): Promise<void> {
@@ -1692,10 +1994,11 @@ async function postExecutionAnalysis(
     const input: ExecutionAnalysisInput = {
       executionId: execution.id,
       workflowName: String(execution.workflowName ?? execution.workflowId),
-      status: execution.status === "DONE" ? "DONE" : "FAILED",
+      status: execution.status === "DONE" || execution.status === "AWAITING_APPROVAL" ? execution.status : "FAILED",
       startedAt: execution.startedAt,
       completedAt: execution.completedAt,
       durationMs: execution.durationMs,
+      ...(execution.agentSummary !== undefined ? { agentSummary: execution.agentSummary } : {}),
       stepOutputs: execution.stepOutputs ?? {},
       timeline: timeline.map((t) => ({ nodeId: String(t.nodeId ?? ""), output: t.output, durationMs: typeof t.durationMs === "number" ? t.durationMs : 0 })),
       ...(failedStepId !== undefined ? { failedStepId } : {}),

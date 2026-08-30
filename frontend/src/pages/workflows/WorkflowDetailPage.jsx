@@ -8,6 +8,8 @@ import { useWorkflow } from "../../hooks/useWorkflows";
 import usePermissions from "../../hooks/usePermissions";
 import WorkflowAssignments from "../../components/workflows/WorkflowAssignments";
 import WorkflowBuilderCanvas from "../../components/canvas/WorkflowBuilderCanvas";
+import PendingApprovalCard from "../../components/executions/PendingApprovalCard";
+import PendingGenerationApprovalCard from "../../components/workflows/PendingGenerationApprovalCard";
 import Button from "../../components/shared/ui/Button";
 import { executionService } from "../../services/execution.service";
 import { workflowService } from "../../services/workflow.service";
@@ -24,11 +26,9 @@ function WorkflowDetailPage() {
 	const canWrite = has("workflow:write");
   const canRun = has("workflow:run") || canWrite;
   const { data: workflow, isLoading, error, refetch } = useWorkflow(selectedWorkflowId);
+  const hasPendingGenerationApproval = Boolean(workflow?.pendingGenerationApproval?.steps?.length);
 
   const [runState, setRunState] = useState({ loading: false, result: null, error: null });
-  const [scheduleState, setScheduleState] = useState({ saving: false, saved: false });
-  const [cronExpr, setCronExpr] = useState("");
-  const [scheduleEnabled, setScheduleEnabled] = useState(false);
 
   if (!selectedWorkflowId) return <EmptyState title="No workflow selected" description="Choose a workflow from the workflow list." />;
   if (isLoading) return <LoadingState label="Loading workflow…" />;
@@ -51,25 +51,6 @@ function WorkflowDetailPage() {
     }
   };
 
-/*******************************************************************************
- * Function: handleSaveSchedule
- *
- * Handles save schedule for the WorkflowDetailPage module.
- ******************************************************************************/
-  const handleSaveSchedule = async () => {
-    setScheduleState({ saving: true, saved: false });
-    try {
-      const trigger = scheduleEnabled && cronExpr.trim()
-        ? { type: "schedule", displayName: `Schedule: ${cronExpr}`, config: { cron: cronExpr.trim() } }
-        : { type: "manual", displayName: "Manual" };
-      await workflowService.update(workflow.id, { trigger });
-      setScheduleState({ saving: false, saved: true });
-      refetch();
-    } catch {
-      setScheduleState({ saving: false, saved: false });
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
@@ -83,7 +64,8 @@ function WorkflowDetailPage() {
             <Button
               variant="primary"
               onClick={handleRun}
-              disabled={runState.loading}
+              disabled={runState.loading || hasPendingGenerationApproval}
+              title={hasPendingGenerationApproval ? "Resolve the pending approval below before running" : undefined}
             >
               {runState.loading ? (
                 <span className="flex items-center gap-2">
@@ -103,8 +85,25 @@ function WorkflowDetailPage() {
         </div>
       </div>
 
+      {hasPendingGenerationApproval && (
+        <PendingGenerationApprovalCard
+          pending={{ workflowId: workflow.id, steps: workflow.pendingGenerationApproval.steps }}
+          onResolved={refetch}
+        />
+      )}
+
       {/* Run result banner */}
-      {runState.result && (
+      {runState.result && runState.result.status === "AWAITING_APPROVAL" && (
+        <PendingApprovalCard
+          execution={runState.result}
+          onChanged={async () => {
+            const fresh = await executionService.get(runState.result.id);
+            setRunState({ loading: false, result: fresh, error: null });
+            refetch();
+          }}
+        />
+      )}
+      {runState.result && runState.result.status !== "AWAITING_APPROVAL" && (
         <div className={`flex items-start gap-3 rounded-xl border p-4 ${runState.result.status === "DONE" ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
           <Icon
             icon={runState.result.status === "DONE" ? "mdi:check-circle" : "mdi:alert-circle"}
@@ -141,55 +140,9 @@ function WorkflowDetailPage() {
         </div>
       </Card>
 
-      {/* Schedule section */}
-      {canWrite ? (
-        <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <Icon icon="mdi:clock-outline" className="h-5 w-5 text-primary" />
-            <h2 className="section-title">Schedule</h2>
-          </div>
-          <div className="space-y-4">
-            <label className="flex cursor-pointer items-center gap-3">
-              <input
-                type="checkbox"
-                checked={scheduleEnabled}
-                onChange={(e) => setScheduleEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-primary"
-              />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable automatic scheduling</span>
-            </label>
-            {scheduleEnabled && (
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                  Cron expression
-                  <span className="ml-2 font-normal text-gray-400">(e.g. <code>0 9 * * 1</code> = every Monday at 9 AM)</span>
-                </label>
-                <input
-                  type="text"
-                  value={cronExpr}
-                  onChange={(e) => setCronExpr(e.target.value)}
-                  placeholder="0 9 * * 1"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-sm text-gray-900 focus:border-primary focus:outline-none dark:border-gray-700 dark:bg-darkBackground dark:text-white"
-                />
-              </div>
-            )}
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" onClick={handleSaveSchedule} disabled={scheduleState.saving}>
-                {scheduleState.saving ? "Saving…" : "Save Schedule"}
-              </Button>
-              {scheduleState.saved && (
-                <span className="flex items-center gap-1 text-xs text-emerald-600">
-                  <Icon icon="mdi:check-circle" className="h-4 w-4" />
-                  Schedule saved
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-gray-400">
-              Current trigger: <span className="font-semibold">{workflow.trigger}</span>
-            </p>
-          </div>
-        </Card>
-      ) : null}
+      {/* Schedule section — keyed by workflow id so its local edit state resets to
+          the freshly-loaded trigger whenever the user switches or reloads a workflow. */}
+      {canWrite ? <ScheduleSection key={workflow.id} workflow={workflow} onSaved={refetch} /> : null}
 
       {canWrite ? <WorkflowAssignments workflow={workflow} onChanged={refetch} /> : null}
       {!canWrite ? (
@@ -199,6 +152,83 @@ function WorkflowDetailPage() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+/*******************************************************************************
+ * Function: ScheduleSection
+ *
+ * Cron scheduling controls for a workflow. Keyed by workflow.id from the parent
+ * so its local edit state initializes fresh from the loaded trigger on every
+ * workflow switch or reload, instead of drifting from stale defaults.
+ ******************************************************************************/
+function ScheduleSection({ workflow, onSaved }) {
+  const raw = workflow.triggerRaw;
+  const [scheduleEnabled, setScheduleEnabled] = useState(raw?.type === "schedule");
+  const [cronExpr, setCronExpr] = useState(raw?.config?.cron || "");
+  const [scheduleState, setScheduleState] = useState({ saving: false, saved: false });
+
+  const handleSaveSchedule = async () => {
+    setScheduleState({ saving: true, saved: false });
+    try {
+      const trigger = scheduleEnabled && cronExpr.trim()
+        ? { type: "schedule", displayName: `Schedule: ${cronExpr}`, config: { cron: cronExpr.trim() } }
+        : { type: "manual", displayName: "Manual" };
+      await workflowService.update(workflow.id, { trigger });
+      setScheduleState({ saving: false, saved: true });
+      onSaved?.();
+    } catch {
+      setScheduleState({ saving: false, saved: false });
+    }
+  };
+
+  return (
+    <Card>
+      <div className="mb-4 flex items-center gap-2">
+        <Icon icon="mdi:clock-outline" className="h-5 w-5 text-primary" />
+        <h2 className="section-title">Schedule</h2>
+      </div>
+      <div className="space-y-4">
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={scheduleEnabled}
+            onChange={(e) => { setScheduleEnabled(e.target.checked); setScheduleState({ saving: false, saved: false }); }}
+            className="h-4 w-4 rounded border-gray-300 text-primary"
+          />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable automatic scheduling</span>
+        </label>
+        {scheduleEnabled && (
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+              Cron expression
+              <span className="ml-2 font-normal text-gray-400">(e.g. <code>0 9 * * 1</code> = every Monday at 9 AM)</span>
+            </label>
+            <input
+              type="text"
+              value={cronExpr}
+              onChange={(e) => { setCronExpr(e.target.value); setScheduleState({ saving: false, saved: false }); }}
+              placeholder="0 9 * * 1"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-sm text-gray-900 focus:border-primary focus:outline-none dark:border-gray-700 dark:bg-darkBackground dark:text-white"
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <Button variant="secondary" onClick={handleSaveSchedule} disabled={scheduleState.saving}>
+            {scheduleState.saving ? "Saving…" : "Save Schedule"}
+          </Button>
+          {scheduleState.saved && (
+            <span className="flex items-center gap-1 text-xs text-emerald-600">
+              <Icon icon="mdi:check-circle" className="h-4 w-4" />
+              Schedule saved
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-gray-400">
+          Current trigger: <span className="font-semibold">{workflow.trigger}</span>
+        </p>
+      </div>
+    </Card>
   );
 }
 
