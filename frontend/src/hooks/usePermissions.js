@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import { useAuthContext } from "../context/AuthContext";
 import { hasAnyPermission, hasPermission } from "../utils/permission.utils";
 
+/*******************************************************************************
+ * Function: usePermissions
+ *
+ * Provides permissions for the usePermissions module.
+ ******************************************************************************/
 export function usePermissions() {
   const { user } = useAuthContext();
 

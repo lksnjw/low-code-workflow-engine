@@ -3,7 +3,17 @@ import { ErrorState, LoadingState } from "../../components/shared/ResourceState"
 import AuditLogTable from "../../components/users/AuditLogTable";
 import { userService } from "../../services/user.service";
 
+/*******************************************************************************
+ * Function: AuditPage
+ *
+ * Performs the Audit Page operation on page for the AuditPage module.
+ ******************************************************************************/
 function AuditPage() {
+/*******************************************************************************
+ * Function: query
+ *
+ * Performs the query operation on the application for the AuditPage module.
+ ******************************************************************************/
   const query = useQuery({ queryKey: ["audit-log"], queryFn: () => userService.loadAudit() });
 
   if (query.isLoading) return <LoadingState label="Loading audit events…" />;

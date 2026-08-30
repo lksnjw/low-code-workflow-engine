@@ -7,6 +7,11 @@ import RecentWorkflows from "../../components/dashboard/RecentWorkflows";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useDashboard } from "../../hooks/useDashboard";
 
+/*******************************************************************************
+ * Function: DashboardPage
+ *
+ * Performs the Dashboard Page operation on page for the DashboardPage module.
+ ******************************************************************************/
 function DashboardPage({ view = "overview" }) {
   const { data, loading, error, reload } = useDashboard();
   if (loading) return <LoadingState label="Loading platform state…" />;

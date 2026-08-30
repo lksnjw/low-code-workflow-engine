@@ -1,0 +1,73 @@
+{
+  "version": "1.0.0",
+  "effective_date": "2026-08-28",
+  "description": "Offline fallback governance policy. Active when the external governance service and its cache are unavailable. Evaluated by the LLM policy fallback, or deterministically when the LLM is also offline.",
+  "globally_blocked_tools": [],
+  "tools_requiring_human_review": [
+    "delete_customer",
+    "void_invoice",
+    "cancel_all_orders",
+    "bulk_delete",
+    "reset_inventory"
+  ],
+  "role_access": {
+    "Platform Admin": {
+      "allowed_domains": ["*"],
+      "blocked_tools": [],
+      "max_risk_level": "high",
+      "allow_write_operations": true,
+      "notes": "Platform Admin has full access in offline mode"
+    },
+    "System Admin": {
+      "allowed_domains": ["erp", "finance", "hr", "inventory", "orders", "reporting"],
+      "blocked_tools": ["reset_platform", "bulk_delete_users"],
+      "max_risk_level": "medium",
+      "allow_write_operations": true,
+      "notes": "System Admin may run write workflows but not platform-level destructive tools"
+    },
+    "Workflow Builder": {
+      "allowed_domains": ["erp", "finance", "inventory", "orders", "reporting"],
+      "blocked_tools": [
+        "delete_customer",
+        "void_invoice",
+        "cancel_all_orders",
+        "bulk_delete",
+        "reset_inventory",
+        "reset_platform",
+        "bulk_delete_users",
+        "modify_user_permissions",
+        "update_system_config"
+      ],
+      "max_risk_level": "low",
+      "allow_write_operations": true,
+      "notes": "Workflow Builder may build and run low-risk workflows. Destructive and admin tools are blocked."
+    },
+    "Client": {
+      "allowed_domains": ["reporting", "orders"],
+      "blocked_tools": [
+        "delete_customer",
+        "void_invoice",
+        "cancel_all_orders",
+        "bulk_delete",
+        "reset_inventory",
+        "reset_platform",
+        "bulk_delete_users",
+        "modify_user_permissions",
+        "update_system_config",
+        "create_order",
+        "update_inventory",
+        "process_payment"
+      ],
+      "max_risk_level": "low",
+      "allow_write_operations": false,
+      "notes": "Client role is read-only in offline mode. No write operations are permitted."
+    },
+    "default": {
+      "allowed_domains": [],
+      "blocked_tools": ["*"],
+      "max_risk_level": "low",
+      "allow_write_operations": false,
+      "notes": "Unknown roles are fully blocked in offline mode."
+    }
+  }
+}

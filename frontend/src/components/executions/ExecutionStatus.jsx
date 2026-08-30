@@ -9,6 +9,11 @@ const icons = {
   PENDING: "mdi:clock-outline",
 };
 
+/*******************************************************************************
+ * Function: ExecutionStatus
+ *
+ * Performs the Execution Status operation on status for the ExecutionStatus module.
+ ******************************************************************************/
 function ExecutionStatus({ status, failure }) {
   const blocked = isGovernanceBlock(failure);
   const meta = statusMetaFor(status, failure);

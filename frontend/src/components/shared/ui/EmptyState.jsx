@@ -1,5 +1,10 @@
 import { Icon } from "@iconify/react";
 
+/*******************************************************************************
+ * Function: EmptyState
+ *
+ * Performs the Empty State operation on state for the EmptyState module.
+ ******************************************************************************/
 function EmptyState({ icon = "mdi:database-off-outline", title, description }) {
   return (
     <div className="flex min-h-52 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 p-8 text-center dark:border-gray-800">

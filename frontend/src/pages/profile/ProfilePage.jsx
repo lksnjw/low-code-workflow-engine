@@ -7,14 +7,29 @@ import { ErrorState, LoadingState } from "../../components/shared/ResourceState"
 import { useAuthContext } from "../../context/AuthContext";
 import { profileService } from "../../services/profile.service";
 
+/*******************************************************************************
+ * Function: initials
+ *
+ * Performs the initials operation on the application for the ProfilePage module.
+ ******************************************************************************/
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
 }
 
+/*******************************************************************************
+ * Function: ProfilePage
+ *
+ * Performs the Profile Page operation on page for the ProfilePage module.
+ ******************************************************************************/
 function ProfilePage() {
   const queryClient = useQueryClient();
   const { refreshUser } = useAuthContext();
   const profile = useQuery({ queryKey: ["profile"], queryFn: profileService.get });
+/*******************************************************************************
+ * Function: update
+ *
+ * Updates the application for the ProfilePage module.
+ ******************************************************************************/
   const update = useMutation({
     mutationFn: profileService.update,
     onSuccess: async () => {
@@ -26,6 +41,11 @@ function ProfilePage() {
   if (profile.error) return <ErrorState error={profile.error} onRetry={profile.refetch} />;
   const data = profile.data || {};
 
+/*******************************************************************************
+ * Function: submit
+ *
+ * Performs the submit operation on the application for the ProfilePage module.
+ ******************************************************************************/
   const submit = (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);

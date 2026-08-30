@@ -1,9 +1,19 @@
 import Button from "./ui/Button";
 
+/*******************************************************************************
+ * Function: LoadingState
+ *
+ * Performs the Loading State operation on state for the ResourceState module.
+ ******************************************************************************/
 export function LoadingState({ label = "Loading data…" }) {
   return <div className="surface-panel rounded-2xl p-8 text-sm text-gray-500">{label}</div>;
 }
 
+/*******************************************************************************
+ * Function: ErrorState
+ *
+ * Performs the Error State operation on state for the ResourceState module.
+ ******************************************************************************/
 export function ErrorState({ error, onRetry, message }) {
   const displayMessage = message
     || error?.response?.data?.message
@@ -18,6 +28,11 @@ export function ErrorState({ error, onRetry, message }) {
   );
 }
 
+/*******************************************************************************
+ * Function: EmptyState
+ *
+ * Performs the Empty State operation on state for the ResourceState module.
+ ******************************************************************************/
 export function EmptyState({ title, description }) {
   return (
     <div className="rounded-2xl border border-dashed border-gray-300 px-6 py-10 text-center dark:border-gray-700">

@@ -1,4 +1,6 @@
-export const NAVIGATION_GROUPS = [
+import { features } from "../config/features";
+
+const allNavigationGroups = [
   {
     id: "dashboard",
     label: "Dashboard",
@@ -154,18 +156,54 @@ export const NAVIGATION_GROUPS = [
   },
 ];
 
+const groupFeatureFlags = {
+  datafeed: "datafeed",
+  mcp_bridge: "mcpBridge",
+  registry_search: "registrySearch",
+};
+
+const itemFeatureFlags = {
+  "registry.import": "registryImport",
+  "registry.context": "registryContext",
+};
+
+export const NAVIGATION_GROUPS = allNavigationGroups
+  .filter((group) => features[groupFeatureFlags[group.id]] !== false)
+  .map((group) => ({
+    ...group,
+    subMenu: group.subMenu.filter(
+      (item) => features[itemFeatureFlags[`${group.id}.${item.id}`]] !== false
+    ),
+  }))
+  .filter((group) => group.subMenu.length > 0);
+
 export const DEFAULT_ROUTE = {
   main: "dashboard",
   sub: "overview",
 };
 
+/*******************************************************************************
+ * Function: getNavigationGroup
+ *
+ * Gets navigation group for the navigation module.
+ ******************************************************************************/
 export const getNavigationGroup = (id) =>
   NAVIGATION_GROUPS.find((group) => group.id === id) ?? NAVIGATION_GROUPS[0];
 
+/*******************************************************************************
+ * Function: filterNavigationGroups
+ *
+ * Filters navigation groups for the navigation module.
+ ******************************************************************************/
 export function filterNavigationGroups(groups, hasAny, roleId) {
   return groups
     .filter((group) => !group.requiredAny?.length || hasAny(group.requiredAny))
     .map((group) => {
+/*******************************************************************************
+ * Function: subMenu
+ *
+ * Performs the sub Menu operation on menu for the navigation module.
+ ******************************************************************************/
       const subMenu = group.subMenu.filter(
         (item) => !item.requiredAny?.length || hasAny(item.requiredAny)
       );
@@ -181,9 +219,24 @@ export function filterNavigationGroups(groups, hasAny, roleId) {
     .filter((group) => group.subMenu.length > 0);
 }
 
+/*******************************************************************************
+ * Function: resolvePermittedRoute
+ *
+ * Resolves permitted route for the navigation module.
+ ******************************************************************************/
 export function resolvePermittedRoute(groups, hasAny, roleId, requested = DEFAULT_ROUTE) {
   const visibleGroups = filterNavigationGroups(groups, hasAny, roleId);
+/*******************************************************************************
+ * Function: requestedGroup
+ *
+ * Performs the requested Group operation on group for the navigation module.
+ ******************************************************************************/
   const requestedGroup = visibleGroups.find((group) => group.id === requested?.main);
+/*******************************************************************************
+ * Function: requestedSub
+ *
+ * Performs the requested Sub operation on sub for the navigation module.
+ ******************************************************************************/
   const requestedSub = requestedGroup?.subMenu.find((item) => item.id === requested?.sub);
   if (requestedGroup && requestedSub) {
     return { main: requestedGroup.id, sub: requestedSub.id };

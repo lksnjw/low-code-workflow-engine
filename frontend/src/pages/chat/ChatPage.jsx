@@ -1,52 +1,65 @@
+import { useState, useEffect } from "react";
 import ChatHistory from "../../components/chat/ChatHistory";
 import ChatWindow from "../../components/chat/ChatWindow";
 import ChatArtifactPanel from "../../components/chat/ChatArtifactPanel";
 import { useChat } from "../../hooks/useChat";
 import { useChatSessions } from "../../hooks/useChatSessions";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { peekWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
 
 function ChatPage() {
   const { sessionId = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const sessions = useChatSessions(sessionId);
   const chat = useChat(sessions.selectedSessionId);
+
+  // Auto-create a new session when redirected from "Edit in Chat"
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    const editCtx = peekWorkflowForChatEdit();
+    const title = editCtx ? `Edit: ${editCtx.workflowName || "Workflow"}` : "New conversation";
+    sessions.createSession(title).then((session) => {
+      navigate(`/chat/${encodeURIComponent(session.id)}`, { replace: true });
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [showArtifact, setShowArtifact] = useState(true);
 
   const handleCreateSession = async () => {
     const session = await sessions.createSession("Workflow conversation");
     navigate(`/chat/${encodeURIComponent(session.id)}`);
   };
 
-  const handleSelectSession = (selectedSessionId) => {
-    sessions.setSelectedSessionId(selectedSessionId);
-    navigate(`/chat/${encodeURIComponent(selectedSessionId)}`);
+  const handleSelectSession = (selId) => {
+    sessions.setSelectedSessionId(selId);
+    navigate(`/chat/${encodeURIComponent(selId)}`);
   };
 
-  const handleDeleteSession = async (deletedSessionId) => {
-    await sessions.deleteSession(deletedSessionId);
-    if (deletedSessionId === sessionId) navigate("/chat");
+  const handleDeleteSession = async (delId) => {
+    await sessions.deleteSession(delId);
+    if (delId === sessionId) navigate("/chat");
   };
 
-  // options = { model, mode } forwarded from ChatWindow's toolbar
   const handleSend = async (text, options = {}) => {
-    let sessionId = sessions.selectedSessionId;
-    if (!sessionId) {
-      const session = await sessions.createSession(
-        text.slice(0, 64) || "Workflow conversation"
-      );
-      sessionId = session.id;
-      navigate(`/chat/${encodeURIComponent(sessionId)}`);
+    let sid = sessions.selectedSessionId;
+    if (!sid) {
+      const session = await sessions.createSession(text.slice(0, 64) || "Workflow conversation");
+      sid = session.id;
+      navigate(`/chat/${encodeURIComponent(sid)}`);
     }
-    return chat.send(text, sessionId, options);
+    const editCtx = peekWorkflowForChatEdit();
+    const sendOptions = editCtx?.yaml
+      ? { ...options, workflowContext: { yaml: editCtx.yaml, name: editCtx.workflowName || "Workflow" } }
+      : options;
+    return chat.send(text, sid, sendOptions);
   };
 
   return (
-    /*
-     * h-full fills the <main> container from AppLayout.
-     * Each column is also h-full so children can be flex-col with internal scroll.
-     */
-    <div className="grid h-full gap-4 xl:grid-cols-[240px_minmax(0,1fr)_320px]">
-      {/* ── Session sidebar ── */}
-      <div className="overflow-y-auto">
+    <div className="flex h-full overflow-hidden">
+      {/* Session sidebar */}
+      <div className="w-52 flex-shrink-0 overflow-y-auto border-r border-gray-200 dark:border-gray-700">
         <ChatHistory
           sessions={sessions.sessions}
           activeSessionId={sessions.selectedSessionId}
@@ -60,18 +73,24 @@ function ChatPage() {
         />
       </div>
 
-      {/* ── Main chat — fills height, internal scroll ── */}
-      <ChatWindow
-        messages={chat.messages}
-        onSend={handleSend}
-        loading={chat.loading}
-        error={chat.error}
-      />
-
-      {/* ── Rich artifact panel — independent scroll ── */}
-      <div className="overflow-y-auto">
-        <ChatArtifactPanel artifact={chat.artifact} />
+      {/* Chat window */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ChatWindow
+          messages={chat.messages}
+          onSend={handleSend}
+          loading={chat.loading}
+          error={chat.error}
+        />
       </div>
+
+      {/* Artifact panel — only for workflow generation responses */}
+      {showArtifact && chat.artifact?.intent === "WORKFLOW" && (
+        <div className="w-80 flex-shrink-0 border-l border-gray-200 dark:border-gray-700 overflow-y-auto bg-white dark:bg-darkBackground">
+          <div className="p-3">
+            <ChatArtifactPanel artifact={chat.artifact} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

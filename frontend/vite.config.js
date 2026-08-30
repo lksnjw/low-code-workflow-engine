@@ -23,11 +23,11 @@ export default defineConfig({
     proxy: {
       // Proxy all /api/* and /ws/* requests to the backend — eliminates CORS in dev
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://localhost:8081",
         changeOrigin: true,
       },
       "/ws": {
-        target: "ws://localhost:8080",
+        target: "ws://localhost:8081",
         ws: true,
         changeOrigin: true,
       },

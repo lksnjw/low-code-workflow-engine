@@ -8,12 +8,22 @@ import usePermissions from "../../hooks/usePermissions";
 import { apiErrorMessage } from "../../services/api";
 import { registryService } from "../../services/registry.service";
 
+/*******************************************************************************
+ * Function: RegistryContextPage
+ *
+ * Performs the Registry Context Page operation on context page for the RegistryContextPage module.
+ ******************************************************************************/
 function RegistryContextPage() {
   const queryClient = useQueryClient();
   const { has } = usePermissions();
   const [copied, setCopied] = useState(false);
   const contextQuery = useQuery({ queryKey: ["registry-context"], queryFn: registryService.context });
   const historyQuery = useQuery({ queryKey: ["registry-context-history"], queryFn: registryService.contextHistory });
+/*******************************************************************************
+ * Function: regenerate
+ *
+ * Performs the regenerate operation on the application for the RegistryContextPage module.
+ ******************************************************************************/
   const regenerate = useMutation({
     mutationFn: registryService.regenerateContext,
     onSuccess: async () => {
@@ -31,6 +41,11 @@ function RegistryContextPage() {
     return <EmptyState title="No generation context" description="Generate the runtime registry context before using it for workflow synthesis." />;
   }
 
+/*******************************************************************************
+ * Function: copyMarkdown
+ *
+ * Performs the copy Markdown operation on markdown for the RegistryContextPage module.
+ ******************************************************************************/
   const copyMarkdown = async () => {
     await navigator.clipboard.writeText(document.markdown);
     setCopied(true);
@@ -120,6 +135,11 @@ function RegistryContextPage() {
   );
 }
 
+/*******************************************************************************
+ * Function: Metric
+ *
+ * Performs the Metric operation on the application for the RegistryContextPage module.
+ ******************************************************************************/
 function Metric({ label, value, mono = false }) {
   return (
     <div className="surface-panel min-w-0 rounded-2xl p-4">

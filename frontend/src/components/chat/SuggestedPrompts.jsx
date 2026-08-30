@@ -4,6 +4,11 @@ const prompts = [
   "Create a support triage workflow",
 ];
 
+/*******************************************************************************
+ * Function: SuggestedPrompts
+ *
+ * Performs the Suggested Prompts operation on prompts for the SuggestedPrompts module.
+ ******************************************************************************/
 function SuggestedPrompts({ onSelect }) {
   return (
     <div className="flex flex-wrap gap-2">

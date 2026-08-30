@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import useSemanticStatus from "../../hooks/useSemanticStatus";
 
+/*******************************************************************************
+ * Function: VectorMetricsPage
+ *
+ * Performs the Vector Metrics Page operation on metrics page for the VectorMetricsPage module.
+ ******************************************************************************/
 function VectorMetricsPage() {
   const status = useSemanticStatus();
   if (status.isLoading) return <LoadingState label="Loading vector metrics…" />;

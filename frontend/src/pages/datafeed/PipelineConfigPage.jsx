@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import useSemanticStatus from "../../hooks/useSemanticStatus";
 
+/*******************************************************************************
+ * Function: PipelineConfigPage
+ *
+ * Performs the Pipeline Config Page operation on config page for the PipelineConfigPage module.
+ ******************************************************************************/
 function PipelineConfigPage() {
   const status = useSemanticStatus();
   if (status.isLoading) return <LoadingState label="Loading pipeline configuration…" />;
@@ -16,6 +21,11 @@ function PipelineConfigPage() {
   return <div className="space-y-6"><section><p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Runtime settings</p><h1 className="page-heading mt-3 text-gray-950 dark:text-white">Pipeline Configuration</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">Effective read-only configuration reported by the semantic service. Change these values in the service environment and restart it.</p></section><section className="surface-panel rounded-2xl p-6"><h2 className="section-title flex items-center gap-2 border-b border-gray-100 pb-4 dark:border-gray-800"><Icon icon="mdi:database-cog" className="h-5 w-5 text-primary" />Effective configuration</h2><dl className="mt-5 grid gap-x-8 md:grid-cols-2">{entries.map(([label, value]) => <div key={label} className="border-b border-gray-100 py-4 dark:border-gray-800"><dt className="text-xs font-bold uppercase tracking-wide text-gray-500">{label}</dt><dd className="mt-2 break-all font-mono text-sm text-gray-950 dark:text-white">{value ?? "—"}</dd></div>)}</dl></section></div>;
 }
 
+/*******************************************************************************
+ * Function: formatObject
+ *
+ * Formats object for the PipelineConfigPage module.
+ ******************************************************************************/
 function formatObject(value) { return value && typeof value === "object" ? Object.entries(value).map(([key, count]) => `${key}: ${count}`).join(", ") : value; }
 
 export default PipelineConfigPage;

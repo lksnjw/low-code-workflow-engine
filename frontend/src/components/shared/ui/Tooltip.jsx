@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Tooltip
+ *
+ * Performs the Tooltip operation on the application for the Tooltip module.
+ ******************************************************************************/
 function Tooltip({ label, children }) {
   return (
     <span className="group relative inline-flex">

@@ -2,15 +2,30 @@ import { useNavigate } from "react-router-dom";
 import ChatHistory from "../../components/chat/ChatHistory";
 import { useChatSessions } from "../../hooks/useChatSessions";
 
+/*******************************************************************************
+ * Function: ChatHistoryPage
+ *
+ * Performs the Chat History Page operation on history page for the ChatHistoryPage module.
+ ******************************************************************************/
 function ChatHistoryPage() {
   const navigate = useNavigate();
   const sessions = useChatSessions();
 
+/*******************************************************************************
+ * Function: createSession
+ *
+ * Creates session for the ChatHistoryPage module.
+ ******************************************************************************/
   const createSession = async () => {
     const session = await sessions.createSession("Workflow conversation");
     navigate(`/chat/${encodeURIComponent(session.id)}`);
   };
 
+/*******************************************************************************
+ * Function: openSession
+ *
+ * Performs the open Session operation on session for the ChatHistoryPage module.
+ ******************************************************************************/
   const openSession = (sessionId) => {
     sessions.setSelectedSessionId(sessionId);
     navigate(`/chat/${encodeURIComponent(sessionId)}`);

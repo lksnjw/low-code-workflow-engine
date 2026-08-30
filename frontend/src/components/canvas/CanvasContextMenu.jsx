@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: CanvasContextMenu
+ *
+ * Performs the Canvas Context Menu operation on context menu for the CanvasContextMenu module.
+ ******************************************************************************/
 function CanvasContextMenu({ x = 0, y = 0, open = false }) {
   if (!open) return null;
 

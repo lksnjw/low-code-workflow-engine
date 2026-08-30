@@ -1,14 +1,11 @@
 import React from "react";
 
-export default function BuilderModeControls({ readOnly, isExecuting, onDeploy, onRun }) {
-  if (readOnly) {
-    return React.createElement(
-      "span",
-      { className: "rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600" },
-      "Read-only preview"
-    );
-  }
-
+/*******************************************************************************
+ * Function: BuilderModeControls
+ *
+ * Performs the Builder Mode Controls operation on mode controls for the BuilderModeControls module.
+ ******************************************************************************/
+export default function BuilderModeControls({ isExecuting, onDeploy, onRun }) {
   return React.createElement(
     "div",
     { className: "flex items-center gap-3" },

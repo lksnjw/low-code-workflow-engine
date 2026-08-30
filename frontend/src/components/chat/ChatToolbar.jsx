@@ -6,6 +6,11 @@ const MODES = [
   { value: "dry_run", label: "Dry Run" },
 ];
 
+/*******************************************************************************
+ * Function: SelectPill
+ *
+ * Performs the Select Pill operation on pill for the ChatToolbar module.
+ ******************************************************************************/
 function SelectPill({ value, onChange, options, icon }) {
   return (
     <label className="relative flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-backgroundLight px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-primary/40 dark:border-gray-700 dark:bg-darkBackgroundVery dark:text-gray-200">
@@ -25,6 +30,11 @@ function SelectPill({ value, onChange, options, icon }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ChatToolbar
+ *
+ * Performs the Chat Toolbar operation on toolbar for the ChatToolbar module.
+ ******************************************************************************/
 function ChatToolbar({ mode, onModeChange }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">

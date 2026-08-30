@@ -1,5 +1,10 @@
 import React from "react";
 
+/*******************************************************************************
+ * Function: WorkflowActionControls
+ *
+ * Performs the Workflow Action Controls operation on action controls for the WorkflowActionControls module.
+ ******************************************************************************/
 export default function WorkflowActionControls({ canRun, canExport, running, onRun, onExport }) {
   return React.createElement(
     "div",

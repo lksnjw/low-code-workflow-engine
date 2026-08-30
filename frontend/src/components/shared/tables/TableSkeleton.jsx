@@ -1,5 +1,10 @@
 import Skeleton from "../ui/Skeleton";
 
+/*******************************************************************************
+ * Function: TableSkeleton
+ *
+ * Performs the Table Skeleton operation on skeleton for the TableSkeleton module.
+ ******************************************************************************/
 function TableSkeleton() {
   return (
     <div className="space-y-3">

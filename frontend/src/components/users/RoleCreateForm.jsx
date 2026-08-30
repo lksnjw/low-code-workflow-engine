@@ -6,17 +6,32 @@ import Checkbox from "../shared/ui/Checkbox";
 import Input from "../shared/ui/Input";
 import { apiErrorMessage } from "../../services/api";
 
+/*******************************************************************************
+ * Function: restrictPermissionsToCaller
+ *
+ * Performs the restrict Permissions To Caller operation on permissions to caller for the RoleCreateForm module.
+ ******************************************************************************/
 export function restrictPermissionsToCaller(permissions = [], callerPermissions = []) {
   const held = new Set(callerPermissions);
   return permissions.filter((permission) => held.has(permission.key));
 }
 
+/*******************************************************************************
+ * Function: RoleCreateForm
+ *
+ * Performs the Role Create Form operation on create form for the RoleCreateForm module.
+ ******************************************************************************/
 function RoleCreateForm({
   permissions = [],
   callerPermissions = [],
   canManage = false,
   onCreate,
 }) {
+/*******************************************************************************
+ * Function: availablePermissions
+ *
+ * Performs the available Permissions operation on permissions for the RoleCreateForm module.
+ ******************************************************************************/
   const availablePermissions = useMemo(
     () => restrictPermissionsToCaller(permissions, callerPermissions),
     [permissions, callerPermissions]
@@ -27,12 +42,22 @@ function RoleCreateForm({
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+/*******************************************************************************
+ * Function: toggle
+ *
+ * Performs the toggle operation on the application for the RoleCreateForm module.
+ ******************************************************************************/
   const toggle = (permission) => {
     setSelected((current) => current.includes(permission)
       ? current.filter((item) => item !== permission)
       : [...current, permission]);
   };
 
+/*******************************************************************************
+ * Function: submit
+ *
+ * Performs the submit operation on the application for the RoleCreateForm module.
+ ******************************************************************************/
   const submit = async (event) => {
     event.preventDefault();
     setSaving(true);

@@ -6,10 +6,20 @@ import { apiErrorMessage } from "../../services/api";
 import { userService } from "../../services/user.service";
 import { workflowService } from "../../services/workflow.service";
 
+/*******************************************************************************
+ * Function: WorkflowAssignments
+ *
+ * Performs the Workflow Assignments operation on assignments for the WorkflowAssignments module.
+ ******************************************************************************/
 function WorkflowAssignments({ workflow, onChanged }) {
   const { notify } = useNotifications();
   const query = useQuery({ queryKey: ["assignable-workflow-users"], queryFn: userService.assignable });
   const assigned = new Set(workflow.assignedUserIds || []);
+/*******************************************************************************
+ * Function: mutation
+ *
+ * Performs the mutation operation on the application for the WorkflowAssignments module.
+ ******************************************************************************/
   const mutation = useMutation({
     mutationFn: ({ userId, isAssigned }) =>
       isAssigned

@@ -11,6 +11,11 @@ const columns = [
   { key: "status", label: "Status" },
 ];
 
+/*******************************************************************************
+ * Function: WorkflowTable
+ *
+ * Performs the Workflow Table operation on table for the WorkflowTable module.
+ ******************************************************************************/
 function WorkflowTable({ workflows, onOpen }) {
   return (
     <DataTable

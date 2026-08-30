@@ -2,6 +2,11 @@ import { useState } from "react";
 import { useAuthContext } from "../../context/AuthContext";
 import AuthLayout from "../../layouts/AuthLayout";
 
+/*******************************************************************************
+ * Function: InputField
+ *
+ * Performs the Input Field operation on field for the LoginPage module.
+ ******************************************************************************/
 function InputField({ label, id, type = "text", value, onChange, placeholder, autoComplete }) {
   return (
     <div>
@@ -22,12 +27,22 @@ function InputField({ label, id, type = "text", value, onChange, placeholder, au
   );
 }
 
+/*******************************************************************************
+ * Function: LoginPage
+ *
+ * Performs the Login Page operation on page for the LoginPage module.
+ ******************************************************************************/
 function LoginPage({ onNavigate }) {
   const { login, loading, authError } = useAuthContext();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState("");
 
+/*******************************************************************************
+ * Function: handleSubmit
+ *
+ * Handles submit for the LoginPage module.
+ ******************************************************************************/
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLocalError("");

@@ -59,10 +59,20 @@ export const BLOCKED_META = {
   color: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
 };
 
+/*******************************************************************************
+ * Function: isGovernanceBlock
+ *
+ * Determines whether governance block for the workflowStatus module.
+ ******************************************************************************/
 export function isGovernanceBlock(failure) {
   return failure?.failureCategory === FAILURE_CATEGORY.POLICY_VIOLATION;
 }
 
+/*******************************************************************************
+ * Function: statusMetaFor
+ *
+ * Performs the status Meta For operation on meta for for the workflowStatus module.
+ ******************************************************************************/
 export function statusMetaFor(status, failure) {
   if (status === WORKFLOW_STATUS.FAILED && isGovernanceBlock(failure)) return BLOCKED_META;
   return STATUS_META[status] ?? {

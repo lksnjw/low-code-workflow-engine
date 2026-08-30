@@ -5,9 +5,19 @@ const tones = ["violet", "emerald", "blue", "amber", "sky", "purple", "green", "
 const icons = { hr: "UserSearch", inventory: "Boxes", procurement: "ShoppingCart", finance: "FileCheck2", warehouse: "Warehouse" };
 
 export const catalogService = {
+/*******************************************************************************
+ * Function: tools
+ *
+ * Performs the tools operation on the application for the catalog service module.
+ ******************************************************************************/
   async tools(params = {}) {
     return unwrap(await apiClient.get("/tools/catalog", { params }), []) || [];
   },
+/*******************************************************************************
+ * Function: toolGroups
+ *
+ * Performs the tool Groups operation on groups for the catalog service module.
+ ******************************************************************************/
   async toolGroups() {
     const tools = await this.tools({ status: "active_mcp_schema_present" });
     const groups = new Map();
@@ -15,6 +25,11 @@ export const catalogService = {
       const moduleName = tool.module || tool.erp_system || "General";
       const key = String(moduleName);
       if (!groups.has(key)) groups.set(key, []);
+/*******************************************************************************
+ * Function: parameters
+ *
+ * Performs the parameters operation on the application for the catalog service module.
+ ******************************************************************************/
       const parameters = Object.fromEntries((tool.required_parameters || []).map((name) => [name, `{{input.${name}}}`]));
       groups.get(key).push({
         label: tool.display_name || tool.name,

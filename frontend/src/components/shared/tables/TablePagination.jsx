@@ -1,5 +1,10 @@
 import Button from "../ui/Button";
 
+/*******************************************************************************
+ * Function: TablePagination
+ *
+ * Performs the Table Pagination operation on pagination for the TablePagination module.
+ ******************************************************************************/
 function TablePagination({ page = 1, pageCount = 1, onPageChange }) {
   return (
     <div className="flex items-center justify-end gap-2">

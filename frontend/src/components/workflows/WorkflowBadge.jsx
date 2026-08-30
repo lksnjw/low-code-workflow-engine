@@ -1,5 +1,10 @@
 import { statusMetaFor } from "../../constants/workflowStatus";
 
+/*******************************************************************************
+ * Function: WorkflowBadge
+ *
+ * Performs the Workflow Badge operation on badge for the WorkflowBadge module.
+ ******************************************************************************/
 function WorkflowBadge({ status }) {
   const meta = statusMetaFor(status);
 

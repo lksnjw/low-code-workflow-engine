@@ -1,0 +1,20 @@
+{
+  "formatVersion": 1,
+  "source": "running Go implementation",
+  "serializationTypes": 82,
+  "parserCases": 15,
+  "cryptoCases": 6,
+  "zeroValueCases": 8,
+  "validatorCases": 120,
+  "http": {
+    "routes": 168,
+    "scenarios": 421,
+    "complete": false,
+    "missingCoverage": [
+      "success and every documented handler-specific error have not yet been captured for all stateful routes",
+      "durable PostgreSQL persistence-failure responses require an isolated PostgreSQL fixture",
+      "WebSocket upgrade success/failure wire behavior remains UNDETERMINED by the repository"
+    ]
+  },
+  "errorStrings": 3916
+}

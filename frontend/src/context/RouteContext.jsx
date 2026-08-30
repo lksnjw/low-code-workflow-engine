@@ -5,6 +5,11 @@ import usePermissions from "../hooks/usePermissions";
 
 const RouteContext = createContext(null);
 
+/*******************************************************************************
+ * Function: routeFromPath
+ *
+ * Performs the route From Path operation on from path for the RouteContext module.
+ ******************************************************************************/
 function routeFromPath(pathname) {
   for (const group of NAVIGATION_GROUPS) {
     for (const item of group.subMenu) {
@@ -20,6 +25,11 @@ function routeFromPath(pathname) {
   return DEFAULT_ROUTE;
 }
 
+/*******************************************************************************
+ * Function: workflowIDFromPath
+ *
+ * Performs the workflow ID From Path operation on id from path for the RouteContext module.
+ ******************************************************************************/
 function workflowIDFromPath(pathname) {
   return (
     matchPath("/workflows/:workflowId", pathname)?.params.workflowId ||
@@ -28,6 +38,11 @@ function workflowIDFromPath(pathname) {
   );
 }
 
+/*******************************************************************************
+ * Function: RouteProvider
+ *
+ * Performs the Route Provider operation on provider for the RouteContext module.
+ ******************************************************************************/
 export function RouteProvider({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -45,6 +60,11 @@ export function RouteProvider({ children }) {
   // directly-typed forbidden URL must still be denied explicitly.
   useEffect(() => {
     if (location.pathname !== "/") return;
+/*******************************************************************************
+ * Function: dashboard
+ *
+ * Performs the dashboard operation on the application for the RouteContext module.
+ ******************************************************************************/
     const dashboard = NAVIGATION_GROUPS.find((group) => group.id === DEFAULT_ROUTE.main);
     if (!dashboard?.requiredAny?.length || hasAny(dashboard.requiredAny)) return;
     const permitted = filterNavigationGroups(NAVIGATION_GROUPS, hasAny, roleId)[0]?.subMenu?.[0]?.path;
@@ -63,9 +83,19 @@ export function RouteProvider({ children }) {
 
   const currentWorkflowID = pathWorkflowID || selectedWorkflowId;
 
+/*******************************************************************************
+ * Function: pathFor
+ *
+ * Performs the path For operation on for for the RouteContext module.
+ ******************************************************************************/
   const pathFor = useCallback(
     (main, sub) => {
       const group = getNavigationGroup(main);
+/*******************************************************************************
+ * Function: item
+ *
+ * Performs the item operation on the application for the RouteContext module.
+ ******************************************************************************/
       const item = group.subMenu.find((candidate) => candidate.id === sub) || group.subMenu[0];
       if (!item) return "/";
       if (item.path.includes(":workflowId")) {
@@ -81,21 +111,41 @@ export function RouteProvider({ children }) {
     [currentWorkflowID]
   );
 
+/*******************************************************************************
+ * Function: navigateTo
+ *
+ * Performs the navigate To operation on to for the RouteContext module.
+ ******************************************************************************/
   const navigateTo = useCallback(
     (main, sub) => navigate(pathFor(main, sub)),
     [navigate, pathFor]
   );
 
+/*******************************************************************************
+ * Function: setActiveMain
+ *
+ * Sets active main for the RouteContext module.
+ ******************************************************************************/
   const setActiveMain = useCallback(
     (main) => navigateTo(main, getNavigationGroup(main).subMenu[0]?.id),
     [navigateTo]
   );
 
+/*******************************************************************************
+ * Function: setActiveSub
+ *
+ * Sets active sub for the RouteContext module.
+ ******************************************************************************/
   const setActiveSub = useCallback(
     (sub) => navigateTo(route.main, sub),
     [navigateTo, route.main]
   );
 
+/*******************************************************************************
+ * Function: openWorkflow
+ *
+ * Performs the open Workflow operation on workflow for the RouteContext module.
+ ******************************************************************************/
   const openWorkflow = useCallback(
     (workflowId) => {
       setSelectedWorkflowId(workflowId);
@@ -105,12 +155,22 @@ export function RouteProvider({ children }) {
     [navigate]
   );
 
+/*******************************************************************************
+ * Function: startWorkflow
+ *
+ * Performs the start Workflow operation on workflow for the RouteContext module.
+ ******************************************************************************/
   const startWorkflow = useCallback(() => {
     setSelectedWorkflowId("");
     localStorage.removeItem("workflow.selectedWorkflowId");
     navigate("/builder");
   }, [navigate]);
 
+/*******************************************************************************
+ * Function: value
+ *
+ * Performs the value operation on the application for the RouteContext module.
+ ******************************************************************************/
   const value = useMemo(
     () => ({
       activeMain: route.main,
@@ -137,6 +197,11 @@ export function RouteProvider({ children }) {
   return <RouteContext.Provider value={value}>{children}</RouteContext.Provider>;
 }
 
+/*******************************************************************************
+ * Function: useRoute
+ *
+ * Provides route for the RouteContext module.
+ ******************************************************************************/
 export function useRoute() {
   const context = useContext(RouteContext);
   if (!context) {

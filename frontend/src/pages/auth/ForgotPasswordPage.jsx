@@ -3,12 +3,22 @@ import { authService } from "../../services/auth.service";
 import AuthLayout from "../../layouts/AuthLayout";
 import { Icon } from "@iconify/react";
 
+/*******************************************************************************
+ * Function: ForgotPasswordPage
+ *
+ * Performs the Forgot Password Page operation on password page for the ForgotPasswordPage module.
+ ******************************************************************************/
 function ForgotPasswordPage({ onNavigate }) {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
 
+/*******************************************************************************
+ * Function: handleSubmit
+ *
+ * Handles submit for the ForgotPasswordPage module.
+ ******************************************************************************/
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");

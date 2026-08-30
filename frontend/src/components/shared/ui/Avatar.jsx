@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Avatar
+ *
+ * Performs the Avatar operation on the application for the Avatar module.
+ ******************************************************************************/
 function Avatar({ initials = "AW", className = "" }) {
   return (
     <span

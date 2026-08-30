@@ -8,12 +8,22 @@ import { useExecution } from "../../hooks/useExecution";
 import { useDebounce } from "../../hooks/useDebounce";
 import usePermissions from "../../hooks/usePermissions";
 
+/*******************************************************************************
+ * Function: ExecutionListPage
+ *
+ * Performs the Execution List Page operation on list page for the ExecutionListPage module.
+ ******************************************************************************/
 function ExecutionListPage() {
   const { has, roleId } = usePermissions();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [range, setRange] = useState("");
   const debouncedQuery = useDebounce(query);
+/*******************************************************************************
+ * Function: params
+ *
+ * Performs the params operation on the application for the ExecutionListPage module.
+ ******************************************************************************/
   const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined, range: range || undefined }), [debouncedQuery, status, range]);
   const { executions, healingReport, loading, error, reload } = useExecution(undefined, params);
   return (

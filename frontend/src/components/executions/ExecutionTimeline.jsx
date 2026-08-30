@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import { isGovernanceBlock } from "../../constants/workflowStatus";
 import StepLogItem from "./StepLogItem";
 
+/*******************************************************************************
+ * Function: ExecutionTimeline
+ *
+ * Performs the Execution Timeline operation on timeline for the ExecutionTimeline module.
+ ******************************************************************************/
 function ExecutionTimeline({ timeline = [] }) {
   if (timeline.length === 0) return <p className="text-sm text-gray-500">No step timeline was recorded.</p>;
   return (

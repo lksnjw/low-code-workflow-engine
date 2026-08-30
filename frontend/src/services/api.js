@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: unwrap
+ *
+ * Performs the unwrap operation on the application for the api module.
+ ******************************************************************************/
 export function unwrap(response, fallback = null) {
   const payload = response?.data;
   if (payload?.success === false) {
@@ -6,6 +11,11 @@ export function unwrap(response, fallback = null) {
   return payload?.data ?? fallback;
 }
 
+/*******************************************************************************
+ * Function: apiErrorDetails
+ *
+ * Performs the api Error Details operation on error details for the api module.
+ ******************************************************************************/
 export function apiErrorDetails(error, fallback = "The request could not be completed.") {
   const payload = error?.response?.data;
   const message = typeof payload?.message === "string" && payload.message.trim()
@@ -18,10 +28,20 @@ export function apiErrorDetails(error, fallback = "The request could not be comp
   return { message, meta };
 }
 
+/*******************************************************************************
+ * Function: apiErrorMessage
+ *
+ * Performs the api Error Message operation on error message for the api module.
+ ******************************************************************************/
 export function apiErrorMessage(error, fallback = "The request could not be completed.") {
   return apiErrorDetails(error, fallback).message;
 }
 
+/*******************************************************************************
+ * Function: formatRelativeTime
+ *
+ * Formats relative time for the api module.
+ ******************************************************************************/
 export function formatRelativeTime(value) {
   if (!value) return "Never";
   const timestamp = new Date(value).getTime();
@@ -35,6 +55,11 @@ export function formatRelativeTime(value) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/*******************************************************************************
+ * Function: formatDuration
+ *
+ * Formats duration for the api module.
+ ******************************************************************************/
 export function formatDuration(milliseconds = 0) {
   if (!milliseconds) return "0ms";
   if (milliseconds < 1000) return `${milliseconds}ms`;
@@ -43,6 +68,11 @@ export function formatDuration(milliseconds = 0) {
   return minutes ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
 }
 
+/*******************************************************************************
+ * Function: formatTokens
+ *
+ * Formats tokens for the api module.
+ ******************************************************************************/
 export function formatTokens(value = 0) {
   if (value < 1000) return String(value);
   return `${(value / 1000).toFixed(1)}K`;

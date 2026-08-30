@@ -4,14 +4,29 @@ import Button from "./Button";
 class ErrorBoundary extends Component {
   state = { hasError: false };
 
+/*******************************************************************************
+ * Function: getDerivedStateFromError
+ *
+ * Gets derived state from error for the ErrorBoundary module.
+ ******************************************************************************/
   static getDerivedStateFromError() {
     return { hasError: true };
   }
 
+/*******************************************************************************
+ * Function: componentDidCatch
+ *
+ * Performs the component Did Catch operation on did catch for the ErrorBoundary module.
+ ******************************************************************************/
   componentDidCatch(error, info) {
     console.error(`Render failure in ${this.props.name || "this view"}`, error, info);
   }
 
+/*******************************************************************************
+ * Function: render
+ *
+ * Renders the application for the ErrorBoundary module.
+ ******************************************************************************/
   render() {
     if (this.state.hasError) {
       const name = this.props.name || "this view";

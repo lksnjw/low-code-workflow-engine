@@ -57,6 +57,22 @@ test("an execution with no output says so instead of rendering an empty box", ()
   expect(screen.queryByTestId("final-output")).toBeNull();
 });
 
+test("redacted output renders safely when credential-shaped fields are absent", () => {
+  render(
+    <ExecutionOutputPanel
+      execution={{
+        id: "run-redacted",
+        status: "DONE",
+        finalOutput: { value: "visible" },
+        stepOutputs: { lookup: { value: "visible" } },
+      }}
+    />,
+  );
+
+  expect(screen.getByTestId("final-output").textContent).toMatch(/visible/);
+  expect(screen.getByTestId("step-outputs").textContent).toMatch(/lookup/);
+});
+
 test("a large output is truncated with a view-full affordance and does not crash", () => {
   const big = { rows: Array.from({ length: 4000 }, (_, index) => ({ index, value: `row-${index}` })) };
   render(<ExecutionOutputPanel execution={{ id: "run-4", status: "DONE", finalOutput: big }} />);

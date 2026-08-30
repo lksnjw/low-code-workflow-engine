@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Toggle
+ *
+ * Performs the Toggle operation on the application for the Toggle module.
+ ******************************************************************************/
 function Toggle({ checked, onChange, label }) {
   return (
     <button

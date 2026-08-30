@@ -1,5 +1,10 @@
 import EmptyState from "../../components/shared/ui/EmptyState";
 
+/*******************************************************************************
+ * Function: NotFoundPage
+ *
+ * Performs the Not Found Page operation on found page for the NotFoundPage module.
+ ******************************************************************************/
 function NotFoundPage() {
   return (
     <EmptyState

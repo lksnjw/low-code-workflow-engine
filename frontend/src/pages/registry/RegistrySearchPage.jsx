@@ -3,6 +3,11 @@ import { Icon } from "@iconify/react";
 import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { synthesisService } from "../../services/synthesis.service";
 
+/*******************************************************************************
+ * Function: ResultGroup
+ *
+ * Performs the Result Group operation on group for the RegistrySearchPage module.
+ ******************************************************************************/
 function ResultGroup({ title, items = [], labelKey }) {
   return (
     <section className="surface-panel rounded-2xl p-5">
@@ -23,6 +28,11 @@ function ResultGroup({ title, items = [], labelKey }) {
   );
 }
 
+/*******************************************************************************
+ * Function: RegistrySearchPage
+ *
+ * Performs the Registry Search Page operation on search page for the RegistrySearchPage module.
+ ******************************************************************************/
 function RegistrySearchPage() {
   const [query, setQuery] = useState("");
   const [lastQuery, setLastQuery] = useState("");
@@ -30,6 +40,11 @@ function RegistrySearchPage() {
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
 
+/*******************************************************************************
+ * Function: runSearch
+ *
+ * Runs search for the RegistrySearchPage module.
+ ******************************************************************************/
   const runSearch = async (searchText) => {
     setLoading(true);
     setFailed(false);
@@ -44,6 +59,11 @@ function RegistrySearchPage() {
     }
   };
 
+/*******************************************************************************
+ * Function: search
+ *
+ * Performs the search operation on the application for the RegistrySearchPage module.
+ ******************************************************************************/
   const search = (event) => {
     event.preventDefault();
     const searchText = query.trim();

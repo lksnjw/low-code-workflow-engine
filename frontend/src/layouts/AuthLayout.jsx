@@ -2,6 +2,11 @@ import { useTheme } from "../context/ThemeContext";
 import { Icon } from "@iconify/react";
 import { appConfig } from "../config/app";
 
+/*******************************************************************************
+ * Function: AuthLayout
+ *
+ * Performs the Auth Layout operation on layout for the AuthLayout module.
+ ******************************************************************************/
 function AuthLayout({ children, title, subtitle }) {
   const { isDarkMode, toggleTheme } = useTheme();
 

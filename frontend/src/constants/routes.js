@@ -1,3 +1,5 @@
+import { features } from "../config/features";
+
 export const ROUTES = {
   dashboard: "/dashboard",
   workflows: "/workflows",
@@ -7,8 +9,8 @@ export const ROUTES = {
   analytics: "/analytics",
   users: "/users",
   settings: "/settings",
-  mcpBridge: "/mcp-bridge",
-  datafeed: "/datafeed",
+  ...(features.mcpBridge ? { mcpBridge: "/mcp-bridge" } : {}),
+  ...(features.datafeed ? { datafeed: "/datafeed" } : {}),
   finetune: "/finetune",
   profile: "/profile",
 };

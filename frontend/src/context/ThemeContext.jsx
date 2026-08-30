@@ -2,6 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const ThemeContext = createContext(null);
 
+/*******************************************************************************
+ * Function: ThemeProvider
+ *
+ * Performs the Theme Provider operation on provider for the ThemeContext module.
+ ******************************************************************************/
 export function ThemeProvider({ children }) {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem("theme");
@@ -13,6 +18,11 @@ export function ThemeProvider({ children }) {
     localStorage.setItem("theme", isDarkMode ? "dark" : "light");
   }, [isDarkMode]);
 
+/*******************************************************************************
+ * Function: value
+ *
+ * Performs the value operation on the application for the ThemeContext module.
+ ******************************************************************************/
   const value = useMemo(
     () => ({
       isDarkMode,
@@ -25,6 +35,11 @@ export function ThemeProvider({ children }) {
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
+/*******************************************************************************
+ * Function: useTheme
+ *
+ * Provides theme for the ThemeContext module.
+ ******************************************************************************/
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (!context) {

@@ -1,6 +1,11 @@
 import Card from "../shared/ui/Card";
 import Badge from "../shared/ui/Badge";
 
+/*******************************************************************************
+ * Function: FlowPreviewCard
+ *
+ * Performs the Flow Preview Card operation on preview card for the FlowPreviewCard module.
+ ******************************************************************************/
 function FlowPreviewCard({ artifact }) {
   const summary = artifact?.validation_summary;
   const canExecute = artifact?.can_execute;

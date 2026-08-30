@@ -2,6 +2,11 @@ import { Icon } from "@iconify/react";
 import Card from "../shared/ui/Card";
 import WorkflowBadge from "./WorkflowBadge";
 
+/*******************************************************************************
+ * Function: WorkflowCard
+ *
+ * Performs the Workflow Card operation on card for the WorkflowCard module.
+ ******************************************************************************/
 function WorkflowCard({ workflow, onOpen }) {
   return (
     <Card as="button" type="button" onClick={onOpen} className="flex h-full w-full flex-col text-left transition hover:-translate-y-0.5 hover:shadow-lg">

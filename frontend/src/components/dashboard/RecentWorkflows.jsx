@@ -2,6 +2,11 @@ import Card from "../shared/ui/Card";
 import WorkflowBadge from "../workflows/WorkflowBadge";
 import { EmptyState } from "../shared/ResourceState";
 
+/*******************************************************************************
+ * Function: RecentWorkflows
+ *
+ * Performs the Recent Workflows operation on workflows for the RecentWorkflows module.
+ ******************************************************************************/
 function RecentWorkflows({ workflows = [] }) {
   return (
     <Card className="lg:col-span-2">

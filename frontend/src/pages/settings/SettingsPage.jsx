@@ -6,6 +6,11 @@ import WebhookForm from "../../components/settings/WebhookForm";
 import { EmptyState, ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useSettings } from "../../hooks/useSettings";
 
+/*******************************************************************************
+ * Function: SettingsPage
+ *
+ * Performs the Settings Page operation on page for the SettingsPage module.
+ ******************************************************************************/
 function SettingsPage({ view = "general" }) {
   const { data, loading, error, reload } = useSettings();
   if (loading) return <LoadingState label="Loading platform settings…" />;
@@ -84,6 +89,11 @@ function SettingsPage({ view = "general" }) {
   );
 }
 
+/*******************************************************************************
+ * Function: SettingsValues
+ *
+ * Performs the Settings Values operation on values for the SettingsPage module.
+ ******************************************************************************/
 function SettingsValues({ title, values = {}, embedded = false }) {
   const entries = Object.entries(values || {});
   const content = (

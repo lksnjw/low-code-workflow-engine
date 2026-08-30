@@ -14,6 +14,11 @@ steps:
   - id: notify_finance
     channel: approval_queue`;
 
+/*******************************************************************************
+ * Function: YamlPreviewPanel
+ *
+ * Performs the Yaml Preview Panel operation on preview panel for the YamlPreviewPanel module.
+ ******************************************************************************/
 function YamlPreviewPanel() {
   return (
     <Card>

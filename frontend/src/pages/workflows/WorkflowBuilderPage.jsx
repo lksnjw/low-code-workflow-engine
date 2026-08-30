@@ -1,11 +1,14 @@
 import WorkflowBuilderCanvas from "../../components/canvas/WorkflowBuilderCanvas";
 import { useRoute } from "../../context/RouteContext";
-import usePermissions from "../../hooks/usePermissions";
 
+/*******************************************************************************
+ * Function: WorkflowBuilderPage
+ *
+ * Performs the Workflow Builder Page operation on builder page for the WorkflowBuilderPage module.
+ ******************************************************************************/
 function WorkflowBuilderPage() {
   const { selectedWorkflowId } = useRoute();
-  const { has } = usePermissions();
-  return <WorkflowBuilderCanvas workflowId={selectedWorkflowId} readOnly={!has("workflow:write")} />;
+  return <WorkflowBuilderCanvas workflowId={selectedWorkflowId} readOnly />;
 }
 
 export default WorkflowBuilderPage;

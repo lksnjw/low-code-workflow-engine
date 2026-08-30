@@ -6,13 +6,28 @@ import { userService } from "../../services/user.service";
 import { apiErrorMessage } from "../../services/api";
 import { useNotifications } from "../../context/NotificationContext";
 
+/*******************************************************************************
+ * Function: UserForm
+ *
+ * Performs the User Form operation on form for the UserForm module.
+ ******************************************************************************/
 function UserForm({ roles = [], departments = [], onCreated }) {
   const emptyForm = { name: "", email: "", password: "", roleId: "role_builder", departmentId: "" };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const { notify } = useNotifications();
   const assignableRoles = roles;
+/*******************************************************************************
+ * Function: change
+ *
+ * Performs the change operation on the application for the UserForm module.
+ ******************************************************************************/
   const change = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+/*******************************************************************************
+ * Function: submit
+ *
+ * Performs the submit operation on the application for the UserForm module.
+ ******************************************************************************/
   const submit = async (event) => {
     event.preventDefault();
     setSaving(true);

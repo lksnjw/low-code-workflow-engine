@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { dump as dumpYaml } from "js-yaml";
 import {
@@ -36,7 +37,9 @@ import {
 } from "lucide-react";
 import {
   takeWorkflowForCanvas,
+  workflowCreationPayload,
   workflowYamlToCanvas,
+  saveWorkflowForChatEdit,
 } from "../../utils/workflowCanvas.utils";
 import { catalogService } from "../../services/catalog.service";
 import { workflowService } from "../../services/workflow.service";
@@ -104,11 +107,19 @@ const toneClasses = {
   violet: "bg-violet-50 text-violet-700 border-violet-200",
 };
 
+/*******************************************************************************
+ * Function: getInitialCanvasState
+ *
+ * Gets initial canvas state for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function getInitialCanvasState() {
   const pendingWorkflow = takeWorkflowForCanvas();
-  if (pendingWorkflow?.canExecute && pendingWorkflow.yaml) {
+  if (pendingWorkflow?.yaml) {
     const canvas = workflowYamlToCanvas(pendingWorkflow.yaml, {
       candidateId: pendingWorkflow.candidateId,
+      chatSessionId: pendingWorkflow.chatSessionId,
+      chatMessageId: pendingWorkflow.chatMessageId,
+      traceId: pendingWorkflow.traceId,
     });
     if (canvas.nodes.length > 0) {
       return canvas;
@@ -127,6 +138,11 @@ function getInitialCanvasState() {
   };
 }
 
+/*******************************************************************************
+ * Function: WorkflowToolNode
+ *
+ * Performs the Workflow Tool Node operation on tool node for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function WorkflowToolNode({ data, selected }) {
   const Icon = iconMap[data.iconKey] ?? Database;
   const meta = statusMeta[data.status ?? "idle"] ?? statusMeta.idle;
@@ -184,9 +200,19 @@ function WorkflowToolNode({ data, selected }) {
   );
 }
 
+/*******************************************************************************
+ * Function: ToolCatalogItem
+ *
+ * Performs the Tool Catalog Item operation on catalog item for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function ToolCatalogItem({ tool }) {
   const Icon = iconMap[tool.iconKey] ?? Database;
 
+/*******************************************************************************
+ * Function: handleDragStart
+ *
+ * Handles drag start for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const handleDragStart = (event) => {
     event.dataTransfer.setData("application/agentic-tool", JSON.stringify(tool));
     event.dataTransfer.effectAllowed = "move";
@@ -215,6 +241,11 @@ function ToolCatalogItem({ tool }) {
   );
 }
 
+/*******************************************************************************
+ * Function: BuilderSidebar
+ *
+ * Performs the Builder Sidebar operation on sidebar for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function BuilderSidebar({ groups = [], loading, error }) {
   return (
     <aside className="flex h-screen w-[300px] shrink-0 flex-col border-r border-slate-200 bg-slate-50">
@@ -247,7 +278,151 @@ function BuilderSidebar({ groups = [], loading, error }) {
   );
 }
 
-function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly, statusCounts, workflow }) {
+function extractReadableData(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    if (Array.isArray(raw.structuredContent?.data)) return raw.structuredContent.data;
+    if (Array.isArray(raw.content) && raw.content[0]?.type === "text") {
+      try {
+        const parsed = JSON.parse(raw.content[0].text);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) return parsed.data;
+        return parsed;
+      } catch { return raw.content[0].text; }
+    }
+    if (Array.isArray(raw.data)) return raw.data;
+  }
+  if (Array.isArray(raw) && raw.length > 0 && raw[0]?.type === "text") {
+    try {
+      const parsed = JSON.parse(raw[0].text);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) return parsed.data;
+      return parsed;
+    } catch { return raw[0].text; }
+  }
+  return raw;
+}
+
+function SmartOutput({ value, maxHeight = "max-h-64" }) {
+  const data = extractReadableData(value);
+  if (Array.isArray(data) && data.length > 0 && data[0] !== null && typeof data[0] === "object") {
+    const keys = Object.keys(data[0]).filter((k) => data[0][k] !== null && data[0][k] !== undefined);
+    return (
+      <div className={`${maxHeight} overflow-y-auto space-y-2`}>
+        {data.map((item, i) => (
+          <div key={i} className="rounded-md border border-slate-200 bg-white p-2.5 text-xs">
+            {keys.map((k) => item[k] !== null && item[k] !== undefined ? (
+              <div key={k} className="flex gap-2 py-0.5">
+                <span className="w-28 shrink-0 font-semibold text-slate-400 capitalize">{k.replaceAll("_", " ")}</span>
+                <span className="text-slate-800 break-all">{String(item[k])}</span>
+              </div>
+            ) : null)}
+          </div>
+        ))}
+        <p className="text-[10px] text-slate-400 pt-1">{data.length} record{data.length !== 1 ? "s" : ""}</p>
+      </div>
+    );
+  }
+  if (typeof data === "string") return <p className="text-xs text-slate-700 whitespace-pre-wrap">{data}</p>;
+  return (
+    <pre className={`${maxHeight} overflow-auto rounded-lg bg-slate-900 p-3 text-[10px] leading-4 text-green-300`}>
+      {JSON.stringify(data, null, 2)}
+    </pre>
+  );
+}
+
+/*******************************************************************************
+ * Function: ExecutionResultPanel
+ *
+ * Performs the Execution Result Panel operation on result panel for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
+function ExecutionResultPanel({ result, onClose }) {
+  if (!result) return null;
+  const { execution, timeline } = result;
+  const succeeded = execution?.status === "DONE";
+
+  return (
+    <aside className="flex h-screen w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div className="flex items-center gap-2">
+          {succeeded ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          ) : (
+            <AlertCircle className="h-5 w-5 text-red-500" />
+          )}
+          <h3 className="text-sm font-black text-slate-900">Execution Result</h3>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          title="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="space-y-4 p-4">
+        <div className={`rounded-lg border p-3 text-xs ${succeeded ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+          <p className={`font-bold uppercase tracking-wide ${succeeded ? "text-emerald-700" : "text-red-700"}`}>
+            {execution?.status ?? "—"}
+          </p>
+          <p className="mt-1 font-mono text-[10px] text-slate-500">{execution?.id}</p>
+          {(execution?.durationMs ?? 0) > 0 && (
+            <p className="mt-1 text-slate-600">{execution.durationMs} ms</p>
+          )}
+        </div>
+
+        {Array.isArray(timeline) && timeline.length > 0 && (
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Steps</p>
+            <div className="space-y-2">
+              {timeline.map((step, i) => (
+                <div key={step.nodeId ?? i} className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs font-semibold text-slate-800">{step.label ?? step.nodeId}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${step.status === "DONE" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                      {step.status}
+                    </span>
+                  </div>
+                  {step.output && (
+                    <div className="mt-1.5">
+                      <SmartOutput value={step.output} maxHeight="max-h-24" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {execution?.finalOutput && (
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Final Output</p>
+            <SmartOutput value={execution.finalOutput} maxHeight="max-h-72" />
+          </div>
+        )}
+
+        {execution?.stepOutputs && Object.keys(execution.stepOutputs).length > 0 && !execution?.finalOutput && (
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Step Outputs</p>
+            {Object.entries(execution.stepOutputs).map(([stepId, val]) => (
+              <div key={stepId} className="mb-3">
+                <p className="mb-1 font-mono text-[10px] text-slate-400">{stepId}</p>
+                <SmartOutput value={val} maxHeight="max-h-56" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/*******************************************************************************
+ * Function: BuilderHeader
+ *
+ * Performs the Builder Header operation on header for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
+function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly, statusCounts, workflow, onEditInChat }) {
   const stateCopy = {
     idle: "Ready",
     running: "Running workflow",
@@ -273,17 +448,35 @@ function BuilderHeader({ executionState, isExecuting, onRun, onDeploy, readOnly,
           </div>
         </div>
       </div>
-      <BuilderModeControls
-        readOnly={readOnly}
-        isExecuting={isExecuting}
-        onDeploy={onDeploy}
-        onRun={onRun}
-      />
+      <div className="flex items-center gap-2">
+        {readOnly && onEditInChat && (
+          <button
+            type="button"
+            onClick={onEditInChat}
+            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-none stroke-current stroke-2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+            Edit in Chat
+          </button>
+        )}
+        <BuilderModeControls
+          readOnly={readOnly}
+          isExecuting={isExecuting}
+          onDeploy={onDeploy}
+          onRun={onRun}
+        />
+      </div>
     </header>
   );
 }
 
+/*******************************************************************************
+ * Function: WorkflowBuilderSurface
+ *
+ * Performs the Workflow Builder Surface operation on builder surface for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedded = false }) {
+  const navigate = useNavigate();
   const reactFlowWrapper = useRef(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [initialCanvasState] = useState(() => initialState ?? getInitialCanvasState());
@@ -294,14 +487,31 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
   const [executionState, setExecutionState] = useState("idle");
   const [isExecuting, setIsExecuting] = useState(false);
   const [runError, setRunError] = useState(null);
+  const [executionResult, setExecutionResult] = useState(null);
+  const [showResultPanel, setShowResultPanel] = useState(false);
   const { notify } = useNotifications();
+/*******************************************************************************
+ * Function: catalogQuery
+ *
+ * Performs the catalog Query operation on query for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const catalogQuery = useQuery({
     queryKey: ["tool-catalog-groups"],
     queryFn: () => catalogService.toolGroups(),
-    enabled: !readOnly,
+    enabled: !readOnly && !embedded,
   });
+/*******************************************************************************
+ * Function: nodeTypes
+ *
+ * Performs the node Types operation on types for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const nodeTypes = useMemo(() => ({ erpTool: WorkflowToolNode }), []);
 
+/*******************************************************************************
+ * Function: statusCounts
+ *
+ * Performs the status Counts operation on counts for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const statusCounts = useMemo(
     () =>
       nodes.reduce(
@@ -315,14 +525,29 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     [nodes],
   );
 
+/*******************************************************************************
+ * Function: onNodesChange
+ *
+ * Performs the on Nodes Change operation on nodes change for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const onNodesChange = useCallback((changes) => {
     setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
   }, []);
 
+/*******************************************************************************
+ * Function: onEdgesChange
+ *
+ * Performs the on Edges Change operation on edges change for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const onEdgesChange = useCallback((changes) => {
     setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
   }, []);
 
+/*******************************************************************************
+ * Function: onConnect
+ *
+ * Performs the on Connect operation on connect for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const onConnect = useCallback((connection) => {
     setEdges((currentEdges) =>
       addEdge(
@@ -337,11 +562,21 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     );
   }, []);
 
+/*******************************************************************************
+ * Function: handleDragOver
+ *
+ * Handles drag over for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const handleDragOver = useCallback((event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
   }, []);
 
+/*******************************************************************************
+ * Function: handleDrop
+ *
+ * Handles drop for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const handleDrop = useCallback(
     (event) => {
       event.preventDefault();
@@ -370,10 +605,30 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     [screenToFlowPosition],
   );
 
+/*******************************************************************************
+ * Function: workflowYAML
+ *
+ * Performs the workflow YAML operation on yaml for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const workflowYAML = useCallback(() => {
+/*******************************************************************************
+ * Function: nodeById
+ *
+ * Performs the node By Id operation on by id for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
+/*******************************************************************************
+ * Function: incoming
+ *
+ * Performs the incoming operation on the application for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
     const incoming = new Map(nodes.map((node) => [node.id, 0]));
     edges.forEach((edge) => incoming.has(edge.target) && incoming.set(edge.target, incoming.get(edge.target) + 1));
+/*******************************************************************************
+ * Function: queue
+ *
+ * Performs the queue operation on the application for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
     const queue = nodes.filter((node) => incoming.get(node.id) === 0);
     const ordered = [];
     while (queue.length) {
@@ -394,6 +649,11 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     }, { noRefs: true, lineWidth: 100 });
   }, [edges, nodes, workflow.description, workflow.name]);
 
+/*******************************************************************************
+ * Function: deployWorkflow
+ *
+ * Performs the deploy Workflow operation on workflow for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const deployWorkflow = useCallback(async () => {
     if (nodes.length === 0) throw new Error("Add at least one registered tool before deploying.");
     const yaml = workflowYAML();
@@ -401,7 +661,9 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     if (workflow.id) {
       await workflowService.saveYAML(workflow.id, yaml);
     } else {
-      saved = await workflowService.create({ name: workflow.name, description: workflow.description, yaml });
+      saved = await workflowService.create(
+        workflowCreationPayload(workflow, yaml),
+      );
     }
     await workflowService.publish(saved.id, "Published from visual builder");
     saved = { ...saved, id: saved.id, yaml };
@@ -411,6 +673,11 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     return saved;
   }, [fitView, nodes.length, notify, workflow, workflowYAML]);
 
+/*******************************************************************************
+ * Function: executeWorkflow
+ *
+ * Executes workflow for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const executeWorkflow = useCallback(async () => {
     if (isExecuting || nodes.length === 0) return;
     setIsExecuting(true);
@@ -427,6 +694,11 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
       const saved = workflow.id ? workflow : await deployWorkflow();
       const execution = await workflowService.run(saved.id, {});
       const timeline = await executionService.getTimeline(execution.id);
+/*******************************************************************************
+ * Function: statusByNode
+ *
+ * Performs the status By Node operation on by node for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
       const statusByNode = new Map(timeline.map((step) => [step.nodeId, step.status]));
       setNodes((currentNodes) =>
         currentNodes.map((node) => ({
@@ -436,6 +708,8 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
       );
       const succeeded = execution.status === "DONE";
       setExecutionState(succeeded ? "success" : "error");
+      setExecutionResult({ execution, timeline });
+      setShowResultPanel(true);
       notify(`Execution ${execution.id} finished with status ${execution.status}.`, succeeded ? "success" : "warning");
     } catch (error) {
       setExecutionState("error");
@@ -447,6 +721,11 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     }
   }, [deployWorkflow, isExecuting, nodes.length, notify, workflow]);
 
+/*******************************************************************************
+ * Function: handleDeploy
+ *
+ * Handles deploy for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const handleDeploy = useCallback(async () => {
     setIsExecuting(true);
     try { await deployWorkflow(); }
@@ -454,9 +733,18 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     finally { setIsExecuting(false); }
   }, [deployWorkflow, notify]);
 
+  const handleEditInChat = useCallback(() => {
+    let yaml = workflow.yaml || "";
+    if (!yaml && nodes.length > 0) {
+      try { yaml = workflowYAML(); } catch { /* cycle or empty */ }
+    }
+    saveWorkflowForChatEdit({ yaml, workflowId: workflow.id ?? null, workflowName: workflow.name });
+    navigate("/chat?new=1");
+  }, [workflow, nodes, workflowYAML, navigate]);
+
   return (
-    <div className={`${embedded ? "relative h-[620px] rounded-2xl border border-slate-200" : "fixed inset-y-0 right-0 left-0 z-50 md:left-16"} flex overflow-hidden bg-slate-100 text-slate-950`}>
-      {!readOnly ? <BuilderSidebar groups={catalogQuery.data || []} loading={catalogQuery.isLoading} error={catalogQuery.error} /> : null}
+    <div className={`${embedded ? "relative h-full" : "fixed inset-y-0 right-0 left-0 z-50 md:left-16"} flex overflow-hidden bg-slate-100 text-slate-950`}>
+      {!readOnly && !embedded ? <BuilderSidebar groups={catalogQuery.data || []} loading={catalogQuery.isLoading} error={catalogQuery.error} /> : null}
       <section className="flex min-w-0 flex-1 flex-col">
         <BuilderHeader
           executionState={executionState}
@@ -466,12 +754,13 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
           readOnly={readOnly}
           statusCounts={statusCounts}
           workflow={workflow}
+          onEditInChat={nodes.length > 0 ? handleEditInChat : undefined}
         />
         {runError ? <div className="shrink-0 bg-white px-6 py-2"><GateRejectionAlert details={runError} /></div> : null}
         <div className="min-h-0 flex-1 bg-slate-100 p-4">
           <div
             ref={reactFlowWrapper}
-            className={`h-full ${embedded ? "min-h-0" : "min-h-[640px]"} overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.10)]`}
+            className="h-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.10)]"
           >
             <ReactFlow
               nodes={nodes}
@@ -509,13 +798,24 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
           </div>
         </div>
       </section>
+      {showResultPanel && executionResult ? (
+        <ExecutionResultPanel
+          result={executionResult}
+          onClose={() => setShowResultPanel(false)}
+        />
+      ) : null}
     </div>
   );
 }
 
+/*******************************************************************************
+ * Function: BuilderLoadState
+ *
+ * Performs the Builder Load State operation on load state for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function BuilderLoadState({ embedded, error }) {
   return (
-    <div className={`${embedded ? "relative h-[620px] rounded-2xl border border-slate-200" : "fixed inset-y-0 right-0 left-0 z-50 md:left-16"} grid place-items-center bg-slate-100 p-6 text-center`}>
+    <div className={`${embedded ? "relative h-full" : "fixed inset-y-0 right-0 left-0 z-50 md:left-16"} grid place-items-center bg-slate-100 p-6 text-center`}>
       <p className={`text-sm font-semibold ${error ? "text-red-600" : "text-slate-500"}`}>
         {error ? apiErrorMessage(error, "Workflow preview unavailable.") : "Loading workflow preview..."}
       </p>
@@ -523,7 +823,17 @@ function BuilderLoadState({ embedded, error }) {
   );
 }
 
+/*******************************************************************************
+ * Function: WorkflowBuilderCanvas
+ *
+ * Performs the Workflow Builder Canvas operation on builder canvas for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function WorkflowBuilderCanvas({ readOnly = false, workflowId = null, embedded = false }) {
+/*******************************************************************************
+ * Function: workflowQuery
+ *
+ * Performs the workflow Query operation on query for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
   const workflowQuery = useQuery({
     queryKey: ["builder-workflow", workflowId],
     queryFn: async () => {

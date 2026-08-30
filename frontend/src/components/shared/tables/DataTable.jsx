@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: DataTable
+ *
+ * Performs the Data Table operation on table for the DataTable module.
+ ******************************************************************************/
 function DataTable({ columns, rows, renderCell }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800">

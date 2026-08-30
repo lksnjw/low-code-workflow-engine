@@ -1,6 +1,11 @@
 import Card from "../shared/ui/Card";
 import Button from "../shared/ui/Button";
 
+/*******************************************************************************
+ * Function: TemplateCard
+ *
+ * Performs the Template Card operation on card for the TemplateCard module.
+ ******************************************************************************/
 function TemplateCard({ title, description, steps, onUse, busy }) {
   return (
     <Card>

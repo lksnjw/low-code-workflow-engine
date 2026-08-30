@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * Function: Alert
+ *
+ * Performs the Alert operation on the application for the Alert module.
+ ******************************************************************************/
 function Alert({ children, tone = "info" }) {
   const toneClass =
     tone === "danger"

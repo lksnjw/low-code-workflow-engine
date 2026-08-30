@@ -13,6 +13,11 @@ import { useUsers } from "../../hooks/useUsers";
 import { apiErrorMessage } from "../../services/api";
 import { userService } from "../../services/user.service";
 
+/*******************************************************************************
+ * Function: UserListPage
+ *
+ * Performs the User List Page operation on list page for the UserListPage module.
+ ******************************************************************************/
 function UserListPage({ view = "directory" }) {
   const { user, refreshUser } = useAuthContext();
   const { notify } = useNotifications();
@@ -21,14 +26,29 @@ function UserListPage({ view = "directory" }) {
   const [busyUserId, setBusyUserId] = useState("");
   const [savingRole, setSavingRole] = useState(false);
   const canManage = has("user:manage");
+/*******************************************************************************
+ * Function: callerPermissions
+ *
+ * Performs the caller Permissions operation on permissions for the UserListPage module.
+ ******************************************************************************/
   const callerPermissions = useMemo(
     () => Array.isArray(user?.permissions) ? user.permissions : [],
     [user]
   );
+/*******************************************************************************
+ * Function: grantablePermissions
+ *
+ * Performs the grantable Permissions operation on permissions for the UserListPage module.
+ ******************************************************************************/
   const grantablePermissions = useMemo(
     () => restrictPermissionsToCaller(data?.permissions || [], callerPermissions),
     [data?.permissions, callerPermissions]
   );
+/*******************************************************************************
+ * Function: assignableRoles
+ *
+ * Performs the assignable Roles operation on roles for the UserListPage module.
+ ******************************************************************************/
   const assignableRoles = useMemo(
     () => {
       const held = new Set(callerPermissions);
@@ -41,6 +61,11 @@ function UserListPage({ view = "directory" }) {
     },
     [data?.roles, callerPermissions, roleId]
   );
+/*******************************************************************************
+ * Function: editableRoles
+ *
+ * Performs the editable Roles operation on roles for the UserListPage module.
+ ******************************************************************************/
   const editableRoles = useMemo(
     () => roleId === "role_system_admin"
       ? (data?.roles || []).filter((role) => role.id !== "role_admin" && role.id !== "role_system_admin")
@@ -48,6 +73,11 @@ function UserListPage({ view = "directory" }) {
     [data?.roles, roleId]
   );
 
+/*******************************************************************************
+ * Function: updateUser
+ *
+ * Updates user for the UserListPage module.
+ ******************************************************************************/
   const updateUser = async (userId, operation, successMessage) => {
     setBusyUserId(userId);
     try {
@@ -61,6 +91,11 @@ function UserListPage({ view = "directory" }) {
     }
   };
 
+/*******************************************************************************
+ * Function: saveRole
+ *
+ * Saves role for the UserListPage module.
+ ******************************************************************************/
   const saveRole = async (selectedRoleId, permissions) => {
     setSavingRole(true);
     try {
@@ -75,12 +110,22 @@ function UserListPage({ view = "directory" }) {
     }
   };
 
+/*******************************************************************************
+ * Function: createRole
+ *
+ * Creates role for the UserListPage module.
+ ******************************************************************************/
   const createRole = async (payload) => {
     await userService.createRole(payload);
     notify("Role created.", "success");
     await reload();
   };
 
+/*******************************************************************************
+ * Function: deleteRole
+ *
+ * Deletes role for the UserListPage module.
+ ******************************************************************************/
   const deleteRole = async (selectedRoleId) => {
     await userService.deleteRole(selectedRoleId);
     notify("Role deleted.", "success");

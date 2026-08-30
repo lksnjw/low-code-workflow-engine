@@ -10,6 +10,11 @@ import usePermissions from "../../hooks/usePermissions";
 import WorkflowActionControls from "./WorkflowActionControls";
 import GateRejectionAlert from "./GateRejectionAlert";
 
+/*******************************************************************************
+ * Function: WorkflowActions
+ *
+ * Performs the Workflow Actions operation on actions for the WorkflowActions module.
+ ******************************************************************************/
 function WorkflowActions({ workflow, onChanged }) {
   const { notify } = useNotifications();
   const { has, hasAny } = usePermissions();
@@ -19,12 +24,22 @@ function WorkflowActions({ workflow, onChanged }) {
   const [inputError, setInputError] = useState("");
   const [runError, setRunError] = useState(null);
 
+/*******************************************************************************
+ * Function: openRunDialog
+ *
+ * Performs the open Run Dialog operation on run dialog for the WorkflowActions module.
+ ******************************************************************************/
   const openRunDialog = () => {
     setInputError("");
     setRunError(null);
     setRunDialogOpen(true);
   };
 
+/*******************************************************************************
+ * Function: run
+ *
+ * Runs the application for the WorkflowActions module.
+ ******************************************************************************/
   const run = async (event) => {
     event?.preventDefault();
     let input;
@@ -56,6 +71,11 @@ function WorkflowActions({ workflow, onChanged }) {
     }
   };
 
+/*******************************************************************************
+ * Function: exportYAML
+ *
+ * Exports yaml for the WorkflowActions module.
+ ******************************************************************************/
   const exportYAML = async () => {
     try {
       const record = await workflowService.getYAML(workflow.id);

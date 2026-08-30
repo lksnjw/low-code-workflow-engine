@@ -2,7 +2,7 @@
 registry_hash: sha256:b97e02928fdfe1c4403488a48cc86a2557cd77e461aa02bbfe017318218152ca
 tool_registry_sha256: b52580de94d9d3e73414398c313847942925c5ff2613e470d2cca27d14ee83cc
 rule_registry_sha256: 00850f19cfd8b29cb9dbe4aa820c474eae9a2bbc7f6fd710ba4b686c65c83a26
-generated_at: "2026-08-03T03:00:17Z"
+generated_at: "2026-08-21T03:39:40Z"
 tool_count: 22
 rule_count: 12
 generator_version: 1

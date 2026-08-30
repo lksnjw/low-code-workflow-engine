@@ -1,6 +1,11 @@
 import Card from "../../components/shared/ui/Card";
 import { useAuthContext } from "../../context/AuthContext";
 
+/*******************************************************************************
+ * Function: SecurityPage
+ *
+ * Performs the Security Page operation on page for the SecurityPage module.
+ ******************************************************************************/
 function SecurityPage() {
   const { user } = useAuthContext();
   const facts = [

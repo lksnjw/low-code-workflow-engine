@@ -1,6 +1,11 @@
 import { Icon } from "@iconify/react";
 import Card from "../shared/ui/Card";
 
+/*******************************************************************************
+ * Function: Content
+ *
+ * Performs the Content operation on the application for the HealingReport module.
+ ******************************************************************************/
 function Content({ report }) {
   if (!report || report.status === "NO_HEALING_REQUIRED") return <p className="text-sm text-gray-500">No self-healing action was required.</p>;
   return (
@@ -11,6 +16,11 @@ function Content({ report }) {
   );
 }
 
+/*******************************************************************************
+ * Function: HealingReport
+ *
+ * Performs the Healing Report operation on report for the HealingReport module.
+ ******************************************************************************/
 function HealingReport({ report, embedded = false }) {
   return embedded ? <Content report={report} /> : <Card><Content report={report} /></Card>;
 }

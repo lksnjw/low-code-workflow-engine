@@ -2,6 +2,11 @@ import { NAVIGATION_GROUPS, filterNavigationGroups } from "../../constants/navig
 import { useRoute } from "../../context/RouteContext";
 import usePermissions from "../../hooks/usePermissions";
 
+/*******************************************************************************
+ * Function: MobileNav
+ *
+ * Performs the Mobile Nav operation on nav for the MobileNav module.
+ ******************************************************************************/
 function MobileNav() {
   const { activeMain, navigateTo } = useRoute();
   const { hasAny, roleId } = usePermissions();

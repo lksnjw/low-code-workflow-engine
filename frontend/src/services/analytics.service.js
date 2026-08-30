@@ -2,6 +2,11 @@ import { apiClient } from "../config/axios";
 import { unwrap } from "./api";
 
 export const analyticsService = {
+/*******************************************************************************
+ * Function: load
+ *
+ * Loads the application for the analytics service module.
+ ******************************************************************************/
   async load() {
     const [summary, performance, usage, healing, latency, f1, heatmap, costs] =
       await Promise.all([

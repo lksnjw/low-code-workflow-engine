@@ -1,0 +1,6284 @@
+[
+    {
+        "tool_id":  "",
+        "name":  "approve_approval_request_api_resource_approval_request_name_approve_post",
+        "display_name":  "Approve Approval Request",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Approve Approval Request",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "approve_approval_request_api_resource_approval_request_name_approve_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "body":  {
+                                                             "type":  "string"
+                                                         },
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "approve_employee_advance_route_api_resource_employee_advance_name_approve_post",
+        "display_name":  "Approve Employee Advance Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Approve Employee Advance Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "approve_employee_advance_route_api_resource_employee_advance_name_approve_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "approve_expense_claim_route_api_resource_expense_claim_name_approve_post",
+        "display_name":  "Approve Expense Claim Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Approve Expense Claim Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "approve_expense_claim_route_api_resource_expense_claim_name_approve_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "approve_leave_route_api_resource_leave_application_name_approve_post",
+        "display_name":  "Approve Leave Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Approve Leave Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "approve_leave_route_api_resource_leave_application_name_approve_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "approve_purchase_order_route_api_resource_purchase_order_name_approve_post",
+        "display_name":  "Approve Purchase Order Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Approve Purchase Order Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "approve_purchase_order_route_api_resource_purchase_order_name_approve_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "cancel_journal_entry_route_api_resource_journal_entry_name_cancel_post",
+        "display_name":  "Cancel Journal Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Cancel Journal Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "cancel_journal_entry_route_api_resource_journal_entry_name_cancel_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "high",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "cancel_leave_route_api_resource_leave_application_name_cancel_post",
+        "display_name":  "Cancel Leave Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Cancel Leave Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "cancel_leave_route_api_resource_leave_application_name_cancel_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "high",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "cancel_payment_entry_route_api_resource_payment_entry_name_cancel_post",
+        "display_name":  "Cancel Payment Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Cancel Payment Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "cancel_payment_entry_route_api_resource_payment_entry_name_cancel_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "high",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "cancel_stock_entry_route_api_resource_stock_entry_name_cancel_post",
+        "display_name":  "Cancel Stock Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Cancel Stock Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "cancel_stock_entry_route_api_resource_stock_entry_name_cancel_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "high",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "capitalize_asset_route_api_resource_asset_name_capitalize_post",
+        "display_name":  "Capitalize Asset Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Capitalize Asset Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "capitalize_asset_route_api_resource_asset_name_capitalize_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_approval_request_route_api_resource_approval_request_post",
+        "display_name":  "Create Approval Request Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Approval Request Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_approval_request_route_api_resource_approval_request_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_asset_route_api_resource_asset_post",
+        "display_name":  "Create Asset Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Asset Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_asset_route_api_resource_asset_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_attendance_route_api_resource_attendance_post",
+        "display_name":  "Create Attendance Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Attendance Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_attendance_route_api_resource_attendance_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_delivery_note_route_api_resource_delivery_note_post",
+        "display_name":  "Create Delivery Note Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Delivery Note Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_delivery_note_route_api_resource_delivery_note_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_employee_advance_route_api_resource_employee_advance_post",
+        "display_name":  "Create Employee Advance Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Employee Advance Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_employee_advance_route_api_resource_employee_advance_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_expense_claim_route_api_resource_expense_claim_post",
+        "display_name":  "Create Expense Claim Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Expense Claim Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_expense_claim_route_api_resource_expense_claim_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_journal_entry_route_api_resource_journal_entry_post",
+        "display_name":  "Create Journal Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Journal Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_journal_entry_route_api_resource_journal_entry_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_leave_application_route_api_resource_leave_application_post",
+        "display_name":  "Create Leave Application Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Leave Application Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_leave_application_route_api_resource_leave_application_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_material_request_route_api_resource_material_request_post",
+        "display_name":  "Create Material Request Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Material Request Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_material_request_route_api_resource_material_request_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_payment_entry_route_api_resource_payment_entry_post",
+        "display_name":  "Create Payment Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Payment Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_payment_entry_route_api_resource_payment_entry_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_production_order_route_api_resource_production_order_post",
+        "display_name":  "Create Production Order Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Production Order Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_production_order_route_api_resource_production_order_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_purchase_invoice_api_resource_purchase_invoice_post",
+        "display_name":  "Create Purchase Invoice",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Purchase Invoice",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_purchase_invoice_api_resource_purchase_invoice_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_purchase_order_route_api_resource_purchase_order_post",
+        "display_name":  "Create Purchase Order Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Purchase Order Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_purchase_order_route_api_resource_purchase_order_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_purchase_receipt_route_api_resource_purchase_receipt_post",
+        "display_name":  "Create Purchase Receipt Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Purchase Receipt Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_purchase_receipt_route_api_resource_purchase_receipt_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_salary_slip_route_api_resource_salary_slip_post",
+        "display_name":  "Create Salary Slip Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Salary Slip Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_salary_slip_route_api_resource_salary_slip_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_sales_invoice_route_api_resource_sales_invoice_post",
+        "display_name":  "Create Sales Invoice Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Sales Invoice Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_sales_invoice_route_api_resource_sales_invoice_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_sales_order_route_api_resource_sales_order_post",
+        "display_name":  "Create Sales Order Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Sales Order Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_sales_order_route_api_resource_sales_order_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "create_stock_entry_route_api_resource_stock_entry_post",
+        "display_name":  "Create Stock Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Create Stock Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "create_stock_entry_route_api_resource_stock_entry_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "dispose_asset_route_api_resource_asset_name_dispose_post",
+        "display_name":  "Dispose Asset Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Dispose Asset Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "dispose_asset_route_api_resource_asset_name_dispose_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "echo_payload_api_integration_echo_post",
+        "display_name":  "Echo Payload",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Echo Payload",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "echo_payload_api_integration_echo_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_approval_request_api_resource_approval_request_name_get",
+        "display_name":  "Get Approval Request",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Approval Request",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_approval_request_api_resource_approval_request_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_company_api_resource_company_name_get",
+        "display_name":  "Get Company",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Company",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_company_api_resource_company_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_employee_api_resource_employee_name_get",
+        "display_name":  "Get Employee",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Employee",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_employee_api_resource_employee_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_item_api_resource_item_name_get",
+        "display_name":  "Get Item",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Item",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_item_api_resource_item_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_journal_entry_api_resource_journal_entry_name_get",
+        "display_name":  "Get Journal Entry",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Journal Entry",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_journal_entry_api_resource_journal_entry_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_last_echo_api_integration_echo_last_get",
+        "display_name":  "Get Last Echo",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Last Echo",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_last_echo_api_integration_echo_last_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_leave_application_api_resource_leave_application_name_get",
+        "display_name":  "Get Leave Application",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Leave Application",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_leave_application_api_resource_leave_application_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_payment_entry_api_resource_payment_entry_name_get",
+        "display_name":  "Get Payment Entry",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Payment Entry",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_payment_entry_api_resource_payment_entry_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_plugin_fixture_api_resource_plugin_fixture_get",
+        "display_name":  "Get Plugin Fixture",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Plugin Fixture",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_plugin_fixture_api_resource_plugin_fixture_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_purchase_invoice_api_resource_purchase_invoice_name_get",
+        "display_name":  "Get Purchase Invoice",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Purchase Invoice",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_purchase_invoice_api_resource_purchase_invoice_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "get_salary_slip_api_resource_salary_slip_name_get",
+        "display_name":  "Get Salary Slip",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Get Salary Slip",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "get_salary_slip_api_resource_salary_slip_name_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "health_health_get",
+        "display_name":  "Health",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Health",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "health_health_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_accounts_api_resource_account_get",
+        "display_name":  "List Accounts",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Accounts",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_accounts_api_resource_account_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_approval_requests_api_resource_approval_request_get",
+        "display_name":  "List Approval Requests",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Approval Requests",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_approval_requests_api_resource_approval_request_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_approval_rules_api_resource_approval_rule_get",
+        "display_name":  "List Approval Rules",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Approval Rules",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_approval_rules_api_resource_approval_rule_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_asset_categories_api_resource_asset_category_get",
+        "display_name":  "List Asset Categories",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Asset Categories",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_asset_categories_api_resource_asset_category_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_assets_api_resource_asset_get",
+        "display_name":  "List Assets",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Assets",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_assets_api_resource_asset_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_attendance_api_resource_attendance_get",
+        "display_name":  "List Attendance",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Attendance",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_attendance_api_resource_attendance_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_audit_events_api_resource_audit_event_get",
+        "display_name":  "List Audit Events",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Audit Events",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_audit_events_api_resource_audit_event_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_bins_api_resource_bin_get",
+        "display_name":  "List Bins",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Bins",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_bins_api_resource_bin_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_boms_api_resource_bom_get",
+        "display_name":  "List Boms",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Boms",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_boms_api_resource_bom_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_branches_api_resource_branch_get",
+        "display_name":  "List Branches",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Branches",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_branches_api_resource_branch_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_companies_api_resource_company_get",
+        "display_name":  "List Companies",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Companies",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_companies_api_resource_company_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_customers_api_resource_customer_get",
+        "display_name":  "List Customers",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Customers",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_customers_api_resource_customer_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_delivery_notes_api_resource_delivery_note_get",
+        "display_name":  "List Delivery Notes",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Delivery Notes",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_delivery_notes_api_resource_delivery_note_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_designations_api_resource_designation_get",
+        "display_name":  "List Designations",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Designations",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_designations_api_resource_designation_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_employee_advances_api_resource_employee_advance_get",
+        "display_name":  "List Employee Advances",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Employee Advances",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_employee_advances_api_resource_employee_advance_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_employees_api_resource_employee_get",
+        "display_name":  "List Employees",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Employees",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_employees_api_resource_employee_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_employment_types_api_resource_employment_type_get",
+        "display_name":  "List Employment Types",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Employment Types",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_employment_types_api_resource_employment_type_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_expense_claims_api_resource_expense_claim_get",
+        "display_name":  "List Expense Claims",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Expense Claims",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_expense_claims_api_resource_expense_claim_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_item_groups_api_resource_item_group_get",
+        "display_name":  "List Item Groups",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Item Groups",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_item_groups_api_resource_item_group_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_items_api_resource_item_get",
+        "display_name":  "List Items",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Items",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_items_api_resource_item_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_journal_entries_api_resource_journal_entry_get",
+        "display_name":  "List Journal Entries",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Journal Entries",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_journal_entries_api_resource_journal_entry_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_leave_allocations_api_resource_leave_allocation_get",
+        "display_name":  "List Leave Allocations",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Leave Allocations",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_leave_allocations_api_resource_leave_allocation_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_leave_applications_api_resource_leave_application_get",
+        "display_name":  "List Leave Applications",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Leave Applications",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_leave_applications_api_resource_leave_application_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_leave_types_api_resource_leave_type_get",
+        "display_name":  "List Leave Types",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Leave Types",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_leave_types_api_resource_leave_type_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_material_requests_api_resource_material_request_get",
+        "display_name":  "List Material Requests",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Material Requests",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_material_requests_api_resource_material_request_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_organization_departments_api_resource_department_get",
+        "display_name":  "List Organization Departments",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Organization Departments",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_organization_departments_api_resource_department_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_payment_entries_api_resource_payment_entry_get",
+        "display_name":  "List Payment Entries",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Payment Entries",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_payment_entries_api_resource_payment_entry_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_production_orders_api_resource_production_order_get",
+        "display_name":  "List Production Orders",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Production Orders",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_production_orders_api_resource_production_order_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_purchase_invoices_api_resource_purchase_invoice_get",
+        "display_name":  "List Purchase Invoices",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Purchase Invoices",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_purchase_invoices_api_resource_purchase_invoice_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_purchase_orders_api_resource_purchase_order_get",
+        "display_name":  "List Purchase Orders",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Purchase Orders",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_purchase_orders_api_resource_purchase_order_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_purchase_receipts_api_resource_purchase_receipt_get",
+        "display_name":  "List Purchase Receipts",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Purchase Receipts",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_purchase_receipts_api_resource_purchase_receipt_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_roles_api_resource_role_get",
+        "display_name":  "List Roles",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Roles",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_roles_api_resource_role_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_salary_slips_api_resource_salary_slip_get",
+        "display_name":  "List Salary Slips",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Salary Slips",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_salary_slips_api_resource_salary_slip_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_sales_invoices_api_resource_sales_invoice_get",
+        "display_name":  "List Sales Invoices",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Sales Invoices",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_sales_invoices_api_resource_sales_invoice_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_sales_orders_api_resource_sales_order_get",
+        "display_name":  "List Sales Orders",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Sales Orders",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_sales_orders_api_resource_sales_order_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_stock_entries_api_resource_stock_entry_get",
+        "display_name":  "List Stock Entries",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Stock Entries",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_stock_entries_api_resource_stock_entry_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_suppliers_api_resource_supplier_get",
+        "display_name":  "List Suppliers",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Suppliers",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_suppliers_api_resource_supplier_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_uoms_api_resource_uom_get",
+        "display_name":  "List Uoms",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Uoms",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_uoms_api_resource_uom_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_users_api_resource_user_get",
+        "display_name":  "List Users",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Users",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_users_api_resource_user_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "list_warehouses_api_resource_warehouse_get",
+        "display_name":  "List Warehouses",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "List Warehouses",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "list_warehouses_api_resource_warehouse_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  true,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "reimburse_expense_claim_route_api_resource_expense_claim_name_reimburse_post",
+        "display_name":  "Reimburse Expense Claim Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Reimburse Expense Claim Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "reimburse_expense_claim_route_api_resource_expense_claim_name_reimburse_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "reject_approval_request_api_resource_approval_request_name_reject_post",
+        "display_name":  "Reject Approval Request",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Reject Approval Request",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "reject_approval_request_api_resource_approval_request_name_reject_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "body":  {
+                                                             "type":  "string"
+                                                         },
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "high",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "reject_leave_route_api_resource_leave_application_name_reject_post",
+        "display_name":  "Reject Leave Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Reject Leave Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "reject_leave_route_api_resource_leave_application_name_reject_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "high",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_ar_ap_api_report_ar_ap_get",
+        "display_name":  "Report Ar Ap",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Ar Ap",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_ar_ap_api_report_ar_ap_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_assets_api_report_assets_get",
+        "display_name":  "Report Assets",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Assets",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_assets_api_report_assets_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_attendance_leave_api_report_attendance_leave_get",
+        "display_name":  "Report Attendance Leave",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Attendance Leave",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_attendance_leave_api_report_attendance_leave_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_audit_api_report_audit_get",
+        "display_name":  "Report Audit",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Audit",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_audit_api_report_audit_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "action":  {
+                                                               "type":  "string"
+                                                           },
+                                                "limit":  {
+                                                              "default":  50,
+                                                              "type":  "integer"
+                                                          },
+                                                "offset":  {
+                                                               "default":  0,
+                                                               "type":  "integer"
+                                                           },
+                                                "resource_type":  {
+                                                                      "type":  "string"
+                                                                  }
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_production_consumption_api_report_production_consumption_get",
+        "display_name":  "Report Production Consumption",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Production Consumption",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_production_consumption_api_report_production_consumption_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_purchasing_status_api_report_purchasing_status_get",
+        "display_name":  "Report Purchasing Status",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Purchasing Status",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_purchasing_status_api_report_purchasing_status_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_sales_fulfillment_api_report_sales_fulfillment_get",
+        "display_name":  "Report Sales Fulfillment",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Sales Fulfillment",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_sales_fulfillment_api_report_sales_fulfillment_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_stock_api_report_stock_get",
+        "display_name":  "Report Stock",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Stock",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_stock_api_report_stock_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "report_trial_balance_api_report_trial_balance_get",
+        "display_name":  "Report Trial Balance",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Report Trial Balance",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "report_trial_balance_api_report_trial_balance_get",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+
+                                            },
+                             "required":  [
+
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "low",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "settle_employee_advance_route_api_resource_employee_advance_name_settle_post",
+        "display_name":  "Settle Employee Advance Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Settle Employee Advance Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "settle_employee_advance_route_api_resource_employee_advance_name_settle_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_delivery_note_route_api_resource_delivery_note_name_submit_post",
+        "display_name":  "Submit Delivery Note Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Delivery Note Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_delivery_note_route_api_resource_delivery_note_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_journal_entry_route_api_resource_journal_entry_name_submit_post",
+        "display_name":  "Submit Journal Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Journal Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_journal_entry_route_api_resource_journal_entry_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_payment_entry_route_api_resource_payment_entry_name_submit_post",
+        "display_name":  "Submit Payment Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Payment Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_payment_entry_route_api_resource_payment_entry_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_production_order_route_api_resource_production_order_name_submit_post",
+        "display_name":  "Submit Production Order Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Production Order Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_production_order_route_api_resource_production_order_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_purchase_invoice_route_api_resource_purchase_invoice_name_submit_post",
+        "display_name":  "Submit Purchase Invoice Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Purchase Invoice Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_purchase_invoice_route_api_resource_purchase_invoice_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_purchase_receipt_route_api_resource_purchase_receipt_name_submit_post",
+        "display_name":  "Submit Purchase Receipt Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Purchase Receipt Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_purchase_receipt_route_api_resource_purchase_receipt_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_salary_slip_route_api_resource_salary_slip_name_submit_post",
+        "display_name":  "Submit Salary Slip Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Salary Slip Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_salary_slip_route_api_resource_salary_slip_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_sales_invoice_route_api_resource_sales_invoice_name_submit_post",
+        "display_name":  "Submit Sales Invoice Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Sales Invoice Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_sales_invoice_route_api_resource_sales_invoice_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "submit_stock_entry_route_api_resource_stock_entry_name_submit_post",
+        "display_name":  "Submit Stock Entry Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Submit Stock Entry Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "submit_stock_entry_route_api_resource_stock_entry_name_submit_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    },
+    {
+        "tool_id":  "",
+        "name":  "transfer_asset_route_api_resource_asset_name_transfer_post",
+        "display_name":  "Transfer Asset Route",
+        "module":  "ERPBridge",
+        "status":  "active_mcp_schema_present",
+        "description":  "Transfer Asset Route",
+        "business_capability":  "",
+        "bpi_process_alignment":  [
+
+                                  ],
+        "endpoint":  "",
+        "http_method":  "POST",
+        "mcp_tool_name":  "transfer_asset_route_api_resource_asset_name_transfer_post",
+        "input_schema":  {
+                             "type":  "object",
+                             "properties":  {
+                                                "name":  {
+                                                             "type":  "string"
+                                                         }
+                                            },
+                             "required":  [
+                                              "name"
+                                          ]
+                         },
+        "required_parameters":  [
+
+                                ],
+        "optional_parameters":  [
+
+                                ],
+        "allowed_roles":  [
+
+                          ],
+        "risk_level":  "medium",
+        "is_read_only":  false,
+        "side_effects":  [
+
+                         ],
+        "preconditions":  [
+
+                          ],
+        "postconditions":  [
+
+                           ],
+        "failure_modes":  [
+
+                          ],
+        "validator_checks":  [
+
+                             ],
+        "prompt_usage_guidance":  "",
+        "semantic_search_keywords":  [
+
+                                     ],
+        "semantic_search_description":  "",
+        "execution_notes":  "",
+        "current_gaps":  [
+
+                         ]
+    }
+]

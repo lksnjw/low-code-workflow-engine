@@ -1,0 +1,43 @@
+{
+  "name": "@lcwe/backend-ts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --env-file=.env --import tsx/esm --watch src/entrypoints/production.ts",
+    "start": "node dist/production/server.mjs",
+    "build": "npm run build:prod",
+    "build:prod": "node scripts/build.mjs",
+    "verify:erpbridge-registry": "tsx scripts/verify-erpbridge-registry.mjs",
+    "verify": "npm run typecheck && npm test && npm run build:prod",
+    "generate:routes": "node scripts/generate-route-table.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@erpbridge/sdk": "1.1.0",
+    "@fastify/cors": "^11.1.0",
+    "@fastify/multipart": "^9.2.1",
+    "@fastify/websocket": "^11.2.0",
+    "@google-cloud/firestore": "^9.0.0",
+    "bcryptjs": "^3.0.2",
+    "fastify": "^5.6.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.3.0",
+    "@types/pg": "^8.15.5",
+    "esbuild": "^0.25.9",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

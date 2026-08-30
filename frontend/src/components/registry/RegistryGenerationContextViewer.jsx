@@ -2,6 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, LoadingState } from "../shared/ResourceState";
 import { registryService } from "../../services/registry.service";
 
+/*******************************************************************************
+ * Function: RegistryGenerationContextViewer
+ *
+ * Performs the Registry Generation Context Viewer operation on generation context viewer for the RegistryGenerationContextViewer module.
+ ******************************************************************************/
 function RegistryGenerationContextViewer() {
   const query = useQuery({ queryKey: ["registry-context"], queryFn: registryService.context });
 

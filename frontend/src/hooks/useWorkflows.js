@@ -1,7 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { workflowService } from "../services/workflow.service";
 
+/*******************************************************************************
+ * Function: useWorkflows
+ *
+ * Provides workflows for the useWorkflows module.
+ ******************************************************************************/
 export function useWorkflows(params = {}) {
+/*******************************************************************************
+ * Function: query
+ *
+ * Performs the query operation on the application for the useWorkflows module.
+ ******************************************************************************/
   const query = useQuery({
     queryKey: ["workflows", params],
     queryFn: () => workflowService.list(params),
@@ -16,6 +26,11 @@ export function useWorkflows(params = {}) {
   };
 }
 
+/*******************************************************************************
+ * Function: useWorkflow
+ *
+ * Provides workflow for the useWorkflows module.
+ ******************************************************************************/
 export function useWorkflow(workflowId) {
   return useQuery({
     queryKey: ["workflow", workflowId],
