@@ -33,6 +33,16 @@ export type Execution = {
   failure?: Record<string, unknown>;
   stepOutputs?: Record<string, unknown>;
   finalOutput?: unknown;
+  // The executing agent's own final narration for this run (e.g. explaining
+  // it stopped at a human approval checkpoint) — distinct from finalOutput,
+  // which may just be the last tool result.
+  agentSummary?: string;
+  // Set while status is AWAITING_APPROVAL — the human-in-the-loop checkpoint
+  // execution is currently paused at.
+  pendingApproval?: { stepId: string; description: string; requestedAt: string };
+  // Every approval granted so far on this execution, oldest first — so a
+  // resumed run (and the agent) knows what's already been authorized.
+  approvals?: Array<{ stepId: string; approvedBy: { id: string; name: string }; approvedAt: string; note?: string }>;
   chatSessionId?: string;
   traceId?: string;
 };
@@ -125,18 +135,18 @@ export class Repository {
 
   static async open(persistence: PersistenceBackend | null): Promise<Repository> {
     if (persistence === null) return new Repository(null);
-    const t0 = Date.now();
-    console.log("[repo] load() starting...");
     const payload = await persistence.load();
-    console.log(`[repo] load() done in ${Date.now() - t0}ms`);
     const restored = payload === null ? initialState() : restoreState(payload);
     const repository = new Repository(persistence, restored);
+    // Write back only when the restored state actually differs from what was
+    // stored — i.e. first boot, or a schema migration normalised something.
+    // Re-saving a byte-identical multi-megabyte blob on every startup is pure
+    // cost, and once the state grows it is slow enough to trip the startup
+    // timeout and stop the server from ever listening.
     const serialized = Buffer.from(JSON.stringify(restored), "utf8");
-    console.log(`[repo] serialized size: ${serialized.byteLength} bytes (vs loaded ${payload?.byteLength ?? 0} bytes)`);
-    const t1 = Date.now();
-    console.log("[repo] save() starting...");
-    await persistence.save(serialized);
-    console.log(`[repo] save() done in ${Date.now() - t1}ms`);
+    if (payload === null || !Buffer.from(payload).equals(serialized)) {
+      await persistence.save(serialized);
+    }
     return repository;
   }
 

@@ -602,6 +602,14 @@ export const routeTable = [
   },
   {
     "method": "POST",
+    "path": "/api/workflows/:id/approve-generation"
+  },
+  {
+    "method": "POST",
+    "path": "/api/workflows/:id/reject-generation"
+  },
+  {
+    "method": "POST",
     "path": "/api/workflows/:id/archive"
   },
   {

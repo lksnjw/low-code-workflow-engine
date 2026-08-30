@@ -21,6 +21,10 @@ export class FirestorePersistence implements PersistenceBackend {
   readonly #mutex = new AsyncMutex();
   readonly #codec: AESGCMCodec | null;
   #closed = false;
+  // Per-collection cache of last-mirrored entity JSON, used to skip writing
+  // entities that haven't changed since the previous save(). In-memory only —
+  // a fresh process re-mirrors everything once on its first save, same as before.
+  readonly #lastMirrored = new Map<string, Map<string, string>>();
 
   private constructor(db: Firestore, codec: AESGCMCodec | null) {
     this.#db = db;
@@ -100,17 +104,34 @@ export class FirestorePersistence implements PersistenceBackend {
       };
 
       for (const [collName, entities] of Object.entries(entityCollections)) {
-        const ids = Object.keys(entities);
-        if (ids.length === 0) continue;
+        // Diff against what was last mirrored so an unrelated field changing
+        // elsewhere in the blob doesn't re-write every entity in every
+        // collection on every save — that burns through Firestore's daily
+        // write quota in minutes once there's any real amount of data.
+        const previous = this.#lastMirrored.get(collName) ?? new Map<string, string>();
+        const next = new Map<string, string>();
+        const toWrite: Array<{ id: string; doc: Record<string, unknown> }> = [];
+        for (const [id, doc] of Object.entries(entities)) {
+          if (doc === null || typeof doc !== "object") continue;
+          const json = JSON.stringify(doc);
+          next.set(id, json);
+          if (previous.get(id) !== json) toWrite.push({ id, doc: doc as Record<string, unknown> });
+        }
+        const removedIds = [...previous.keys()].filter((id) => !next.has(id));
+        this.#lastMirrored.set(collName, next);
+        if (toWrite.length === 0 && removedIds.length === 0) continue;
+
         // Firestore batch limit is 500 ops; chunk to stay safe.
-        for (let i = 0; i < ids.length; i += 400) {
+        for (let i = 0; i < toWrite.length; i += 400) {
           const batch = this.#db.batch();
-          for (const id of ids.slice(i, i + 400)) {
-            const doc = entities[id];
-            if (doc !== null && typeof doc === "object") {
-              batch.set(this.#db.collection(collName).doc(id), doc as Record<string, unknown>, { merge: true });
-            }
-          }
+          for (const { id, doc } of toWrite.slice(i, i + 400))
+            batch.set(this.#db.collection(collName).doc(id), doc, { merge: true });
+          await batch.commit();
+        }
+        for (let i = 0; i < removedIds.length; i += 400) {
+          const batch = this.#db.batch();
+          for (const id of removedIds.slice(i, i + 400))
+            batch.delete(this.#db.collection(collName).doc(id));
           await batch.commit();
         }
       }

@@ -8,6 +8,8 @@ import { useWorkflow } from "../../hooks/useWorkflows";
 import usePermissions from "../../hooks/usePermissions";
 import WorkflowAssignments from "../../components/workflows/WorkflowAssignments";
 import WorkflowBuilderCanvas from "../../components/canvas/WorkflowBuilderCanvas";
+import PendingApprovalCard from "../../components/executions/PendingApprovalCard";
+import PendingGenerationApprovalCard from "../../components/workflows/PendingGenerationApprovalCard";
 import Button from "../../components/shared/ui/Button";
 import { executionService } from "../../services/execution.service";
 import { workflowService } from "../../services/workflow.service";
@@ -24,6 +26,7 @@ function WorkflowDetailPage() {
 	const canWrite = has("workflow:write");
   const canRun = has("workflow:run") || canWrite;
   const { data: workflow, isLoading, error, refetch } = useWorkflow(selectedWorkflowId);
+  const hasPendingGenerationApproval = Boolean(workflow?.pendingGenerationApproval?.steps?.length);
 
   const [runState, setRunState] = useState({ loading: false, result: null, error: null });
 
@@ -61,7 +64,8 @@ function WorkflowDetailPage() {
             <Button
               variant="primary"
               onClick={handleRun}
-              disabled={runState.loading}
+              disabled={runState.loading || hasPendingGenerationApproval}
+              title={hasPendingGenerationApproval ? "Resolve the pending approval below before running" : undefined}
             >
               {runState.loading ? (
                 <span className="flex items-center gap-2">
@@ -81,8 +85,25 @@ function WorkflowDetailPage() {
         </div>
       </div>
 
+      {hasPendingGenerationApproval && (
+        <PendingGenerationApprovalCard
+          pending={{ workflowId: workflow.id, steps: workflow.pendingGenerationApproval.steps }}
+          onResolved={refetch}
+        />
+      )}
+
       {/* Run result banner */}
-      {runState.result && (
+      {runState.result && runState.result.status === "AWAITING_APPROVAL" && (
+        <PendingApprovalCard
+          execution={runState.result}
+          onChanged={async () => {
+            const fresh = await executionService.get(runState.result.id);
+            setRunState({ loading: false, result: fresh, error: null });
+            refetch();
+          }}
+        />
+      )}
+      {runState.result && runState.result.status !== "AWAITING_APPROVAL" && (
         <div className={`flex items-start gap-3 rounded-xl border p-4 ${runState.result.status === "DONE" ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
           <Icon
             icon={runState.result.status === "DONE" ? "mdi:check-circle" : "mdi:alert-circle"}

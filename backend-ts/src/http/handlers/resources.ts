@@ -14,7 +14,7 @@ import { runQueryLoop, type ToolStep } from "../../agent/query-loop.js";
 import { runActionLoop } from "../../agent/action-loop.js";
 import { discoverTools } from "../../agent/tool-discovery.js";
 import { validateSemantics } from "../../governance/semantic-validator.js";
-import { RBAC_ENABLED, checkErpPolicy } from "../../governance/rbac.js";
+import { isPolicyCheckerEnabled, checkErpPolicy } from "../../governance/rbac.js";
 import { modifyWorkflow } from "../../agent/workflow-modifier.js";
 import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
 import { correctToolNamesInYaml } from "../../synthesis/service.js";
@@ -257,9 +257,9 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     ? [`assistant: I have the following workflow loaded for context:\n**${workflowContextName}**\n\`\`\`yaml\n${workflowContextYaml}\n\`\`\``, ...stored.priorMessages]
     : stored.priorMessages;
   // ── Feasibility / role-policy check ─────────────────────────────────────
-  // Controlled by RBAC_ENABLED in src/governance/rbac.ts.
-  // Set RBAC_ENABLED = true there to enforce the catalog-based feasibility gate.
-  if (RBAC_ENABLED) {
+  // Controlled by the Policy Checker toggle in Settings (state.settings.rbac.enabled).
+  const policyCheckerEnabled = await isPolicyCheckerEnabled(services.repository);
+  if (policyCheckerEnabled) {
     const feasibility = checkFeasibility(content, user.role);
     if (!feasibility.feasible) {
       const denialText = feasibility.matchedWorkflow
@@ -292,17 +292,19 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
     // Gather ERP tools if bridge is available; fall back to empty (pure conversational)
     let readOnlyTools: readonly import("../../registry/schemas.js").ToolDefinition[] = [];
     if (services.erpbridgeSession !== undefined) {
-      // ── RBAC toggle — controls whether QUERY is restricted to read-only tools.
-      // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce read-only mode.
-      if (RBAC_ENABLED) {
+      // ── Policy Checker toggle — controls whether QUERY is restricted to read-only tools.
+      // Always pass the model the FULL live tool list, never a keyword-filtered
+      // subset — a truncated list is how the LLM ends up not knowing a real
+      // tool exists (e.g. "send-email") and inventing a plausible-looking but
+      // fake name instead. The tool pool here is small (tens of tools), well
+      // within normal function-calling limits, so there's no reason to cap it.
+      if (policyCheckerEnabled) {
         const staticReadOnly = services.registries.readOnlyTools();
-        const allReadOnlyTools = staticReadOnly.length > 0
+        readOnlyTools = staticReadOnly.length > 0
           ? staticReadOnly
           : (await discoverTools(services.erpbridgeSession, services.registries)).filter((t) => t.is_read_only === true);
-        readOnlyTools = selectRelevantTools(content, allReadOnlyTools, 15);
       } else {
-        const allLiveTools = await discoverTools(services.erpbridgeSession, services.registries);
-        readOnlyTools = selectRelevantTools(content, allLiveTools, 15);
+        readOnlyTools = await discoverTools(services.erpbridgeSession, services.registries);
       }
     }
     const sessionId = requestParam(request, "id");
@@ -318,6 +320,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
         readOnlyTools,
         async (toolName, args) => bridgeSession !== undefined ? bridgeSession.callToolDirect(toolName, args) : {},
         services.providerRuntime,
+        policyCheckerEnabled,
       );
     } catch (error) {
       throw new HandlerFailure(502, `Query agent failed: ${errorText(error)}`);
@@ -370,11 +373,11 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
         { userMessage: content, chatHistory, sessionId: requestParam(request, "id"), actorId: user.id, actorRole: user.role, user: governanceUser, signal: request.signal, traceId },
         allTools,
         async (toolName, args) => bridgeSession.callToolDirect(toolName, args),
-        // ── RBAC toggle — controls operation-level governance for TOOL_CALL.
-        // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce ERP policy.
-        // When enabled, calls policy-gate-evaluate in ERP Bridge (not env/config).
-        // When disabled, all tool calls are allowed through.
-        RBAC_ENABLED
+        // ── Policy Checker toggle (Settings > Policy Checker) — controls
+        // operation-level governance for TOOL_CALL. When on, calls
+        // policy-gate-evaluate in ERP Bridge (not env/config). When off,
+        // all tool calls are allowed through.
+        policyCheckerEnabled
           ? async (toolName, toolDef, args, govUser) =>
               checkErpPolicy(bridgeSession, {
                 userId: govUser.id,
@@ -552,14 +555,23 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   const chatSessionId = requestParam(request, "id");
   const chatMessageId = stringValue(stored.userMessage.id);
   let autoSavedWorkflowId: string | null = null;
+  // When the generated workflow contains `kind: approval` checkpoint(s), resolve
+  // them here in chat — NOT at run time. Once approved, the checkpoint steps are
+  // stripped from the saved YAML so the workflow runs straight through on every
+  // future execution ("solved once at generation, never asked again").
+  let pendingGenerationApproval: { steps: Array<{ stepId: string; description: string }>; requestedAt: string } | null = null;
   try {
     let blueprint;
     try { blueprint = parseWorkflowYAMLStrict(result.yaml); } catch { blueprint = null; }
     if (blueprint !== null) {
+      const approvalSteps = blueprint.steps
+        .filter((s) => s.kind === "approval")
+        .map((s) => ({ stepId: s.id, description: (s.description ?? "").trim() || `Approval required for step ${s.id}` }));
+      const nowTs = new Date().toISOString();
+      if (approvalSteps.length > 0) pendingGenerationApproval = { steps: approvalSteps, requestedAt: nowTs };
       autoSavedWorkflowId = await services.repository.mutate((state) => {
         state.counter += 1;
         const wfId = `wf_${state.counter}_${randomBytes(4).toString("hex")}`;
-        const nowTs = new Date().toISOString();
         const wf = {
           id: wfId,
           name: blueprint!.name || content.slice(0, 60) || "Generated Workflow",
@@ -584,6 +596,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
           chatMessageId: stringValue(stored.userMessage.id),
           prompt: content,
           traceId,
+          pendingGenerationApproval,
         };
         state.workflows[wfId] = wf as unknown as import("../../models/schemas.js").Workflow;
         return wfId;
@@ -593,7 +606,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
 
   // Generate Claude Code-style narrative response
   const assistantText = await generateWorkflowNarrative(content, result, stored.priorMessages, services.providerRuntime, request.signal);
-  const artifacts = compactWorkflowArtifacts(result, chatSessionId, chatMessageId, traceId, autoSavedWorkflowId, missingTools);
+  const artifacts = compactWorkflowArtifacts(result, chatSessionId, chatMessageId, traceId, autoSavedWorkflowId, missingTools, pendingGenerationApproval);
   const assistantMessage = await services.repository.mutate((state) => {
     const chat = state.chats[requestParam(request, "id")];
     if (chat === undefined) throw new HandlerFailure(404, "Chat session not found");
@@ -625,6 +638,7 @@ function compactWorkflowArtifacts(
   traceId: string,
   workflowId: string | null = null,
   missingTools: string[] = [],
+  pendingGenerationApproval: { steps: Array<{ stepId: string; description: string }>; requestedAt: string } | null = null,
 ): Record<string, unknown> {
   const retrieval = result.retrieval as {
     tools?: unknown[];
@@ -653,6 +667,7 @@ function compactWorkflowArtifacts(
     })),
     ...(workflowId !== null ? { workflowId } : {}),
     ...(missingTools.length > 0 ? { missing_tools: missingTools } : {}),
+    ...(pendingGenerationApproval !== null ? { generationApproval: { workflowId, ...pendingGenerationApproval } } : {}),
     retrieval: {
       tools: pickArtifactRecords(retrieval.tools, [
         "tool_id", "name", "display_name", "description", "endpoint",
@@ -811,17 +826,3 @@ function buildCapabilitiesResponse(tools: readonly import("../../registry/schema
   return lines.join("\n");
 }
 
-// Picks the most relevant read-only tools for the user's query, capped at `limit`.
-// Scores by how many query words appear in the tool name or description.
-function selectRelevantTools(query: string, tools: readonly import("../../registry/schemas.js").ToolDefinition[], limit: number): readonly import("../../registry/schemas.js").ToolDefinition[] {
-  if (tools.length <= limit) return tools;
-  const words = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
-  if (words.length === 0) return tools.slice(0, limit);
-  const scored = tools.map((tool) => {
-    const haystack = `${tool.name} ${tool.description}`.toLowerCase();
-    const score = words.reduce((n, w) => n + (haystack.includes(w) ? 1 : 0), 0);
-    return { tool, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map((s) => s.tool);
-}

@@ -35,7 +35,7 @@ export type RuntimeArgIssue = {
 // ── Static validation (no LLM) ───────────────────────────────────────────────
 
 export function validateWorkflowStatically(
-  steps: Array<{ id: string; action: string; parameters?: Record<string, unknown>; description?: string }>,
+  steps: Array<{ id: string; kind?: string; action?: string; parameters?: Record<string, unknown>; description?: string }>,
   liveTools: readonly ToolDefinition[],
 ): Omit<WorkflowPreRunValidation, "dataFlowPlan"> {
   const byName = new Map(liveTools.map((t) => [t.name, t]));
@@ -44,23 +44,27 @@ export function validateWorkflowStatically(
   const toolResolutions: ToolResolution[] = [];
 
   for (const step of steps) {
-    const resolved = resolveToolName(step.action, byName, byMcp);
+    // Approval steps are a human sign-off checkpoint, not a dispatchable tool
+    // call — they have no action and must not be treated as TOOL_NOT_FOUND.
+    if (step.kind === "approval") continue;
+    const action = step.action ?? "";
+    const resolved = resolveToolName(action, byName, byMcp);
 
     if (resolved === null) {
       issues.push({
         stepId: step.id,
-        action: step.action,
+        action,
         severity: "error",
         code: "TOOL_NOT_FOUND",
-        message: `Tool "${step.action}" is not available in the live ERP Bridge.`,
-        suggestion: findClosestTool(step.action, liveTools),
+        message: `Tool "${action}" is not available in the live ERP Bridge.`,
+        suggestion: findClosestTool(action, liveTools),
       });
       continue;
     }
 
     toolResolutions.push({
       stepId: step.id,
-      originalAction: step.action,
+      originalAction: action,
       resolvedAction: resolved.name,
       tool: resolved,
     });
@@ -117,7 +121,7 @@ export function validateToolArguments(
 // ── LLM data-flow analysis ───────────────────────────────────────────────────
 
 export async function analyzeDataFlow(
-  steps: Array<{ id: string; action: string; description?: string; parameters?: Record<string, unknown> }>,
+  steps: Array<{ id: string; kind?: string; action?: string; description?: string; parameters?: Record<string, unknown> }>,
   toolResolutions: ToolResolution[],
   providerRuntime: ProviderRuntime,
   signal?: AbortSignal,
@@ -128,6 +132,13 @@ export async function analyzeDataFlow(
 
   const stepDescriptions = steps
     .map((s, i) => {
+      if (s.kind === "approval") {
+        return (
+          `Step ${i + 1} [${s.id}]\n` +
+          `  Tool: (none — human approval checkpoint)\n` +
+          `  Goal: ${s.description ?? "Human sign-off required before continuing"}`
+        );
+      }
       const r = resMap.get(s.id);
       const toolDesc = r?.tool.description ?? "unknown tool";
       const schema = r?.tool.input_schema as { required?: string[] } | undefined;

@@ -4,6 +4,7 @@ import { Icon } from "@iconify/react";
 import MessageMarkdown from "./MessageMarkdown";
 import { saveWorkflowForCanvas, peekWorkflowForChatEdit, clearWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
 import { workflowService } from "../../services/workflow.service";
+import PendingGenerationApprovalCard from "../workflows/PendingGenerationApprovalCard";
 
 // ── Inline validation badge ─────────────────────────────────────────────────
 /*******************************************************************************
@@ -494,6 +495,7 @@ function ChatMessage({ message }) {
               />
             )}
             {artifacts?.workflowId && <OpenWorkflowButton workflowId={artifacts.workflowId} />}
+            {artifacts?.generationApproval && <PendingGenerationApprovalCard pending={artifacts.generationApproval} />}
           </>
         )}
       </div>

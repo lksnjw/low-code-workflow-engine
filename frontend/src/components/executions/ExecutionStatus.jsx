@@ -7,6 +7,7 @@ const icons = {
   FAILED: "mdi:alert-circle-outline",
   HEALING: "mdi:shield-refresh-outline",
   PENDING: "mdi:clock-outline",
+  AWAITING_APPROVAL: "mdi:account-check-outline",
 };
 
 /*******************************************************************************

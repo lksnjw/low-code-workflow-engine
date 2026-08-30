@@ -11,7 +11,7 @@ import { withoutSecretFields } from "../../redact/secrets.js";
 import type { RouteDefinition } from "../generated-routes.js";
 import { canReadExecution } from "../execution-scope.js";
 import { requestTraceId } from "../../trace/request-trace.js";
-import { runWorkflowFor } from "../app.js";
+import { runWorkflowFor, resumeWorkflowApproval } from "../app.js";
 import {
   appendAudit,
   bodyRecord,
@@ -323,14 +323,12 @@ async function approveExecution(
   services: HandlerServices,
 ): Promise<unknown> {
   const execution = await requireExecution(requestParam(request, "id"), user, services);
-  const updated = await services.repository.mutate((state) => {
-    const item = state.executions[execution.id];
-    if (item === undefined) throw new HandlerFailure(404, "Execution not found");
-    item.status = "DONE";
-    appendAudit(state, user, "execution.approved", "execution", item.id, null, { status: item.status }, request);
-    return structuredClone(item);
-  });
-  return reply.send(ok(updated, "Execution approved", null));
+  const body = bodyRecord(request);
+  const note = body !== null ? stringValue(body.note) : "";
+  // Resumes the self-healing agent past the checkpoint it stopped at — the
+  // LLM continues the remaining steps knowing this was approved, rather than
+  // this endpoint just flipping a status flag on an already-finished run.
+  return resumeWorkflowApproval(execution, note, request, reply, user, services);
 }
 
 async function rejectExecution(
@@ -340,13 +338,16 @@ async function rejectExecution(
   services: HandlerServices,
 ): Promise<unknown> {
   const execution = await requireExecution(requestParam(request, "id"), user, services);
+  if (execution.status !== "AWAITING_APPROVAL")
+    throw new HandlerFailure(409, "This execution is not awaiting approval");
   const body = bodyRecord(request);
   const reason = body !== null ? stringValue(body.reason) : "Rejected by user";
   const updated = await services.repository.mutate((state) => {
     const item = state.executions[execution.id];
     if (item === undefined) throw new HandlerFailure(404, "Execution not found");
     item.status = "FAILED";
-    item.failure = { failureCategory: "REJECTED", failedStepId: "approval", failedToolName: "human_approval", toolWasCalled: false };
+    item.failure = { failureCategory: "REJECTED", failedStepId: item.pendingApproval?.stepId ?? "approval", failedToolName: "human_approval", toolWasCalled: false };
+    delete item.pendingApproval;
     appendAudit(state, user, "execution.rejected", "execution", item.id, null, { status: item.status, reason }, request);
     return structuredClone(item);
   });

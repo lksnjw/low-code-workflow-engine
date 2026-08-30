@@ -190,6 +190,17 @@ export class RegistryValidator {
         this.validateAnalysisStructure(workflow, stepIndex, result);
         return;
       }
+      if (kind === "approval") {
+        // A human sign-off checkpoint — no tool to resolve, no dispatch policy
+        // applies. Only requires the id (checked above) and a description.
+        if ((step.description ?? "").trim() === "") {
+          result.schema_ok = false;
+          result.errors.push(
+            `SCHEMA_INVALID: approval step ${step.id} requires a description stating what is being authorized`,
+          );
+        }
+        return;
+      }
       if (kind !== "tool") {
         result.schema_ok = false;
         result.errors.push(

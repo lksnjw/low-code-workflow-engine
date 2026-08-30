@@ -1,16 +1,21 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  RBAC TOGGLE
-//  One constant controls every role / permission check in this system.
-//
-//  To DISABLE all checks (development / testing):
-//    export const RBAC_ENABLED = false;   ← current line, leave as-is
-//
-//  To ENABLE all checks (production):
-//    Comment out the false line and uncomment the true line below.
+//  POLICY CHECKER TOGGLE
+//  Whether policy / role checks run at all is a runtime setting stored in the
+//  database (state.settings.rbac.enabled), controlled from Settings > Policy
+//  Checker in the UI — not a hardcoded constant. Callers resolve the current
+//  value with isPolicyCheckerEnabled(repository) rather than importing a flag.
 // ════════════════════════════════════════════════════════════════════════════
 
-export const RBAC_ENABLED = false;
-// export const RBAC_ENABLED = true; // ← uncomment to enforce RBAC
+import type { Repository } from "../repository/store.js";
+
+/** Reads the current policy-checker setting from the database. Defaults to
+ *  off (fail-open) until an admin explicitly turns it on in Settings. */
+export async function isPolicyCheckerEnabled(repository: Repository): Promise<boolean> {
+  return repository.read((state) => {
+    const rbac = state.settings.rbac;
+    return typeof rbac === "object" && rbac !== null && (rbac as Record<string, unknown>).enabled === true;
+  });
+}
 
 // ── ERP Bridge policy tools ───────────────────────────────────────────────
 // These are the live ERP Bridge MCP tools used when RBAC is enabled.
@@ -49,7 +54,6 @@ export async function checkErpPolicy(
     context?: Record<string, unknown>;       // ERP facts (args, amount, etc.)
   },
 ): Promise<ErpPolicyResult> {
-  if (!RBAC_ENABLED) return { allowed: true };
   if (bridgeSession === undefined) return { allowed: true };
 
   const actor = { id: params.userId, role: params.userRole };
@@ -85,7 +89,6 @@ export async function assistQueryPlan(
     history?: unknown[];
   },
 ): Promise<unknown | null> {
-  if (!RBAC_ENABLED) return null;
   if (bridgeSession === undefined) return null;
 
   const actor = { id: params.userId, role: params.userRole };

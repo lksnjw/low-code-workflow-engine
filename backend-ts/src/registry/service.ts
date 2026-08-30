@@ -40,6 +40,11 @@ export class RegistryService {
 
   findTool(name: string): ToolDefinition | undefined {
     const wanted = normalize(name);
+    // An empty search key must never match — several registry entries have a
+    // blank tool_id, so an empty `wanted` would otherwise resolve to whichever
+    // of those happens to come first (e.g. a step with no action, like an
+    // approval checkpoint, silently "matching" an unrelated real tool).
+    if (wanted === "") return undefined;
     return this.#snapshot.tools.find((tool) => normalize(tool.name) === wanted || normalize(tool.tool_id) === wanted || normalize(tool.mcp_tool_name) === wanted);
   }
 

@@ -24,7 +24,7 @@ import type { ErpbridgeMcpSession } from "../tools/erpbridge-mcp-client.js";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import { withoutSecretFields } from "../redact/secrets.js";
 import type { RegistryService } from "../registry/service.js";
-import type { Repository, User } from "../repository/store.js";
+import type { Execution, Repository, User } from "../repository/store.js";
 import type { ProviderRuntime } from "../providers/runtime.js";
 import type { SynthesisService } from "../synthesis/service.js";
 import type { ValidationGate } from "../governance/gate.js";
@@ -34,7 +34,7 @@ import { generateExecutionAnalysis, type ExecutionAnalysisInput } from "../agent
 import type { RegistryValidator } from "../validator/registry-validator.js";
 import { createDispatchIdentity } from "../tools/registry.js";
 import { routeTable, type RouteDefinition } from "./generated-routes.js";
-import { RBAC_ENABLED } from "../governance/rbac.js";
+import { isPolicyCheckerEnabled, checkErpPolicy } from "../governance/rbac.js";
 import {
   canReadExecution,
   visibleExecutions,
@@ -75,6 +75,7 @@ import {
 } from "./handlers/workflows.js";
 import {
   HandlerFailure,
+  appendAudit,
   stringValue,
   validateWorkflow as validateWithGovernance,
 } from "./handlers/common.js";
@@ -265,9 +266,9 @@ export async function buildApp(
             ),
     });
   }
-  if (routeTable.length !== 170)
+  if (routeTable.length !== 172)
     throw new Error(
-      `route table has ${routeTable.length} routes, expected 170`,
+      `route table has ${routeTable.length} routes, expected 172`,
     );
   return app;
 }
@@ -390,9 +391,9 @@ async function handleRoute(
   if (!publicRoutes.has(routeKey) && auth === null) return;
   const current = auth?.user ?? null;
   if (current !== null) {
-    // ── RBAC toggle — controls route-level permission enforcement.
-    // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce route policies.
-    if (RBAC_ENABLED) {
+    // Policy Checker toggle (Settings > Policy Checker) — controls
+    // route-level permission enforcement.
+    if (await isPolicyCheckerEnabled(services.repository)) {
       const policy = routePolicy(route);
       if (
         policy !== null &&
@@ -1106,10 +1107,10 @@ export async function runWorkflowFor(
   if (!parsed.success)
     return reply.status(400).send(fail("Invalid request body", null));
   const traceId = requestTraceId(request, workflow.traceId);
-  // ── RBAC toggle — controls workflow ownership / assignment enforcement.
-  // Set RBAC_ENABLED = true in src/governance/rbac.ts to enforce this check.
+  // Policy Checker toggle (Settings > Policy Checker) — controls workflow
+  // ownership / assignment enforcement.
   if (
-    RBAC_ENABLED &&
+    (await isPolicyCheckerEnabled(services.repository)) &&
     !user.permissions.includes("workflow:run") &&
     workflow.owner.id !== user.id &&
     !(workflow.assignedUserIds ?? []).includes(user.id)
@@ -1117,6 +1118,16 @@ export async function runWorkflowFor(
     return reply
       .status(403)
       .send(fail("Workflow is not assigned to the current user", null));
+  // Approval checkpoints are resolved once in chat at generation time — see
+  // approveWorkflowGeneration in handlers/workflows.ts. Until that happens,
+  // running would either bypass the checkpoint or (with the old runtime-pause
+  // design) ask again on every run, which is exactly what this flow avoids.
+  if (workflow.pendingGenerationApproval && workflow.pendingGenerationApproval.steps.length > 0)
+    return reply.status(409).send(
+      fail("This workflow has a pending approval — resolve it in chat before running", {
+        pendingGenerationApproval: workflow.pendingGenerationApproval,
+      }),
+    );
   // Governance validation is intentionally skipped for workflow runs.
   // The LLM agent is the executor and ERP Bridge enforces RBAC via ERPBRIDGE_ROLE_MAP.
   if (services.providerRuntime?.configured !== true)
@@ -1126,7 +1137,7 @@ export async function runWorkflowFor(
   // Discover live tools first so we can validate BEFORE creating the execution record.
   const bridgeSessionEarly = services.erpbridgeSession ?? null;
   const liveToolsEarly = await discoverTools(bridgeSessionEarly, services.registries);
-  let workflowStepsEarly: Array<{ id: string; action: string; parameters?: Record<string, unknown>; description?: string }> = [];
+  let workflowStepsEarly: Array<{ id: string; kind?: string; action?: string; parameters?: Record<string, unknown>; description?: string }> = [];
   try { workflowStepsEarly = parseWorkflowYAMLStrict(workflow.yaml ?? "").steps as typeof workflowStepsEarly; } catch { /* handled below */ }
 
   const preValidation = validateWorkflowStatically(workflowStepsEarly, liveToolsEarly);
@@ -1244,16 +1255,30 @@ export async function runWorkflowFor(
       executionId: execution.id,
       actor: { id: user.id, role: user.role },
     });
+    let blueprintStepsForApproval: Array<{ id: string; kind?: string | undefined; description?: string | undefined }> = [];
+    try { blueprintStepsForApproval = parseWorkflowYAMLStrict(workflow.yaml ?? "").steps; } catch { /* no approval gate if unparsable */ }
+    const pendingApproval = findPendingApproval(blueprintStepsForApproval, new Set(), actionResult.steps.length);
+
     const completed = await services.repository.mutate((state) => {
       const item = state.executions[execution.id]!;
-      item.status = "DONE";
+      item.status = pendingApproval ? "AWAITING_APPROVAL" : "DONE";
       item.completedAt = new Date().toISOString();
       item.durationMs = Date.now() - new Date(item.startedAt).getTime();
       item.tokens = result.tokens;
       item.stepOutputs = Object.fromEntries(
         Object.entries(result.state).filter(([key]) => key !== "input"),
       );
-      item.finalOutput = result.timeline.at(-1)?.output;
+      // The agent's own final narration — e.g. "AWAITING APPROVAL: ...".
+      // When it stopped without calling any tool (a checkpoint reached, not a
+      // failure), this is the ONLY explanation of what happened, so surface
+      // it as the finalOutput rather than leaving the run looking empty.
+      item.agentSummary = actionResult.text;
+      item.finalOutput = result.timeline.at(-1)?.output ?? actionResult.text;
+      if (pendingApproval) {
+        item.pendingApproval = { ...pendingApproval, requestedAt: new Date().toISOString() };
+      } else {
+        delete item.pendingApproval;
+      }
       state.executionLogs[item.id] = result.logs.map((log, index) => ({
         id: `log_${index + 1}`,
         executionId: item.id,
@@ -1264,6 +1289,8 @@ export async function runWorkflowFor(
         ...entry,
         traceId,
       }));
+      const storedWorkflow = state.workflows[workflow.id];
+      if (storedWorkflow !== undefined && pendingApproval) storedWorkflow.status = "PENDING";
       return structuredClone(item);
     });
     if (completed.chatSessionId && services.providerRuntime?.configured) {
@@ -1272,7 +1299,9 @@ export async function runWorkflowFor(
     return reply.send(
       ok(
         completed,
-        `Workflow ${workflow.name} completed successfully in ${result.timeline.length} steps`,
+        pendingApproval
+          ? `Workflow ${workflow.name} is paused — awaiting approval: ${pendingApproval.description}`
+          : `Workflow ${workflow.name} completed successfully in ${result.timeline.length} steps`,
         null,
       ),
     );
@@ -1347,6 +1376,145 @@ export async function runWorkflowFor(
       }),
     );
   }
+}
+
+// Resumes a workflow that stopped at a human approval checkpoint. Re-invokes
+// the self-healing agent with the prior results and the new approval as
+// context, so it continues the remaining steps rather than starting over or
+// asking again — "the LLM handles it, it knows it was approved."
+export async function resumeWorkflowApproval(
+  execution: Execution,
+  note: string,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: User & { role: string; permissions: string[] },
+  services: ApplicationServices,
+): Promise<unknown> {
+  if (execution.status !== "AWAITING_APPROVAL" || !execution.pendingApproval)
+    return reply.status(409).send(fail("This execution is not awaiting approval", null));
+  const workflow = await services.repository.read((state) => state.workflows[execution.workflowId] ?? null);
+  if (workflow === null) return reply.status(404).send(fail("Workflow not found", null));
+
+  const pending = execution.pendingApproval;
+  if (await isPolicyCheckerEnabled(services.repository)) {
+    const gov = await checkErpPolicy(services.erpbridgeSession, {
+      userId: user.id,
+      userRole: user.role,
+      action: "approve_workflow_step",
+      prompt: `User "${user.id}" (${user.role}) wants to approve: ${pending.description}`,
+      context: { stepId: pending.stepId, workflowId: workflow.id, executionId: execution.id },
+    });
+    if (!gov.allowed)
+      return reply.status(403).send(fail(gov.reason ?? "You are not authorized to approve this step", null));
+  }
+  if (services.providerRuntime?.configured !== true)
+    return reply.status(503).send(fail("LLM provider is not configured — cannot resume workflow", null));
+
+  const traceId = requestTraceId(request, execution.traceId);
+  const approvedAt = new Date().toISOString();
+  const priorApprovals = [
+    ...(execution.approvals ?? []),
+    { stepId: pending.stepId, approvedBy: { id: user.id, name: user.name }, approvedAt, ...(note ? { note } : {}) },
+  ];
+  const approvedStepIds = new Set(priorApprovals.map((a) => a.stepId));
+  const priorStepCount = Object.keys(execution.stepOutputs ?? {}).length;
+
+  const bridgeSession = services.erpbridgeSession ?? null;
+  const liveTools = await discoverTools(bridgeSession, services.registries);
+  const baseTask = buildWorkflowTaskMessage(workflow);
+  const continuationMessage = [
+    baseTask,
+    "",
+    "APPROVAL UPDATE:",
+    "The following checkpoint(s) have been approved by a human and are now authorized — do NOT ask about them again, proceed past them:",
+    ...priorApprovals.map((a) => `- "${a.stepId}" approved by ${a.approvedBy.name} at ${a.approvedAt}${a.note ? ` (note: ${a.note})` : ""}`),
+    "",
+    "PRIOR STEP RESULTS (already completed in an earlier turn — do not repeat these calls, reuse this data):",
+    JSON.stringify(execution.stepOutputs ?? {}),
+    "",
+    "Continue executing the remaining steps now that the approval above has been granted.",
+  ].join("\n");
+
+  const governanceUser = { id: user.id, role: user.role, department: user.departmentId ?? null };
+  const actionResult = await runWorkflowWithHealing(
+    continuationMessage,
+    liveTools,
+    bridgeSession,
+    { chatHistory: [], sessionId: execution.id, actorId: user.id, actorRole: user.role, user: governanceUser, signal: request.signal, traceId },
+    services.providerRuntime,
+    execution.id,
+    workflow,
+    services,
+  );
+
+  let blueprintSteps: Array<{ id: string; kind?: string | undefined; description?: string | undefined }> = [];
+  try { blueprintSteps = parseWorkflowYAMLStrict(workflow.yaml ?? "").steps; } catch { /* no approval gate if unparsable */ }
+  const nextPending = findPendingApproval(blueprintSteps, approvedStepIds, priorStepCount + actionResult.steps.length);
+
+  const nowIso = new Date().toISOString();
+  const newStepOutputs = Object.fromEntries(
+    actionResult.steps.map((s, i) => [`step_${priorStepCount + i + 1}_${s.toolName}`, s.result]),
+  );
+  const newTimeline = actionResult.steps.map((s, i) => ({
+    id: `tl_${priorStepCount + i + 1}`,
+    nodeId: `step_${priorStepCount + i + 1}`,
+    label: s.toolName,
+    status: "DONE" as const,
+    startedAt: nowIso,
+    completedAt: nowIso,
+    durationMs: 0,
+    output: s.result,
+    traceId,
+  }));
+  const newLogs = actionResult.steps.map((s, i) => ({
+    id: `log_${priorStepCount + i + 1}`,
+    executionId: execution.id,
+    level: "info" as const,
+    nodeId: `step_${priorStepCount + i + 1}`,
+    timestamp: nowIso,
+    message: `${s.toolName}: completed`,
+    metadata: null,
+    traceId,
+  }));
+
+  let mergedTimelineForAnalysis: Array<{ nodeId?: unknown; output?: unknown; durationMs?: unknown }> = [];
+  const completed = await services.repository.mutate((state) => {
+    const item = state.executions[execution.id]!;
+    item.status = nextPending ? "AWAITING_APPROVAL" : "DONE";
+    item.completedAt = nowIso;
+    item.durationMs = Date.now() - new Date(item.startedAt).getTime();
+    item.tokens = {
+      input: (item.tokens?.input ?? 0) + actionResult.totalTokens.input,
+      output: (item.tokens?.output ?? 0) + actionResult.totalTokens.output,
+      total: (item.tokens?.input ?? 0) + (item.tokens?.output ?? 0) + actionResult.totalTokens.input + actionResult.totalTokens.output,
+    };
+    item.stepOutputs = { ...(item.stepOutputs ?? {}), ...newStepOutputs };
+    item.agentSummary = actionResult.text;
+    item.finalOutput = newTimeline.at(-1)?.output ?? actionResult.text;
+    item.approvals = priorApprovals;
+    if (nextPending) item.pendingApproval = { ...nextPending, requestedAt: nowIso };
+    else delete item.pendingApproval;
+    state.executionLogs[item.id] = [...(state.executionLogs[item.id] ?? []), ...newLogs];
+    const mergedTimeline = [...(state.timelines[item.id] ?? []), ...newTimeline];
+    state.timelines[item.id] = mergedTimeline;
+    mergedTimelineForAnalysis = mergedTimeline;
+    appendAudit(state, user, "execution.approved", "execution", item.id, null, { stepId: pending.stepId, status: item.status }, request);
+    const storedWorkflow = state.workflows[workflow.id];
+    if (storedWorkflow !== undefined && !nextPending) storedWorkflow.status = "DONE";
+    return structuredClone(item);
+  });
+  if (completed.chatSessionId && services.providerRuntime?.configured) {
+    void postExecutionAnalysis(completed, mergedTimelineForAnalysis, services);
+  }
+  return reply.send(
+    ok(
+      completed,
+      nextPending
+        ? `Approved "${pending.stepId}" — workflow paused again: ${nextPending.description}`
+        : `Approved "${pending.stepId}" — workflow ${workflow.name} completed`,
+      null,
+    ),
+  );
 }
 
 async function listExecutions(
@@ -1712,6 +1880,39 @@ async function runWorkflowWithHealing(
   throw lastError;
 }
 
+export type PendingApproval = { stepId: string; description: string };
+
+// Walks the workflow blueprint in order, counting real (tool) steps as it
+// goes. The first kind:approval step it reaches whose preceding tool steps
+// are all accounted for by completedToolCount — and that isn't already in
+// approvedStepIds — is the checkpoint execution is currently sitting at.
+// Returns null once every approval step has either been approved or the
+// agent has gone on to complete tool steps past it.
+export function findPendingApproval(
+  blueprintSteps: ReadonlyArray<{ id: string; kind?: string | undefined; description?: string | undefined }>,
+  approvedStepIds: ReadonlySet<string>,
+  completedToolCount: number,
+): PendingApproval | null {
+  let toolsSeen = 0;
+  for (const step of blueprintSteps) {
+    const kind = step.kind ?? "tool";
+    if (kind === "tool") {
+      toolsSeen += 1;
+      continue;
+    }
+    if (kind !== "approval") continue;
+    if (approvedStepIds.has(step.id)) continue;
+    if (toolsSeen <= completedToolCount) {
+      return {
+        stepId: step.id,
+        description: (step.description ?? "").trim() || `Approval required for step ${step.id}`,
+      };
+    }
+    break;
+  }
+  return null;
+}
+
 function buildWorkflowTaskMessage(
   workflow: Workflow & { prompt?: string },
   toolResolutions: import("../agent/workflow-runtime-validator.js").ToolResolution[] = [],
@@ -1733,8 +1934,15 @@ function buildWorkflowTaskMessage(
       lines.push("Runtime validation is ACTIVE: before each tool call verify the tool name is correct and all required arguments are real values.");
       lines.push("");
 
+      let hasApprovalStep = false;
       bp.steps.forEach((s, i) => {
         const desc = (s.description ?? "").trim() || (s.action ?? "").replace(/[_-]/g, " ");
+        if (s.kind === "approval") {
+          hasApprovalStep = true;
+          lines.push(`Step ${i + 1}: [HUMAN APPROVAL CHECKPOINT — no tool] — ${desc}`);
+          lines.push(`   → STOP HERE. Do not call any more tools. End your response by clearly stating this step requires human approval and naming exactly what is being authorized: "${desc}". Do not assume it is approved.`);
+          return;
+        }
         // Use the validated (resolved) tool name if available
         const resolvedAction = resolvedMap.get(s.action as string) ?? s.action;
         const toolHint = resolvedAction !== s.action
@@ -1759,6 +1967,9 @@ function buildWorkflowTaskMessage(
       lines.push("- If a tool returns an error, check the <runtime_validation> block in the result and fix the arguments.");
       lines.push("- Pass REAL field values from prior tool results — never use [PLACEHOLDER], <value>, or 'example'.");
       lines.push("- After all steps, report each step: DONE / FAILED with exact output or error.");
+      if (hasApprovalStep) {
+        lines.push("- This workflow contains a HUMAN APPROVAL CHECKPOINT. You MUST NOT call any tool listed after that checkpoint until a human has explicitly approved it. Reaching the checkpoint and reporting it is a successful, complete run — it is not a failure and not something to route around.");
+      }
     }
   } catch { /* fallback: name/description only */ }
 
@@ -1773,7 +1984,7 @@ function buildWorkflowTaskMessage(
 }
 
 async function postExecutionAnalysis(
-  execution: { id: string; workflowId: string; workflowName?: string; status: string; startedAt: string; completedAt: string | null; durationMs: number; stepOutputs?: Record<string, unknown>; failure?: Record<string, unknown>; chatSessionId?: string; tokens?: { input: number; output: number; total: number } },
+  execution: { id: string; workflowId: string; workflowName?: string; status: string; startedAt: string; completedAt: string | null; durationMs: number; stepOutputs?: Record<string, unknown>; agentSummary?: string; failure?: Record<string, unknown>; chatSessionId?: string; tokens?: { input: number; output: number; total: number } },
   timeline: Array<{ nodeId?: unknown; output?: unknown; durationMs?: unknown }>,
   services: ApplicationServices,
 ): Promise<void> {
@@ -1783,10 +1994,11 @@ async function postExecutionAnalysis(
     const input: ExecutionAnalysisInput = {
       executionId: execution.id,
       workflowName: String(execution.workflowName ?? execution.workflowId),
-      status: execution.status === "DONE" ? "DONE" : "FAILED",
+      status: execution.status === "DONE" || execution.status === "AWAITING_APPROVAL" ? execution.status : "FAILED",
       startedAt: execution.startedAt,
       completedAt: execution.completedAt,
       durationMs: execution.durationMs,
+      ...(execution.agentSummary !== undefined ? { agentSummary: execution.agentSummary } : {}),
       stepOutputs: execution.stepOutputs ?? {},
       timeline: timeline.map((t) => ({ nodeId: String(t.nodeId ?? ""), output: t.output, durationMs: typeof t.durationMs === "number" ? t.durationMs : 0 })),
       ...(failedStepId !== undefined ? { failedStepId } : {}),

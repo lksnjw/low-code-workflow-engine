@@ -110,6 +110,23 @@ export const workflowService = {
     return unwrap(await apiClient.put(`/workflows/${id}/yaml`, { yaml }));
   },
 /*******************************************************************************
+ * Function: approveGeneration
+ *
+ * Resolves a generation-time approval checkpoint for the workflow module.
+ * Strips the approval step(s) from the saved YAML so future runs never pause.
+ ******************************************************************************/
+  async approveGeneration(id, note = "") {
+    return normalizeWorkflow(unwrap(await apiClient.post(`/workflows/${id}/approve-generation`, { note }, { timeout: 60000 })));
+  },
+/*******************************************************************************
+ * Function: rejectGeneration
+ *
+ * Rejects a generation-time approval checkpoint for the workflow module.
+ ******************************************************************************/
+  async rejectGeneration(id, reason = "") {
+    return normalizeWorkflow(unwrap(await apiClient.post(`/workflows/${id}/reject-generation`, { reason })));
+  },
+/*******************************************************************************
  * Function: saveCanvas
  *
  * Saves canvas for the workflow service module.

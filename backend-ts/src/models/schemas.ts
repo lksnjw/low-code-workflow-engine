@@ -80,6 +80,14 @@ export type Workflow = z.infer<typeof workflowSchema> & {
   chatSessionId?: string;
   chatMessageId?: string;
   traceId?: string;
+  // Set when the generated workflow contains one or more `kind: approval`
+  // steps that have not yet been resolved in chat. While this is set the
+  // workflow cannot be run — see the generation-time approval flow in
+  // http/handlers/workflows.ts (approveWorkflowGeneration/rejectWorkflowGeneration).
+  // Resolving it strips the approval steps from the saved YAML so later runs
+  // never pause for human approval again.
+  pendingGenerationApproval?: { steps: Array<{ stepId: string; description: string }>; requestedAt: string } | null;
+  generationApprovals?: Array<{ approvedBy: { id: string; name: string }; approvedAt: string; note?: string }>;
 };
 
 export const deferredCheckSchema = z.object({
