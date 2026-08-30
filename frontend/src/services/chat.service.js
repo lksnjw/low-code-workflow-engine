@@ -62,9 +62,11 @@ export const chatService = {
       if (options[key]) payload[key] = options[key];
     });
     if (options.workflowContext) payload.workflowContext = options.workflowContext;
-    // Candidate synthesis and the follow-up narrative are separate provider calls.
-    // Keep the client alive long enough for both backend stages to complete.
-    const response = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload, { timeout: 180000 });
+    // Candidate synthesis, tool-name correction, and the follow-up narrative are
+    // separate provider calls chained in one request — keep the client alive
+    // long enough for all of them, matching the 300s nginx proxy timeout so
+    // neither side gives up before the other.
+    const response = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload, { timeout: 300000 });
     return response.data.data;
   },
 };

@@ -22,6 +22,6 @@ test("sendMessage no longer sends the previously ignored workflowId option", asy
       mode: "guided",
       model: "test-model",
     },
-    { timeout: 180000 },
+    { timeout: 300000 },
   );
 });

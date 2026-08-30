@@ -77,7 +77,7 @@ export const executionService = {
     // (multiple tool calls, retries on failure) — give it room to finish
     // instead of the request being treated as a dead server mid-run.
     return normalizeExecution(
-      unwrap(await apiClient.post(`/workflows/${workflowId}/run`, { input, ...options }, { timeout: 180000 })),
+      unwrap(await apiClient.post(`/workflows/${workflowId}/run`, { input, ...options }, { timeout: 300000 })),
     );
   },
 /*******************************************************************************
@@ -86,7 +86,7 @@ export const executionService = {
  * Performs the retry operation on the application for the execution service module.
  ******************************************************************************/
   async retry(id, input = {}) {
-    return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/retry`, { input }, { timeout: 180000 })));
+    return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/retry`, { input }, { timeout: 300000 })));
   },
 /*******************************************************************************
  * Function: approve
@@ -96,7 +96,7 @@ export const executionService = {
   async approve(id, note = "") {
     // Approving resumes the LLM agent from where it stopped — same long-run
     // timeout as run/retry, not the default 30s.
-    return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/approve`, { note }, { timeout: 180000 })));
+    return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/approve`, { note }, { timeout: 300000 })));
   },
 /*******************************************************************************
  * Function: reject

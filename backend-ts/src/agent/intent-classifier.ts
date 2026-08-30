@@ -62,6 +62,40 @@ const QUERY_PATTERNS = [
   "suppliers", "customers", "purchase", "payment", "budget",
 ];
 
+const GENERATION_VERB_PATTERN = /\b(generate|create|build|make|design|write|automate)\b/;
+
+function levenshtein(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i]![0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0]![j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i]![j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1]![j - 1]!
+        : 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
+    }
+  }
+  return dp[a.length]![b.length]!;
+}
+
+// Literal WORKFLOW_PATTERNS matching misses common typos of "workflow" itself
+// (e.g. "wrok flow", "worflow") — a real problem for users who type fast.
+// Scan every ~8-char window of the whitespace-stripped message for a near
+// match (edit distance <= 2) to "workflow" rather than requiring an exact
+// substring.
+function mentionsWorkflowFuzzy(normalized: string): boolean {
+  const stripped = normalized.replace(/[^a-z]/g, "");
+  const target = "workflow";
+  for (let i = 0; i <= stripped.length - 6; i++) {
+    for (let len = 7; len <= 9; len++) {
+      const window = stripped.slice(i, i + len);
+      if (window.length < 6) continue;
+      if (levenshtein(window, target) <= 2) return true;
+    }
+  }
+  return false;
+}
+
 export function classifyIntent(message: string): Intent {
   const normalized = message.toLowerCase().trim();
 
@@ -77,6 +111,11 @@ export function classifyIntent(message: string): Intent {
   for (const pattern of WORKFLOW_PATTERNS) {
     if (normalized.includes(pattern)) return "ACTION";
   }
+
+  // Typo-tolerant fallback for the same intent — "generate a wrok flow to..."
+  // has a generation verb plus a near-miss on "workflow" that the literal
+  // patterns above never see as a substring.
+  if (GENERATION_VERB_PATTERN.test(normalized) && mentionsWorkflowFuzzy(normalized)) return "ACTION";
 
   for (const pattern of TOOL_CALL_PATTERNS) {
     if (normalized.includes(pattern)) return "TOOL_CALL";
