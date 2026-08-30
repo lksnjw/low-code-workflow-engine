@@ -55,6 +55,7 @@ import {
 } from "./handlers/analytics-catalog.js";
 import { runActionLoop } from "../agent/action-loop.js";
 import { discoverTools } from "../agent/tool-discovery.js";
+import { validateWorkflowStatically, analyzeDataFlow } from "../agent/workflow-runtime-validator.js";
 import {
   REGISTRY_UNHANDLED,
   handleRegistryRoute,
@@ -1100,19 +1101,50 @@ async function runWorkflow(
   if (services.providerRuntime?.configured !== true)
     return reply.status(503).send(fail("LLM provider is not configured — cannot run workflow", null));
 
-  if (parsed.data.dryRun)
+  // ── Pre-execution validation ─────────────────────────────────────────────
+  // Discover live tools first so we can validate BEFORE creating the execution record.
+  const bridgeSessionEarly = services.erpbridgeSession ?? null;
+  const liveToolsEarly = await discoverTools(bridgeSessionEarly, services.registries);
+  let workflowStepsEarly: Array<{ id: string; action: string; parameters?: Record<string, unknown>; description?: string }> = [];
+  try { workflowStepsEarly = parseWorkflowYAMLStrict(workflow.yaml ?? "").steps as typeof workflowStepsEarly; } catch { /* handled below */ }
+
+  const preValidation = validateWorkflowStatically(workflowStepsEarly, liveToolsEarly);
+
+  if (parsed.data.dryRun) {
     return reply.send(
       ok(
         {
-          can_execute: true,
+          can_execute: preValidation.valid,
           dry_run: true,
           llm_driven: true,
-          planned_steps: parseWorkflowYAMLStrict(workflow.yaml).steps,
+          planned_steps: workflowStepsEarly,
+          validation: preValidation,
         },
-        "Dry run validation passed",
+        preValidation.valid ? "Dry run validation passed" : "Dry run: validation issues found",
         { traceId },
       ),
     );
+  }
+
+  // Hard-fail on missing tools so the LLM doesn't waste time on an unrunnable workflow.
+  if (!preValidation.valid) {
+    const errors = preValidation.issues.filter((i) => i.severity === "error");
+    console.warn(`[run] ${workflow.id} — pre-run validation FAILED: ${errors.map((e) => e.message).join("; ")}`);
+    return reply.status(422).send(
+      fail(
+        `Workflow cannot run: ${errors.map((e) => e.message).join("; ")}`,
+        { validation: preValidation },
+      ),
+    );
+  }
+
+  // LLM data-flow analysis — runs in parallel with execution record creation.
+  // Non-blocking: if it times out or fails, execution continues without the plan.
+  const dataFlowPlanPromise = workflowStepsEarly.length > 1
+    ? analyzeDataFlow(workflowStepsEarly, preValidation.toolResolutions, services.providerRuntime!, request.signal)
+        .catch(() => "")
+    : Promise.resolve("");
+
   const execution = await services.repository.mutate((state) => {
     state.counter += 1;
     const id = `run-${randomBytes(4).toString("hex")}`;
@@ -1131,6 +1163,7 @@ async function runWorkflow(
         ? {}
         : { chatSessionId: workflow.chatSessionId }),
       traceId,
+      preValidation,
     };
     state.executions[id] = item;
     return item;
@@ -1140,10 +1173,11 @@ async function runWorkflow(
     // their plain-English descriptions) and calls the real ERP Bridge tools dynamically.
     // No governance gate — ERP Bridge enforces RBAC via ERPBRIDGE_ROLE_MAP.
     // Self-healing retries (up to MAX_HEAL_ATTEMPTS) on any failure.
-    const bridgeSession = services.erpbridgeSession ?? null;
-    const liveTools = await discoverTools(bridgeSession, services.registries);
-    const taskMessage = buildWorkflowTaskMessage(workflow);
-    console.log(`[run] ${workflow.id} — LLM agent | bridge=${bridgeSession !== null} tools=${liveTools.length}`);
+    const bridgeSession = bridgeSessionEarly;
+    const liveTools = liveToolsEarly;
+    const dataFlowPlan = await dataFlowPlanPromise;
+    const taskMessage = buildWorkflowTaskMessage(workflow, preValidation.toolResolutions, dataFlowPlan);
+    console.log(`[run] ${workflow.id} — LLM agent | bridge=${bridgeSession !== null} tools=${liveTools.length} validationWarnings=${preValidation.issues.length}`);
     const governanceUser = { id: user.id, role: user.role, department: user.departmentId ?? null };
     const actionResult = await runWorkflowWithHealing(
       taskMessage,
@@ -1644,39 +1678,62 @@ async function runWorkflowWithHealing(
   throw lastError;
 }
 
-function buildWorkflowTaskMessage(workflow: Workflow & { prompt?: string }): string {
+function buildWorkflowTaskMessage(
+  workflow: Workflow & { prompt?: string },
+  toolResolutions: import("../agent/workflow-runtime-validator.js").ToolResolution[] = [],
+  dataFlowPlan = "",
+): string {
   const lines: string[] = [];
   if (workflow.prompt) lines.push(`Original user request: "${workflow.prompt}"`);
   lines.push(`Workflow: "${workflow.name}"`);
   if (workflow.description) lines.push(`Goal: ${workflow.description}`);
   lines.push("");
 
+  // Build a map from originalAction → resolvedAction so we can show correct tool names
+  const resolvedMap = new Map(toolResolutions.map((r) => [r.originalAction, r.resolvedAction]));
+
   try {
     const bp = parseWorkflowYAMLStrict(workflow.yaml ?? "");
     if (bp.steps.length > 0) {
       lines.push(`This workflow has ${bp.steps.length} step(s). Execute them IN ORDER — do not skip any step.`);
+      lines.push("Runtime validation is ACTIVE: before each tool call verify the tool name is correct and all required arguments are real values.");
       lines.push("");
+
       bp.steps.forEach((s, i) => {
         const desc = (s.description ?? "").trim() || (s.action ?? "").replace(/[_-]/g, " ");
-        const params = s.parameters && Object.keys(s.parameters).length > 0
-          ? `\n   Suggested parameters: ${JSON.stringify(s.parameters)}`
+        // Use the validated (resolved) tool name if available
+        const resolvedAction = resolvedMap.get(s.action as string) ?? s.action;
+        const toolHint = resolvedAction !== s.action
+          ? ` [use tool: "${resolvedAction}" — validated name]`
+          : ` [tool: "${resolvedAction}"]`;
+        const params = s.parameters && Object.keys(s.parameters as Record<string, unknown>).length > 0
+          ? `\n   Parameters: ${JSON.stringify(s.parameters)}`
           : "";
         const isFirst = i === 0;
         const isLast = i === bp.steps.length - 1;
         const hint = isFirst
-          ? "\n   → This is a DATA GATHERING step. Call the best matching tool and capture all output."
+          ? "\n   → DATA GATHERING: Call this tool and capture ALL fields from the result — you will need them in later steps."
           : isLast
-            ? "\n   → Use the data/results returned from the previous step(s) as the content for this step."
-            : "\n   → Use results from earlier steps where needed.";
-        lines.push(`Step ${i + 1}: ${desc}${params}${hint}`);
+            ? "\n   → ACTION STEP: Use the actual data fetched in earlier steps as the content. Do NOT use placeholders."
+            : "\n   → INTERMEDIATE: Extract needed values from prior step results and pass them here.";
+        lines.push(`Step ${i + 1}:${toolHint} — ${desc}${params}${hint}`);
       });
+
       lines.push("");
-      lines.push("IMPORTANT:");
-      lines.push("- Call each step's tool with real parameters — never leave required fields empty.");
-      lines.push("- Pass actual data from earlier tool results into later steps (e.g. put fetched records into the email body).");
-      lines.push("- If the best tool is unclear, pick the closest match from your available tools.");
+      lines.push("EXECUTION RULES:");
+      lines.push("- Use ONLY the validated tool names listed above. Do NOT invent new tool names.");
+      lines.push("- If a tool returns an error, check the <runtime_validation> block in the result and fix the arguments.");
+      lines.push("- Pass REAL field values from prior tool results — never use [PLACEHOLDER], <value>, or 'example'.");
+      lines.push("- After all steps, report each step: DONE / FAILED with exact output or error.");
     }
   } catch { /* fallback: name/description only */ }
+
+  // Append LLM-generated data-flow plan when available
+  if (dataFlowPlan.trim()) {
+    lines.push("");
+    lines.push("DATA FLOW PLAN (generated by pre-run analysis — follow this):");
+    lines.push(dataFlowPlan);
+  }
 
   return lines.join("\n");
 }
