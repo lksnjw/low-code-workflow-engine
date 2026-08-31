@@ -11,6 +11,11 @@ export type TraceAuditMetadata = {
   actor?: { id: string; role: string } | undefined;
 };
 
+/*******************************************************************************
+ * Function: attachValidationAuditTrace
+ *
+ * Links trace metadata to the matching validation audit record.
+ ******************************************************************************/
 export async function attachValidationAuditTrace(
   repository: Repository,
   action: string,
@@ -32,6 +37,11 @@ export async function attachValidationAuditTrace(
   });
 }
 
+/*******************************************************************************
+ * Function: attachDispatchAuditTrace
+ *
+ * Links trace metadata to dispatch audit records for an execution.
+ ******************************************************************************/
 export async function attachDispatchAuditTrace(
   repository: Repository,
   executionID: string,
@@ -48,6 +58,11 @@ export async function attachDispatchAuditTrace(
   });
 }
 
+/*******************************************************************************
+ * Function: definedMetadata
+ *
+ * Removes undefined fields from trace audit metadata.
+ ******************************************************************************/
 function definedMetadata(metadata: TraceAuditMetadata): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(metadata).filter(([, value]) => value !== undefined),

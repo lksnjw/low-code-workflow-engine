@@ -279,6 +279,11 @@ function BuilderSidebar({ groups = [], loading, error }) {
   );
 }
 
+/*******************************************************************************
+ * Function: extractReadableData
+ *
+ * Performs the extract Readable Data operation on readable data for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function extractReadableData(raw) {
   if (raw === null || raw === undefined) return null;
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
@@ -302,6 +307,11 @@ function extractReadableData(raw) {
   return raw;
 }
 
+/*******************************************************************************
+ * Function: SmartOutput
+ *
+ * Performs the Smart Output operation on output for the WorkflowBuilderCanvas module.
+ ******************************************************************************/
 function SmartOutput({ value, maxHeight = "max-h-64" }) {
   const data = extractReadableData(value);
   if (Array.isArray(data) && data.length > 0 && data[0] !== null && typeof data[0] === "object") {

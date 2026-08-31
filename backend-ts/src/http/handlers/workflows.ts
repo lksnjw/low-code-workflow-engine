@@ -10,6 +10,11 @@ import { checkErpPolicy, isPolicyCheckerEnabled } from "../../governance/rbac.js
 
 export const WORKFLOW_UNHANDLED = Symbol("workflow-unhandled");
 
+/*******************************************************************************
+ * Function: handleWorkflowRoute
+ *
+ * Dispatches workflow, template, assignment, canvas, and version requests.
+ ******************************************************************************/
 export async function handleWorkflowRoute(
   route: RouteDefinition,
   request: FastifyRequest,
@@ -53,6 +58,11 @@ export async function handleWorkflowRoute(
   return WORKFLOW_UNHANDLED;
 }
 
+/*******************************************************************************
+ * Function: createTemplate
+ *
+ * Validates and creates a workflow template.
+ ******************************************************************************/
 async function createTemplate(request: FastifyRequest, reply: FastifyReply, services: HandlerServices): Promise<unknown> {
   const body = bodyRecord(request);
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
@@ -65,6 +75,11 @@ async function createTemplate(request: FastifyRequest, reply: FastifyReply, serv
   return reply.status(201).send(ok(template, "Template created", null));
 }
 
+/*******************************************************************************
+ * Function: useTemplate
+ *
+ * Creates a workflow using the selected template.
+ ******************************************************************************/
 async function useTemplate(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const template = await services.repository.read((state) => state.templates[requestParam(request, "id")] ?? null);
   if (template === null) throw new HandlerFailure(404, "Template not found");
@@ -85,6 +100,11 @@ async function useTemplate(request: FastifyRequest, reply: FastifyReply, user: C
   return reply.status(201).send(ok(publicWorkflow(workflow), "Template converted to workflow", null));
 }
 
+/*******************************************************************************
+ * Function: updateWorkflow
+ *
+ * Validates and applies changes to an existing workflow.
+ ******************************************************************************/
 async function updateWorkflow(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const body = bodyRecord(request);
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
@@ -112,6 +132,11 @@ async function updateWorkflow(request: FastifyRequest, reply: FastifyReply, user
   return reply.send(ok(publicWorkflow(updated), "Workflow updated", null));
 }
 
+/*******************************************************************************
+ * Function: deleteWorkflow
+ *
+ * Deletes the requested workflow.
+ ******************************************************************************/
 async function deleteWorkflow(request: FastifyRequest, reply: FastifyReply, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id");
   const deleted = await services.repository.mutate((state) => {
@@ -123,6 +148,11 @@ async function deleteWorkflow(request: FastifyRequest, reply: FastifyReply, serv
   return reply.send(ok({ deleted: true }, "Workflow deleted", null));
 }
 
+/*******************************************************************************
+ * Function: duplicateWorkflow
+ *
+ * Creates a copy of an existing workflow for the current user.
+ ******************************************************************************/
 async function duplicateWorkflow(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const body = request.body === undefined ? {} : bodyRecord(request);
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
@@ -142,6 +172,11 @@ async function duplicateWorkflow(request: FastifyRequest, reply: FastifyReply, u
   return reply.status(201).send(ok(publicWorkflow(copy), "Workflow duplicated", null));
 }
 
+/*******************************************************************************
+ * Function: publishWorkflow
+ *
+ * Validates a workflow before publishing it.
+ ******************************************************************************/
 async function publishWorkflow(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const body = request.body === undefined ? {} : bodyRecord(request);
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
@@ -166,6 +201,11 @@ async function publishWorkflow(request: FastifyRequest, reply: FastifyReply, use
   return reply.send(ok(version, "Workflow published", null));
 }
 
+/*******************************************************************************
+ * Function: archiveWorkflow
+ *
+ * Marks a workflow as archived.
+ ******************************************************************************/
 async function archiveWorkflow(request: FastifyRequest, reply: FastifyReply, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id");
   const found = await services.repository.mutate((state) => { const item = state.workflows[id]; if (item === undefined) return false; item.archived = true; item.status = "DONE"; item.updatedAt = now(); return true; });
@@ -173,6 +213,11 @@ async function archiveWorkflow(request: FastifyRequest, reply: FastifyReply, ser
   return reply.send(ok({ archived: true }, "Workflow archived", null));
 }
 
+/*******************************************************************************
+ * Function: assignWorkflow
+ *
+ * Assigns a workflow to the requested user.
+ ******************************************************************************/
 async function assignWorkflow(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const body = bodyRecord(request);
   if (body === null || stringValue(body.userId).trim() === "") throw new HandlerFailure(400, "userId is required");
@@ -190,6 +235,11 @@ async function assignWorkflow(request: FastifyRequest, reply: FastifyReply, user
   return reply.send(ok(publicWorkflow(workflow), "User assigned to workflow", null));
 }
 
+/*******************************************************************************
+ * Function: unassignWorkflow
+ *
+ * Removes an assignment from a workflow.
+ ******************************************************************************/
 async function unassignWorkflow(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const workflowID = requestParam(request, "id"); const targetID = requestParam(request, "userId");
   const workflow = await services.repository.mutate((state) => {
@@ -201,12 +251,22 @@ async function unassignWorkflow(request: FastifyRequest, reply: FastifyReply, us
   return reply.send(ok(publicWorkflow(workflow), "User unassigned from workflow", null));
 }
 
+/*******************************************************************************
+ * Function: getWorkflowYAML
+ *
+ * Returns the workflow's YAML document.
+ ******************************************************************************/
 async function getWorkflowYAML(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const workflow = await visibleWorkflow(requestParam(request, "id"), user, services);
   if (workflow === null) throw new HandlerFailure(404, "Workflow not found");
   return reply.send(ok(yamlRecord(workflow), "OK", null));
 }
 
+/*******************************************************************************
+ * Function: putWorkflowYAML
+ *
+ * Validates and replaces the workflow's YAML document.
+ ******************************************************************************/
 async function putWorkflowYAML(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const body = bodyRecord(request); if (body === null) throw new HandlerFailure(400, "Invalid request body");
   const raw = stringValue(body.yaml);
@@ -226,6 +286,11 @@ async function putWorkflowYAML(request: FastifyRequest, reply: FastifyReply, use
 // is ever run — "solved once at generation, never asked again". Strips the
 // `kind: approval` step(s) out of the saved YAML so every future run of this
 // workflow goes straight through with no human-in-the-loop pause.
+/*******************************************************************************
+ * Function: approveWorkflowGeneration
+ *
+ * Records approval of a generated workflow and its validation outcome.
+ ******************************************************************************/
 async function approveWorkflowGeneration(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id");
   const body = request.body === undefined ? {} : bodyRecord(request);
@@ -284,6 +349,11 @@ async function approveWorkflowGeneration(request: FastifyRequest, reply: Fastify
   return reply.send(ok(publicWorkflow(workflow), "Workflow approved — future runs will not pause for approval", null));
 }
 
+/*******************************************************************************
+ * Function: rejectWorkflowGeneration
+ *
+ * Records rejection of a generated workflow.
+ ******************************************************************************/
 async function rejectWorkflowGeneration(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id");
   const body = request.body === undefined ? {} : bodyRecord(request);
@@ -321,12 +391,22 @@ async function rejectWorkflowGeneration(request: FastifyRequest, reply: FastifyR
   return reply.send(ok(publicWorkflow(workflow), "Workflow rejected", null));
 }
 
+/*******************************************************************************
+ * Function: getWorkflowCanvas
+ *
+ * Returns stored canvas data or derives it from the workflow blueprint.
+ ******************************************************************************/
 async function getWorkflowCanvas(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const workflow = await visibleWorkflow(requestParam(request, "id"), user, services); if (workflow === null) throw new HandlerFailure(404, "Workflow not found");
   const canvas = workflow.canvas ?? canvasFromBlueprint(workflow.id, parseWorkflowYAMLStrict(workflow.yaml));
   return reply.send(ok(canvas, "OK", null));
 }
 
+/*******************************************************************************
+ * Function: putWorkflowCanvas
+ *
+ * Stores the supplied canvas data for a workflow.
+ ******************************************************************************/
 async function putWorkflowCanvas(request: FastifyRequest, reply: FastifyReply, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id");
   if (await services.repository.read((state) => state.workflows[id] === undefined)) throw new HandlerFailure(404, "Workflow not found");
@@ -336,11 +416,21 @@ async function putWorkflowCanvas(request: FastifyRequest, reply: FastifyReply, s
   return reply.send(ok(canvas, "Workflow canvas updated", null));
 }
 
+/*******************************************************************************
+ * Function: workflowVersions
+ *
+ * Returns the saved versions of a workflow.
+ ******************************************************************************/
 async function workflowVersions(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id"); if (await visibleWorkflow(id, user, services) === null) throw new HandlerFailure(404, "Workflow not found");
   const versions = await services.repository.read((state) => state.versions[id] ?? []); return reply.send(ok(versions, "OK", null));
 }
 
+/*******************************************************************************
+ * Function: restoreWorkflowVersion
+ *
+ * Restores a workflow from a selected saved version.
+ ******************************************************************************/
 async function restoreWorkflowVersion(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id"); const versionID = requestParam(request, "versionId");
   const snapshot = await services.repository.read((state) => ({ workflow: state.workflows[id] ?? null, version: (state.versions[id] ?? []).find((item) => item.id === versionID) ?? null }));
@@ -351,25 +441,65 @@ async function restoreWorkflowVersion(request: FastifyRequest, reply: FastifyRep
   return reply.send(ok(publicWorkflow(workflow), "Workflow restored", null));
 }
 
+/*******************************************************************************
+ * Function: workflowExecutions
+ *
+ * Returns executions associated with the requested workflow.
+ ******************************************************************************/
 async function workflowExecutions(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const id = requestParam(request, "id"); if (await visibleWorkflow(id, user, services) === null) throw new HandlerFailure(404, "Workflow not found");
   const executions = await services.repository.read((state) => Object.values(state.executions).filter((item) => item.workflowId === id));
   return reply.send(ok(executions, "OK", { page: 1, limit: 20, total: executions.length, totalPages: executions.length === 0 ? 0 : 1 }));
 }
 
+/*******************************************************************************
+ * Function: newWorkflow
+ *
+ * Builds a workflow record with ownership and default metadata.
+ ******************************************************************************/
 function newWorkflow(state: Parameters<typeof nextID>[0], name: string, description: string, yaml: string, blueprint: ReturnType<typeof parseWorkflowYAMLStrict>, user: CurrentUser): Workflow {
   const id = nextID(state, "wf"); const createdAt = now();
   return { id, name, description, owner: { id: user.id, name: user.name }, assignedUserIds: [], status: "PENDING", trigger: blueprint.trigger as unknown as Record<string, unknown>, steps: blueprint.steps.length, successRate: 0, lastRunAt: null, publishedVersion: 0, draftVersion: 1, tags: [], domainTags: [], canRun: true, createdAt, updatedAt: createdAt, yaml, archived: false, canvas: canvasFromBlueprint(id, blueprint) };
 }
 
+/*******************************************************************************
+ * Function: canvasFromBlueprint
+ *
+ * Converts workflow steps into canvas nodes, edges, and viewport data.
+ ******************************************************************************/
 function canvasFromBlueprint(workflowID: string, blueprint: ReturnType<typeof parseWorkflowYAMLStrict>): Record<string, unknown> {
   const nodes = blueprint.steps.map((step, index) => ({ id: step.id, label: step.description?.trim() === "" || step.description === undefined ? step.action ?? step.id : step.description, type: step.kind === undefined || step.kind === "" ? "tool" : step.kind, position: { x: 80 + index * 260, y: 120 }, status: "idle", config: { action: step.action ?? "", parameters: step.parameters ?? {} } }));
   const edges = nodes.slice(1).map((node, index) => ({ id: `edge_${index + 1}`, source: nodes[index]!.id, target: node.id, type: "default", label: null }));
   return { workflowId: workflowID, nodes, edges, viewport: { x: 0, y: 0, zoom: 1 } };
 }
 
+/*******************************************************************************
+ * Function: yamlRecord
+ *
+ * Builds the response metadata for a workflow's YAML document.
+ ******************************************************************************/
 function yamlRecord(workflow: Workflow): Record<string, unknown> { return { workflowId: workflow.id, version: workflow.draftVersion, yaml: workflow.yaml, checksum: checksum(workflow.yaml), updatedAt: workflow.updatedAt }; }
+/*******************************************************************************
+ * Function: publicWorkflow
+ *
+ * Projects workflow data into the response shape for this handler.
+ ******************************************************************************/
 function publicWorkflow(workflow: Workflow): Record<string, unknown> { const { yaml: _yaml, archived: _archived, canvas: _canvas, ...visible } = workflow; return visible; }
+/*******************************************************************************
+ * Function: visibleWorkflow
+ *
+ * Loads a workflow and enforces the current user's visibility rules.
+ ******************************************************************************/
 async function visibleWorkflow(id: string, user: CurrentUser, services: HandlerServices): Promise<Workflow | null> { return services.repository.read((state) => { const item = state.workflows[id]; if (item === undefined) return null; if (user.permissions.includes("workflow:read") || item.owner.id === user.id || (item.assignedUserIds ?? []).includes(user.id)) return structuredClone(item); return null; }); }
+/*******************************************************************************
+ * Function: executionShape
+ *
+ * Projects execution data into the workflow response shape.
+ ******************************************************************************/
 function executionShape(canvas: Record<string, unknown>): string { const nodes = Array.isArray(canvas.nodes) ? canvas.nodes.map((node) => isRecord(node) ? { id: node.id, type: node.type, config: node.config } : node) : []; const edges = Array.isArray(canvas.edges) ? canvas.edges.map((edge) => isRecord(edge) ? { source: edge.source, target: edge.target, type: edge.type, label: edge.label } : edge) : []; return JSON.stringify({ nodes, edges }); }
+/*******************************************************************************
+ * Function: errorText
+ *
+ * Converts an error or other thrown value into a message string.
+ ******************************************************************************/
 function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error); }

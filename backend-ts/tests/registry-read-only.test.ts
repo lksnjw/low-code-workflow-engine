@@ -76,6 +76,11 @@ describe("read-only registry selection", () => {
   });
 });
 
+/*******************************************************************************
+ * Function: loadMasterRegistry
+ *
+ * Loads the master tool registry used by read-only classification tests.
+ ******************************************************************************/
 async function loadMasterRegistry(): Promise<RegistryService> {
   return RegistryService.load(
     resolve("fixtures/parity/http/runtime/all_tools_master_registry.json"),
@@ -83,6 +88,11 @@ async function loadMasterRegistry(): Promise<RegistryService> {
   );
 }
 
+/*******************************************************************************
+ * Function: loadTemporaryMasterRegistry
+ *
+ * Creates and loads an isolated copy of the master registry for testing.
+ ******************************************************************************/
 async function loadTemporaryMasterRegistry(): Promise<{
   registries: RegistryService;
 }> {
@@ -106,6 +116,11 @@ async function loadTemporaryMasterRegistry(): Promise<{
   return { registries: await RegistryService.load(toolPath, rulePath) };
 }
 
+/*******************************************************************************
+ * Function: createTemporaryDirectory
+ *
+ * Creates and tracks a temporary directory for test cleanup.
+ ******************************************************************************/
 async function createTemporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "lcwe-read-only-registry-"));
   temporaryDirectories.push(directory);

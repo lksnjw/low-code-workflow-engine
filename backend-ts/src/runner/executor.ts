@@ -17,6 +17,11 @@ import type {
 } from "../validator/registry-validator.js";
 
 export class DispatchPolicyError extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a DispatchPolicyError instance with its required state.
+   ******************************************************************************/
   constructor(readonly violation: ResolvedPolicyViolation) {
     super(violation.reason);
     this.name = "DispatchPolicyError";
@@ -24,6 +29,11 @@ export class DispatchPolicyError extends Error {
 }
 
 export class DataEgressError extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a DataEgressError instance with its required state.
+   ******************************************************************************/
   constructor(readonly reason: string) {
     super(reason);
     this.name = "DataEgressError";
@@ -68,6 +78,11 @@ export class Executor {
   #analysisProvider: AnalysisProvider | null = null;
   #analysisModel = "";
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a Executor instance with its required state.
+   ******************************************************************************/
   constructor(
     readonly tools: ToolRegistry,
     readonly validator: RegistryValidator,
@@ -78,6 +93,11 @@ export class Executor {
       throw new Error("runner requires a registry validator");
   }
 
+  /*******************************************************************************
+   * Function: setAnalysisProvider
+   *
+   * Configures the provider and model used by analysis steps.
+   ******************************************************************************/
   setAnalysisProvider(provider: AnalysisProvider, model = ""): void {
     if (
       provider === null ||
@@ -89,6 +109,12 @@ export class Executor {
     this.#analysisModel = model;
   }
 
+  /*******************************************************************************
+   * Function: run
+   *
+   * Executes a validated workflow and records step outputs and timeline
+   * entries.
+   ******************************************************************************/
   async run(
     executionID: string,
     workflow: Workflow,
@@ -287,6 +313,12 @@ export class Executor {
     return result;
   }
 
+  /*******************************************************************************
+   * Function: executeAnalysis
+   *
+   * Resolves analysis input and runs the configured provider within step
+   * limits.
+   ******************************************************************************/
   private async executeAnalysis(
     step: ReturnType<typeof parseWorkflowYAMLStrict>["steps"][number],
     state: Record<string, unknown>,
@@ -372,6 +404,11 @@ export class Executor {
   }
 }
 
+/*******************************************************************************
+ * Function: completeTimeline
+ *
+ * Builds a completed step timeline entry with timing and outcome metadata.
+ ******************************************************************************/
 function completeTimeline(
   index: number,
   nodeId: string,
@@ -396,6 +433,11 @@ function completeTimeline(
   return entry;
 }
 
+/*******************************************************************************
+ * Function: attachPartial
+ *
+ * Attaches the partial runner result to an error.
+ ******************************************************************************/
 function attachPartial(error: unknown, result: RunnerResult): Error {
   const normalized = error instanceof Error ? error : new Error(String(error));
   Object.defineProperty(normalized, "runnerResult", {
@@ -405,6 +447,11 @@ function attachPartial(error: unknown, result: RunnerResult): Error {
   return normalized;
 }
 
+/*******************************************************************************
+ * Function: partialResult
+ *
+ * Retrieves a partial runner result preserved on an error.
+ ******************************************************************************/
 export function partialResult(error: unknown): RunnerResult | null {
   if (!(error instanceof Error)) return null;
   return (
@@ -412,6 +459,11 @@ export function partialResult(error: unknown): RunnerResult | null {
   );
 }
 
+/*******************************************************************************
+ * Function: containsBraces
+ *
+ * Detects unresolved template markers within nested values.
+ ******************************************************************************/
 function containsBraces(value: unknown): boolean {
   if (typeof value === "string")
     return value.includes("{{") && value.includes("}}");
@@ -419,9 +471,19 @@ function containsBraces(value: unknown): boolean {
   if (isRecord(value)) return Object.values(value).some(containsBraces);
   return false;
 }
+/*******************************************************************************
+ * Function: isRecord
+ *
+ * Checks whether a value is a non-null object other than an array.
+ ******************************************************************************/
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+/*******************************************************************************
+ * Function: errorText
+ *
+ * Converts an error or other thrown value into a message string.
+ ******************************************************************************/
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

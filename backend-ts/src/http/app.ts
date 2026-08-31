@@ -160,6 +160,12 @@ const malformedJSONMessages = new Map<string, string>([
   ].map((key) => [key, "Invalid request body"] as const),
 ]);
 
+/*******************************************************************************
+ * Function: buildApp
+ *
+ * Configures the Fastify application, middleware, routes, and websocket
+ * handlers.
+ ******************************************************************************/
 export async function buildApp(
   services: ApplicationServices,
 ): Promise<FastifyInstance> {
@@ -235,6 +241,11 @@ export async function buildApp(
         route.path,
         {
           websocket: true,
+          /*******************************************************************************
+           * Function: preValidation
+           *
+           * Authenticates a websocket request before the connection is accepted.
+           ******************************************************************************/
           preValidation: async (request, reply) => {
             const auth = await authenticate(request, reply, services);
             if (auth === null) return reply;
@@ -258,6 +269,11 @@ export async function buildApp(
     app.route({
       method: route.method as HTTPMethods,
       url: route.path,
+      /*******************************************************************************
+       * Function: handler
+       *
+       * Dispatches the registered HTTP route to its application handler.
+       ******************************************************************************/
       handler: async (request, reply) =>
         route.method === "GET"
           ? handleRoute(route, request, reply, services)
@@ -273,6 +289,11 @@ export async function buildApp(
   return app;
 }
 
+/*******************************************************************************
+ * Function: assertApplicationServices
+ *
+ * Checks that the application has the services required to start.
+ ******************************************************************************/
 function assertApplicationServices(services: ApplicationServices): void {
   if (
     services === null ||
@@ -311,6 +332,11 @@ function assertApplicationServices(services: ApplicationServices): void {
 
 const INVALID_JSON_BODY = Object.freeze({ invalidJSONBody: true });
 
+/*******************************************************************************
+ * Function: sendWebsocketSnapshot
+ *
+ * Sends the current workflow and execution snapshot to an open websocket.
+ ******************************************************************************/
 async function sendWebsocketSnapshot(
   socket: { readyState: number; send(data: string): void },
   channel: string,
@@ -344,6 +370,11 @@ async function sendWebsocketSnapshot(
   );
 }
 
+/*******************************************************************************
+ * Function: handleRoute
+ *
+ * Dispatches an HTTP request to the matching backend handler.
+ ******************************************************************************/
 async function handleRoute(
   route: RouteDefinition,
   request: FastifyRequest,
@@ -583,6 +614,11 @@ async function handleRoute(
   return genericRoute(route, request, reply, current, services);
 }
 
+/*******************************************************************************
+ * Function: health
+ *
+ * Returns application and persistence health information.
+ ******************************************************************************/
 async function health(
   reply: FastifyReply,
   services: ApplicationServices,
@@ -612,6 +648,11 @@ async function health(
       });
 }
 
+/*******************************************************************************
+ * Function: login
+ *
+ * Verifies login credentials and issues an authenticated session.
+ ******************************************************************************/
 async function login(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -646,6 +687,11 @@ async function login(
   return reply.send(ok(session, "Login successful", null));
 }
 
+/*******************************************************************************
+ * Function: register
+ *
+ * Creates a user account from a validated registration request.
+ ******************************************************************************/
 async function register(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -717,6 +763,11 @@ async function register(
     );
 }
 
+/*******************************************************************************
+ * Function: refresh
+ *
+ * Exchanges a valid refresh token for a renewed session.
+ ******************************************************************************/
 async function refresh(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -745,6 +796,11 @@ async function refresh(
   );
 }
 
+/*******************************************************************************
+ * Function: logout
+ *
+ * Revokes the supplied refresh session.
+ ******************************************************************************/
 async function logout(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -761,6 +817,11 @@ async function logout(
   return reply.send(ok({ loggedOut: true }, "Logged out", null));
 }
 
+/*******************************************************************************
+ * Function: authenticate
+ *
+ * Resolves and validates the request's authentication token and user.
+ ******************************************************************************/
 async function authenticate(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -811,6 +872,11 @@ async function authenticate(
   }
 }
 
+/*******************************************************************************
+ * Function: issueSession
+ *
+ * Creates access and refresh tokens and stores the refresh session.
+ ******************************************************************************/
 async function issueSession(
   user: User,
   remember: boolean,
@@ -838,6 +904,11 @@ async function issueSession(
   };
 }
 
+/*******************************************************************************
+ * Function: listWorkflows
+ *
+ * Returns workflows visible to the current user.
+ ******************************************************************************/
 async function listWorkflows(
   _request: FastifyRequest,
   reply: FastifyReply,
@@ -865,6 +936,11 @@ async function listWorkflows(
   );
 }
 
+/*******************************************************************************
+ * Function: createWorkflow
+ *
+ * Validates and stores a new workflow from the request.
+ ******************************************************************************/
 async function createWorkflow(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1027,6 +1103,11 @@ async function createWorkflow(
     .send(ok(publicWorkflow(workflow), "Workflow created", null));
 }
 
+/*******************************************************************************
+ * Function: getWorkflow
+ *
+ * Returns a workflow when it is visible to the current user.
+ ******************************************************************************/
 async function getWorkflow(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1047,6 +1128,11 @@ async function getWorkflow(
   return reply.send(ok(publicWorkflow(item), "OK", null));
 }
 
+/*******************************************************************************
+ * Function: validateWorkflow
+ *
+ * Validates the requested workflow and returns the gate result.
+ ******************************************************************************/
 async function validateWorkflow(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1079,6 +1165,11 @@ async function validateWorkflow(
   );
 }
 
+/*******************************************************************************
+ * Function: runWorkflow
+ *
+ * Loads the requested workflow and delegates its execution.
+ ******************************************************************************/
 async function runWorkflow(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1096,6 +1187,11 @@ async function runWorkflow(
 // Shared by POST /workflows/:id/run and POST /executions/:id/retry — the ONLY
 // workflow execution path. No deterministic fallback: every run goes through
 // the self-healing LLM agent loop (runWorkflowWithHealing below).
+/*******************************************************************************
+ * Function: runWorkflowFor
+ *
+ * Validates a workflow run request and manages its execution lifecycle.
+ ******************************************************************************/
 export async function runWorkflowFor(
   workflow: Workflow,
   request: FastifyRequest,
@@ -1382,6 +1478,11 @@ export async function runWorkflowFor(
 // the self-healing agent with the prior results and the new approval as
 // context, so it continues the remaining steps rather than starting over or
 // asking again — "the LLM handles it, it knows it was approved."
+/*******************************************************************************
+ * Function: resumeWorkflowApproval
+ *
+ * Resumes an execution paused for a pending human approval.
+ ******************************************************************************/
 export async function resumeWorkflowApproval(
   execution: Execution,
   note: string,
@@ -1517,6 +1618,11 @@ export async function resumeWorkflowApproval(
   );
 }
 
+/*******************************************************************************
+ * Function: listExecutions
+ *
+ * Returns visible executions filtered by the request parameters.
+ ******************************************************************************/
 async function listExecutions(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1549,6 +1655,11 @@ async function listExecutions(
   );
 }
 
+/*******************************************************************************
+ * Function: getExecution
+ *
+ * Returns an execution when the current user can read it.
+ ******************************************************************************/
 async function getExecution(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1566,6 +1677,11 @@ async function getExecution(
   return reply.send(ok(withoutSecretFields(item), "OK", null));
 }
 
+/*******************************************************************************
+ * Function: genericRoute
+ *
+ * Returns the fallback response for a route without a specific handler.
+ ******************************************************************************/
 async function genericRoute(
   route: RouteDefinition,
   _request: FastifyRequest,
@@ -1587,6 +1703,11 @@ async function genericRoute(
   throw new Error(`Missing route dispatch for ${route.method} ${route.path}`);
 }
 
+/*******************************************************************************
+ * Function: routePolicy
+ *
+ * Determines the permission required for an HTTP route.
+ ******************************************************************************/
 function routePolicy(
   route: RouteDefinition,
 ): { required: string[]; any: boolean } | null {
@@ -1651,6 +1772,12 @@ function routePolicy(
   return null;
 }
 
+/*******************************************************************************
+ * Function: publicUser
+ *
+ * Projects user data into its public representation without the password
+ * hash.
+ ******************************************************************************/
 function publicUser(
   user: (User & { role?: string; permissions?: string[] }) | null,
 ): Record<string, unknown> {
@@ -1677,15 +1804,30 @@ function publicUser(
     permissions: user.permissions ?? [],
   };
 }
+/*******************************************************************************
+ * Function: publicWorkflow
+ *
+ * Projects workflow data into the response shape for this handler.
+ ******************************************************************************/
 function publicWorkflow(
   workflow: Workflow,
 ): Omit<Workflow, "yaml" | "archived"> {
   const { yaml: _yaml, archived: _archived, ...publicPart } = workflow;
   return publicPart;
 }
+/*******************************************************************************
+ * Function: param
+ *
+ * Reads a named route parameter as a string.
+ ******************************************************************************/
 function param(request: FastifyRequest, name: string): string {
   return String((request.params as Record<string, unknown>)[name] ?? "");
 }
+/*******************************************************************************
+ * Function: initials
+ *
+ * Builds uppercase initials from the first two name components.
+ ******************************************************************************/
 function initials(name: string): string {
   return name
     .trim()
@@ -1694,16 +1836,36 @@ function initials(name: string): string {
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 }
+/*******************************************************************************
+ * Function: sha256
+ *
+ * Computes a hexadecimal SHA-256 digest of the supplied value.
+ ******************************************************************************/
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
+/*******************************************************************************
+ * Function: isRecord
+ *
+ * Checks whether a value is a non-null object other than an array.
+ ******************************************************************************/
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+/*******************************************************************************
+ * Function: errorText
+ *
+ * Converts an error or other thrown value into a message string.
+ ******************************************************************************/
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 class HTTPFailure extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a HTTPFailure instance with its required state.
+   ******************************************************************************/
   constructor(
     readonly status: number,
     message: string,
@@ -1712,6 +1874,11 @@ class HTTPFailure extends Error {
   }
 }
 
+/*******************************************************************************
+ * Function: listNotifications
+ *
+ * Returns notifications using this handler's visibility and ordering rules.
+ ******************************************************************************/
 async function listNotifications(
   reply: FastifyReply,
   _user: User,
@@ -1727,6 +1894,11 @@ async function listNotifications(
   return reply.send(ok(all, "OK", { count: all.length }));
 }
 
+/*******************************************************************************
+ * Function: markNotificationRead
+ *
+ * Marks a notification as read and records the read time.
+ ******************************************************************************/
 async function markNotificationRead(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1745,6 +1917,11 @@ async function markNotificationRead(
   return reply.send(ok(updated, "Marked as read", null));
 }
 
+/*******************************************************************************
+ * Function: deleteNotification
+ *
+ * Deletes the requested notification.
+ ******************************************************************************/
 async function deleteNotification(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1761,6 +1938,11 @@ async function deleteNotification(
   return reply.send(ok({ deleted: true }, "Notification deleted", null));
 }
 
+/*******************************************************************************
+ * Function: markAllNotificationsRead
+ *
+ * Marks unread notifications as read and reports the updated count.
+ ******************************************************************************/
 async function markAllNotificationsRead(
   reply: FastifyReply,
   _user: User,
@@ -1779,6 +1961,11 @@ async function markAllNotificationsRead(
 
 const MAX_HEAL_ATTEMPTS = 2;
 
+/*******************************************************************************
+ * Function: buildHealingPrompt
+ *
+ * Adds failure details and retry instructions to the workflow task prompt.
+ ******************************************************************************/
 function buildHealingPrompt(originalTask: string, error: unknown, attempt: number): string {
   return [
     `PREVIOUS ATTEMPT FAILED (attempt ${attempt}): ${errorText(error)}`,
@@ -1801,6 +1988,11 @@ type ActionLoopContext = {
   traceId?: string;
 };
 
+/*******************************************************************************
+ * Function: runWorkflowWithHealing
+ *
+ * Runs workflow actions with bounded retries and failure feedback.
+ ******************************************************************************/
 async function runWorkflowWithHealing(
   taskMessage: string,
   liveTools: Awaited<ReturnType<typeof discoverTools>>,
@@ -1888,6 +2080,11 @@ export type PendingApproval = { stepId: string; description: string };
 // approvedStepIds — is the checkpoint execution is currently sitting at.
 // Returns null once every approval step has either been approved or the
 // agent has gone on to complete tool steps past it.
+/*******************************************************************************
+ * Function: findPendingApproval
+ *
+ * Finds the next approval checkpoint reached by completed tool steps.
+ ******************************************************************************/
 export function findPendingApproval(
   blueprintSteps: ReadonlyArray<{ id: string; kind?: string | undefined; description?: string | undefined }>,
   approvedStepIds: ReadonlySet<string>,
@@ -1913,6 +2110,11 @@ export function findPendingApproval(
   return null;
 }
 
+/*******************************************************************************
+ * Function: buildWorkflowTaskMessage
+ *
+ * Builds the agent task message from the workflow and execution inputs.
+ ******************************************************************************/
 function buildWorkflowTaskMessage(
   workflow: Workflow & { prompt?: string },
   toolResolutions: import("../agent/workflow-runtime-validator.js").ToolResolution[] = [],
@@ -1983,6 +2185,11 @@ function buildWorkflowTaskMessage(
   return lines.join("\n");
 }
 
+/*******************************************************************************
+ * Function: postExecutionAnalysis
+ *
+ * Adds a generated execution analysis to the linked chat session.
+ ******************************************************************************/
 async function postExecutionAnalysis(
   execution: { id: string; workflowId: string; workflowName?: string; status: string; startedAt: string; completedAt: string | null; durationMs: number; stepOutputs?: Record<string, unknown>; agentSummary?: string; failure?: Record<string, unknown>; chatSessionId?: string; tokens?: { input: number; output: number; total: number } },
   timeline: Array<{ nodeId?: unknown; output?: unknown; durationMs?: unknown }>,

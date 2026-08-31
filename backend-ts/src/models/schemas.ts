@@ -50,6 +50,11 @@ export const workflowBlueprintSchema = z.object({
 export type WorkflowBlueprint = z.infer<typeof workflowBlueprintSchema>;
 export type WorkflowStepBlueprint = z.infer<typeof workflowStepBlueprintSchema>;
 
+/*******************************************************************************
+ * Function: effectiveStepKind
+ *
+ * Resolves the effective workflow step kind using its default.
+ ******************************************************************************/
 export function effectiveStepKind(step: WorkflowStepBlueprint): string {
   return step.kind === undefined || step.kind === "" ? "tool" : step.kind;
 }
@@ -132,10 +137,20 @@ export type ApiResponse<T = unknown> = {
   meta: unknown;
 };
 
+/*******************************************************************************
+ * Function: ok
+ *
+ * Builds a successful API response envelope.
+ ******************************************************************************/
 export function ok<T>(data: T, message = "", meta: unknown = null): ApiResponse<T> {
   return { success: true, data, message: message === "" ? "OK" : message, meta };
 }
 
+/*******************************************************************************
+ * Function: fail
+ *
+ * Builds a failed API response envelope.
+ ******************************************************************************/
 export function fail(message = "", meta: unknown = null): ApiResponse<never> {
   return { success: false, data: null, message: message === "" ? "Request failed" : message, meta };
 }

@@ -19,12 +19,22 @@ describe("runner output redaction", () => {
     tools.register({
       name: "demo.echo",
       description: "Echoes a safe value for the analysis fixture.",
+      /*******************************************************************************
+       * Function: execute
+       *
+       * Returns a stub tool result containing values used by redaction tests.
+       ******************************************************************************/
       async execute() {
         return { output: { value: "input" } };
       },
     });
     const executor = new Executor(tools, validator);
     const provider: AnalysisProvider = {
+      /*******************************************************************************
+       * Function: generate
+       *
+       * Returns a stub analysis response for the runner redaction test.
+       ******************************************************************************/
       async generate() {
         return {
           text: JSON.stringify({
@@ -78,6 +88,11 @@ describe("runner output redaction", () => {
   });
 });
 
+/*******************************************************************************
+ * Function: workflowRecord
+ *
+ * Builds a workflow record from the supplied test YAML.
+ ******************************************************************************/
 function workflowRecord(yaml: string): Workflow {
   const timestamp = new Date().toISOString();
   return {

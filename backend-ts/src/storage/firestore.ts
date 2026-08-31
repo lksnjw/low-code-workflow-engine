@@ -26,11 +26,22 @@ export class FirestorePersistence implements PersistenceBackend {
   // a fresh process re-mirrors everything once on its first save, same as before.
   readonly #lastMirrored = new Map<string, Map<string, string>>();
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a FirestorePersistence instance with its required state.
+   ******************************************************************************/
   private constructor(db: Firestore, codec: AESGCMCodec | null) {
     this.#db = db;
     this.#codec = codec;
   }
 
+  /*******************************************************************************
+   * Function: open
+   *
+   * Creates and checks a Firestore persistence backend with optional
+   * encryption.
+   ******************************************************************************/
   static async open(config: FirestoreConfig): Promise<FirestorePersistence> {
     const db = new Firestore({
       projectId: config.projectId,
@@ -43,6 +54,11 @@ export class FirestorePersistence implements PersistenceBackend {
     return instance;
   }
 
+  /*******************************************************************************
+   * Function: load
+   *
+   * Loads and decodes the stored Firestore repository snapshot.
+   ******************************************************************************/
   async load(): Promise<Uint8Array | null> {
     return this.#mutex.runExclusive(async () => {
       this.assertOpen();
@@ -66,6 +82,11 @@ export class FirestorePersistence implements PersistenceBackend {
     });
   }
 
+  /*******************************************************************************
+   * Function: save
+   *
+   * Compresses and stores repository state, then mirrors entity metadata.
+   ******************************************************************************/
   async save(payload: Uint8Array): Promise<void> {
     await this.#mutex.runExclusive(async () => {
       this.assertOpen();
@@ -88,6 +109,11 @@ export class FirestorePersistence implements PersistenceBackend {
     void this.#mirrorEntities(payload);
   }
 
+  /*******************************************************************************
+   * Function: #mirrorEntities
+   *
+   * Mirrors selected repository entities into Firestore documents.
+   ******************************************************************************/
   async #mirrorEntities(payload: Uint8Array): Promise<void> {
     try {
       const state = JSON.parse(Buffer.from(payload).toString("utf8")) as Record<string, unknown>;
@@ -140,6 +166,11 @@ export class FirestorePersistence implements PersistenceBackend {
     }
   }
 
+  /*******************************************************************************
+   * Function: probe
+   *
+   * Checks access to the Firestore state collection.
+   ******************************************************************************/
   async probe(): Promise<void> {
     await this.#mutex.runExclusive(async () => {
       this.assertOpen();
@@ -147,30 +178,60 @@ export class FirestorePersistence implements PersistenceBackend {
     });
   }
 
+  /*******************************************************************************
+   * Function: close
+   *
+   * Terminates the Firestore client once.
+   ******************************************************************************/
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
     await this.#db.terminate();
   }
 
+  /*******************************************************************************
+   * Function: assertOpen
+   *
+   * Rejects operations after the persistence backend has been closed.
+   ******************************************************************************/
   private assertOpen(): void {
     if (this.#closed) throw new Error("Firestore state store is closed");
   }
 }
 
+/*******************************************************************************
+ * Function: compressFirestorePayload
+ *
+ * Compresses serialized repository state with gzip.
+ ******************************************************************************/
 export function compressFirestorePayload(payload: Uint8Array): Buffer {
   return gzipSync(payload);
 }
 
+/*******************************************************************************
+ * Function: decompressFirestorePayload
+ *
+ * Decompresses a gzip-compressed repository state payload.
+ ******************************************************************************/
 export function decompressFirestorePayload(payload: Uint8Array): Buffer {
   return gunzipSync(payload);
 }
 
+/*******************************************************************************
+ * Function: asEntityMap
+ *
+ * Returns an object value as an entity map or an empty map.
+ ******************************************************************************/
 function asEntityMap(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
 }
 
+/*******************************************************************************
+ * Function: redactUsers
+ *
+ * Removes password hashes from user records prepared for mirroring.
+ ******************************************************************************/
 function redactUsers(value: unknown): Record<string, unknown> {
   const map = asEntityMap(value);
   const result: Record<string, unknown> = {};
@@ -183,6 +244,11 @@ function redactUsers(value: unknown): Record<string, unknown> {
   return result;
 }
 
+/*******************************************************************************
+ * Function: redactChats
+ *
+ * Removes message bodies from chat records prepared for mirroring.
+ ******************************************************************************/
 function redactChats(value: unknown): Record<string, unknown> {
   const map = asEntityMap(value);
   const result: Record<string, unknown> = {};

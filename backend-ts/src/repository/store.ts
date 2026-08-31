@@ -128,11 +128,21 @@ export class Repository {
   #committed: RepositoryState;
   #healthy = true;
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a Repository instance with its required state.
+   ******************************************************************************/
   constructor(readonly persistence: PersistenceBackend | null = null, initial = initialState()) {
     this.#state = structuredClone(initial);
     this.#committed = structuredClone(initial);
   }
 
+  /*******************************************************************************
+   * Function: open
+   *
+   * Opens the repository and restores persisted state when available.
+   ******************************************************************************/
   static async open(persistence: PersistenceBackend | null): Promise<Repository> {
     if (persistence === null) return new Repository(null);
     const payload = await persistence.load();
@@ -150,14 +160,29 @@ export class Repository {
     return repository;
   }
 
+  /*******************************************************************************
+   * Function: snapshot
+   *
+   * Returns a copy of the current repository state.
+   ******************************************************************************/
   async snapshot(): Promise<RepositoryState> {
     return this.#mutex.runExclusive(() => structuredClone(this.#state));
   }
 
+  /*******************************************************************************
+   * Function: read
+   *
+   * Runs a read operation against the repository state.
+   ******************************************************************************/
   async read<T>(reader: (state: Readonly<RepositoryState>) => T): Promise<T> {
     return this.#mutex.runExclusive(() => reader(this.#state));
   }
 
+  /*******************************************************************************
+   * Function: mutate
+   *
+   * Applies a serialized repository mutation and persists the updated state.
+   ******************************************************************************/
   async mutate<T>(mutation: (state: RepositoryState) => Promise<T> | T): Promise<T> {
     return this.#mutex.runExclusive(async () => {
       const before = structuredClone(this.#state);
@@ -181,6 +206,11 @@ export class Repository {
     });
   }
 
+  /*******************************************************************************
+   * Function: persistenceStatus
+   *
+   * Probes persistence and reports durability and health.
+   ******************************************************************************/
   async persistenceStatus(): Promise<{ durable: boolean; healthy: boolean }> {
     if (this.persistence === null) return { durable: false, healthy: true };
     try {
@@ -192,6 +222,11 @@ export class Repository {
     return { durable: true, healthy: this.#healthy };
   }
 
+  /*******************************************************************************
+   * Function: nextID
+   *
+   * Allocates a unique prefixed identifier through a repository mutation.
+   ******************************************************************************/
   async nextID(prefix: string): Promise<string> {
     return this.mutate((state) => {
       state.counter += 1;
@@ -199,10 +234,20 @@ export class Repository {
     });
   }
 
+  /*******************************************************************************
+   * Function: close
+   *
+   * Closes the repository's persistence backend when configured.
+   ******************************************************************************/
   async close(): Promise<void> {
     await this.persistence?.close();
   }
 
+  /*******************************************************************************
+   * Function: effectiveUser
+   *
+   * Returns a user with the permissions granted by its role and overrides.
+   ******************************************************************************/
   async effectiveUser(userId: string): Promise<(User & { role: string; permissions: string[] }) | null> {
     return this.read((state) => {
       const user = state.users[userId];
@@ -214,6 +259,11 @@ export class Repository {
   }
 }
 
+/*******************************************************************************
+ * Function: restoreState
+ *
+ * Validates and restores a serialized repository state.
+ ******************************************************************************/
 function restoreState(payload: Uint8Array): RepositoryState {
   const decoded: unknown = JSON.parse(Buffer.from(payload).toString("utf8"));
   if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) throw new Error("stored repository state must be a JSON object");
@@ -232,6 +282,11 @@ function restoreState(payload: Uint8Array): RepositoryState {
   return restored;
 }
 
+/*******************************************************************************
+ * Function: initialState
+ *
+ * Builds the initial repository state with default roles and permissions.
+ ******************************************************************************/
 export function initialState(): RepositoryState {
   const createdAt = new Date().toISOString();
   const permissionKeys = ["workflow:read", "workflow:write", "workflow:run", "workflow:read_own", "workflow:run_own", "execution:read_own", "workflow_view_all", "chat:use", "registry:read", "registry:write", "settings:manage", "provider:manage", "user:manage", "audit:read"];
@@ -275,10 +330,20 @@ export function initialState(): RepositoryState {
   };
 }
 
+/*******************************************************************************
+ * Function: permissionName
+ *
+ * Formats a permission key as a readable name.
+ ******************************************************************************/
 function permissionName(key: string): string {
   return key.split(/[._:]/).map((part) => part.length === 0 ? part : `${part[0]!.toUpperCase()}${part.slice(1)}`).join(" ");
 }
 
+/*******************************************************************************
+ * Function: permissionGroup
+ *
+ * Assigns a permission key to its display group.
+ ******************************************************************************/
 function permissionGroup(key: string): string {
   if (key.startsWith("workflow") || key.startsWith("execution") || key.startsWith("chat")) return "Workflow";
   if (key.startsWith("registry")) return "Registry";
@@ -286,6 +351,11 @@ function permissionGroup(key: string): string {
   return "Settings";
 }
 
+/*******************************************************************************
+ * Function: permissionDescription
+ *
+ * Returns a description for a permission key.
+ ******************************************************************************/
 function permissionDescription(key: string): string {
   const descriptions: Record<string, string> = {
     "workflow:run": "Start, cancel, and retry workflow executions",

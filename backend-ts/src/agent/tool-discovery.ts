@@ -7,6 +7,12 @@ const CACHE_TTL_MS = 60_000;
 let cachedTools: readonly ToolDefinition[] | null = null;
 let cacheExpiresAt = 0;
 
+/*******************************************************************************
+ * Function: discoverTools
+ *
+ * Loads cached or live ERPBridge tools and enriches them with registry
+ * metadata.
+ ******************************************************************************/
 export async function discoverTools(
   session: ErpbridgeMcpSession | null,
   registries: RegistryService,
@@ -57,11 +63,21 @@ export async function discoverTools(
   }
 }
 
+/*******************************************************************************
+ * Function: invalidateToolDiscoveryCache
+ *
+ * Clears the cached tool list so discovery reloads it.
+ ******************************************************************************/
 export function invalidateToolDiscoveryCache(): void {
   cachedTools = null;
   cacheExpiresAt = 0;
 }
 
+/*******************************************************************************
+ * Function: humanizeName
+ *
+ * Converts an underscored name into a readable title.
+ ******************************************************************************/
 function humanizeName(name: string): string {
   return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }

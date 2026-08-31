@@ -252,6 +252,11 @@ function InlineSources({ sources, boundHit }) {
 }
 
 // ── Save button after WORKFLOW_MODIFY ──────────────────────────────────────
+/*******************************************************************************
+ * Function: SaveModifiedWorkflowButton
+ *
+ * Saves modified workflow button for the ChatMessage module.
+ ******************************************************************************/
 function SaveModifiedWorkflowButton({ yaml, workflowName }) {
   const navigate = useNavigate();
   const [status, setStatus] = useState("idle"); // idle | saving | saved | error
@@ -304,6 +309,11 @@ function SaveModifiedWorkflowButton({ yaml, workflowName }) {
 }
 
 // ── Action agent step list (TOOL_CALL intent) ──────────────────────────────
+/*******************************************************************************
+ * Function: ActionStepsList
+ *
+ * Performs the Action Steps List operation on steps list for the ChatMessage module.
+ ******************************************************************************/
 function ActionStepsList({ steps, blocked }) {
   const [open, setOpen] = useState(false);
   if (!Array.isArray(steps) || steps.length === 0) return null;
@@ -342,6 +352,11 @@ function ActionStepsList({ steps, blocked }) {
 }
 
 // ── View in Canvas handoff button (query / tool-call results) ──────────────
+/*******************************************************************************
+ * Function: CanvasHandoffButton
+ *
+ * Performs the Canvas Handoff Button operation on handoff button for the ChatMessage module.
+ ******************************************************************************/
 function CanvasHandoffButton({ workflowDraft, toolSteps, userPrompt }) {
   const navigate = useNavigate();
   const [sent, setSent] = useState(false);
@@ -365,6 +380,11 @@ function CanvasHandoffButton({ workflowDraft, toolSteps, userPrompt }) {
 }
 
 // ── Open saved workflow button ────────────────────────────────────────────
+/*******************************************************************************
+ * Function: OpenWorkflowButton
+ *
+ * Performs the Open Workflow Button operation on workflow button for the ChatMessage module.
+ ******************************************************************************/
 function OpenWorkflowButton({ workflowId }) {
   const navigate = useNavigate();
   return (

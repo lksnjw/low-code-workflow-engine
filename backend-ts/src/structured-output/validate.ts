@@ -1,9 +1,19 @@
+/*******************************************************************************
+ * Function: validateSchema
+ *
+ * Returns validation errors for the supported schema structure.
+ ******************************************************************************/
 export function validateSchema(schema: unknown): string[] {
   const errors: string[] = [];
   inspectSchema(schema, "$", errors);
   return errors;
 }
 
+/*******************************************************************************
+ * Function: validateValue
+ *
+ * Validates a value against a supported schema.
+ ******************************************************************************/
 export function validateValue(schema: unknown, value: unknown): string[] {
   const schemaErrors = validateSchema(schema);
   if (schemaErrors.length > 0) return schemaErrors;
@@ -12,6 +22,11 @@ export function validateValue(schema: unknown, value: unknown): string[] {
   return errors;
 }
 
+/*******************************************************************************
+ * Function: inspectSchema
+ *
+ * Recursively checks schema declarations and collects errors.
+ ******************************************************************************/
 function inspectSchema(schema: unknown, path: string, errors: string[]): void {
   if (!isRecord(schema)) { errors.push(`${path}: schema must be an object`); return; }
   const type = schema.type;
@@ -26,6 +41,11 @@ function inspectSchema(schema: unknown, path: string, errors: string[]): void {
   }
 }
 
+/*******************************************************************************
+ * Function: inspectValue
+ *
+ * Recursively checks a value against schema constraints and collects errors.
+ ******************************************************************************/
 function inspectValue(schema: Record<string, unknown>, value: unknown, path: string, errors: string[]): void {
   const type = schema.type;
   if (type === "null") { if (value !== null) errors.push(`${path}: expected null`); return; }
@@ -51,4 +71,9 @@ function inspectValue(schema: Record<string, unknown>, value: unknown, path: str
   }
 }
 
+/*******************************************************************************
+ * Function: isRecord
+ *
+ * Checks whether a value is a non-null object other than an array.
+ ******************************************************************************/
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }

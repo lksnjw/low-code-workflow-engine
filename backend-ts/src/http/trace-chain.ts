@@ -13,6 +13,11 @@ export type TraceChainEntry = {
   record: unknown;
 };
 
+/*******************************************************************************
+ * Function: buildTraceChain
+ *
+ * Collects and orders records linked to a trace identifier.
+ ******************************************************************************/
 export function buildTraceChain(
   state: RepositoryState,
   user: ExecutionReader,
@@ -20,6 +25,11 @@ export function buildTraceChain(
 ): TraceChainEntry[] {
   const entries: Array<TraceChainEntry & { sequence: number }> = [];
   let sequence = 0;
+  /*******************************************************************************
+   * Function: append
+   *
+   * Adds a sequenced record to the trace chain.
+   ******************************************************************************/
   const append = (kind: string, record: StoredRecord, timestamp: string) => {
     entries.push({
       kind,
@@ -89,6 +99,11 @@ export function buildTraceChain(
     .map(({ sequence: _sequence, ...entry }) => entry);
 }
 
+/*******************************************************************************
+ * Function: auditKind
+ *
+ * Classifies an audit entry by its source.
+ ******************************************************************************/
 function auditKind(record: StoredRecord): string {
   if (record.source === "governance-gate-ts") return "governance.decision";
   if (record.source === "deterministic-validation-gate-ts")
@@ -96,10 +111,20 @@ function auditKind(record: StoredRecord): string {
   return "audit.entry";
 }
 
+/*******************************************************************************
+ * Function: isRecord
+ *
+ * Checks whether a value is a non-null object other than an array.
+ ******************************************************************************/
 function isRecord(value: unknown): value is StoredRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/*******************************************************************************
+ * Function: stringValue
+ *
+ * Returns a string value or an empty string for other types.
+ ******************************************************************************/
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }

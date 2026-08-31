@@ -8,7 +8,17 @@ class ControlledPersistence implements PersistenceBackend {
   entered: (() => void) | null = null;
   release: (() => void) | null = null;
 
+  /*******************************************************************************
+   * Function: load
+   *
+   * Returns the stored payload from the controlled persistence fixture.
+   ******************************************************************************/
   async load(): Promise<Uint8Array | null> { return this.payload; }
+  /*******************************************************************************
+   * Function: save
+   *
+   * Saves the test payload while applying the fixture's configured controls.
+   ******************************************************************************/
   async save(payload: Uint8Array): Promise<void> {
     if (this.failNext) { this.failNext = false; throw new Error("persistence failed"); }
     if (this.blockNext) {
@@ -17,7 +27,17 @@ class ControlledPersistence implements PersistenceBackend {
     }
     this.payload = Buffer.from(payload);
   }
+  /*******************************************************************************
+   * Function: probe
+   *
+   * Provides the controlled persistence fixture's health probe.
+   ******************************************************************************/
   async probe(): Promise<void> { return; }
+  /*******************************************************************************
+   * Function: close
+   *
+   * Provides the controlled persistence fixture's close operation.
+   ******************************************************************************/
   async close(): Promise<void> { return; }
 }
 

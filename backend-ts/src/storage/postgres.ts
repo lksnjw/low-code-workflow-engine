@@ -9,8 +9,18 @@ export class PostgresPersistence implements PersistenceBackend {
   readonly #mutex = new AsyncMutex();
   #closed = false;
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a PostgresPersistence instance with its required state.
+   ******************************************************************************/
   private constructor(readonly pool: Pool, readonly client: PoolClient, readonly codec: AESGCMCodec) {}
 
+  /*******************************************************************************
+   * Function: open
+   *
+   * Connects to PostgreSQL and initializes the locked runtime state store.
+   ******************************************************************************/
   static async open(databaseURL: string, encryptionKey: string): Promise<PostgresPersistence> {
     let pool: Pool;
     try { pool = new Pool({ connectionString: databaseURL, max: 4 }); }
@@ -34,6 +44,11 @@ export class PostgresPersistence implements PersistenceBackend {
     }
   }
 
+  /*******************************************************************************
+   * Function: load
+   *
+   * Loads and decrypts the PostgreSQL repository snapshot.
+   ******************************************************************************/
   async load(): Promise<Uint8Array | null> {
     return this.#mutex.runExclusive(async () => {
       this.assertOpen();
@@ -43,6 +58,11 @@ export class PostgresPersistence implements PersistenceBackend {
     });
   }
 
+  /*******************************************************************************
+   * Function: save
+   *
+   * Encrypts and upserts the PostgreSQL repository snapshot.
+   ******************************************************************************/
   async save(payload: Uint8Array): Promise<void> {
     await this.#mutex.runExclusive(async () => {
       this.assertOpen();
@@ -51,10 +71,20 @@ export class PostgresPersistence implements PersistenceBackend {
     });
   }
 
+  /*******************************************************************************
+   * Function: probe
+   *
+   * Checks the PostgreSQL connection with a simple query.
+   ******************************************************************************/
   async probe(): Promise<void> {
     await this.#mutex.runExclusive(async () => { this.assertOpen(); await this.client.query("SELECT 1"); });
   }
 
+  /*******************************************************************************
+   * Function: close
+   *
+   * Releases the writer lock and closes PostgreSQL resources.
+   ******************************************************************************/
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
@@ -62,6 +92,11 @@ export class PostgresPersistence implements PersistenceBackend {
     finally { this.client.release(); await this.pool.end(); }
   }
 
+  /*******************************************************************************
+   * Function: assertOpen
+   *
+   * Rejects operations after the persistence backend has been closed.
+   ******************************************************************************/
   private assertOpen(): void { if (this.#closed) throw new Error("PostgreSQL state store is closed"); }
 }
 

@@ -18,6 +18,11 @@ import {
 
 export const ANALYTICS_UNHANDLED = Symbol("analytics-unhandled");
 
+/*******************************************************************************
+ * Function: handleAnalyticsCatalogRoute
+ *
+ * Dispatches analytics, dashboard, catalog, synthesis, and canvas requests.
+ ******************************************************************************/
 export async function handleAnalyticsCatalogRoute(
   route: RouteDefinition,
   request: FastifyRequest,
@@ -79,6 +84,11 @@ export async function handleAnalyticsCatalogRoute(
   return ANALYTICS_UNHANDLED;
 }
 
+/*******************************************************************************
+ * Function: analytics
+ *
+ * Computes the requested analytics view from stored runtime data.
+ ******************************************************************************/
 async function analytics(
   kind: string,
   request: FastifyRequest,
@@ -259,6 +269,11 @@ async function analytics(
   throw new HandlerFailure(404, "Resource not found");
 }
 
+/*******************************************************************************
+ * Function: dashboardSummary
+ *
+ * Builds dashboard metrics from workflows and executions.
+ ******************************************************************************/
 async function dashboardSummary(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -335,6 +350,11 @@ async function dashboardSummary(
     }),
   );
 }
+/*******************************************************************************
+ * Function: dashboardActivity
+ *
+ * Combines recent audit entries and executions into an activity feed.
+ ******************************************************************************/
 async function dashboardActivity(
   reply: FastifyReply,
   services: HandlerServices,
@@ -363,6 +383,11 @@ async function dashboardActivity(
     .slice(0, 20);
   return reply.send(ok(items, "OK", { nextCursor: null }));
 }
+/*******************************************************************************
+ * Function: dashboardHealth
+ *
+ * Reports API, storage, and MCP configuration health for the dashboard.
+ ******************************************************************************/
 async function dashboardHealth(
   reply: FastifyReply,
   services: HandlerServices,
@@ -411,6 +436,11 @@ async function dashboardHealth(
     ),
   );
 }
+/*******************************************************************************
+ * Function: recentWorkflows
+ *
+ * Returns recently updated active workflows up to the requested limit.
+ ******************************************************************************/
 async function recentWorkflows(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -430,6 +460,11 @@ async function recentWorkflows(
   return reply.send(ok(workflows, "OK", null));
 }
 
+/*******************************************************************************
+ * Function: toolsCatalog
+ *
+ * Returns discovered tools filtered by module, role, and status.
+ ******************************************************************************/
 async function toolsCatalog(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -463,6 +498,11 @@ async function toolsCatalog(
     }));
   return reply.send(ok(tools, "Tool catalog loaded", { count: tools.length }));
 }
+/*******************************************************************************
+ * Function: rulesCatalog
+ *
+ * Returns registry rules filtered by domain and enabled status.
+ ******************************************************************************/
 async function rulesCatalog(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -489,6 +529,11 @@ async function rulesCatalog(
     }));
   return reply.send(ok(rules, "Rule catalog loaded", { count: rules.length }));
 }
+/*******************************************************************************
+ * Function: semanticSearch
+ *
+ * Ranks tools and rules using query-token overlap.
+ ******************************************************************************/
 async function semanticSearch(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -506,6 +551,11 @@ async function semanticSearch(
       .split(/[^a-z0-9_]+/)
       .filter((item) => item !== ""),
   );
+  /*******************************************************************************
+   * Function: score
+   *
+   * Counts query-token matches in the supplied text.
+   ******************************************************************************/
   const score = (text: string) => {
     const words = text.toLowerCase().split(/[^a-z0-9_]+/);
     return words.reduce((total, word) => total + (tokens.has(word) ? 1 : 0), 0);
@@ -566,6 +616,11 @@ async function semanticSearch(
   );
 }
 
+/*******************************************************************************
+ * Function: synthesis
+ *
+ * Generates and validates a workflow candidate from the request prompt.
+ ******************************************************************************/
 async function synthesis(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -609,6 +664,11 @@ async function synthesis(
     throw new HandlerFailure(502, errorText(error));
   }
 }
+/*******************************************************************************
+ * Function: synthesisValidate
+ *
+ * Validates supplied workflow YAML and returns the gate result.
+ ******************************************************************************/
 async function synthesisValidate(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -631,6 +691,11 @@ async function synthesisValidate(
     ),
   );
 }
+/*******************************************************************************
+ * Function: synthesisPreview
+ *
+ * Parses workflow YAML and returns a canvas preview.
+ ******************************************************************************/
 async function synthesisPreview(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -653,6 +718,11 @@ async function synthesisPreview(
     ),
   );
 }
+/*******************************************************************************
+ * Function: synthesisExplain
+ *
+ * Returns a workflow summary and descriptions of its steps.
+ ******************************************************************************/
 async function synthesisExplain(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -682,6 +752,11 @@ async function synthesisExplain(
     ),
   );
 }
+/*******************************************************************************
+ * Function: canvasValidate
+ *
+ * Validates YAML supplied by the canvas and returns step errors.
+ ******************************************************************************/
 async function canvasValidate(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -717,6 +792,11 @@ async function canvasValidate(
   );
 }
 
+/*******************************************************************************
+ * Function: canvasFromBlueprint
+ *
+ * Converts workflow steps into canvas nodes, edges, and viewport data.
+ ******************************************************************************/
 function canvasFromBlueprint(
   id: string,
   blueprint: ReturnType<typeof parseWorkflowYAMLStrict>,
@@ -744,6 +824,11 @@ function canvasFromBlueprint(
     viewport: { x: 0, y: 0, zoom: 1 },
   };
 }
+/*******************************************************************************
+ * Function: daySeries
+ *
+ * Builds consecutive UTC date labels ending with the current day.
+ ******************************************************************************/
 function daySeries(count: number): string[] {
   const values: string[] = [];
   const current = new Date();
@@ -755,23 +840,53 @@ function daySeries(count: number): string[] {
   }
   return values;
 }
+/*******************************************************************************
+ * Function: utcDate
+ *
+ * Formats a date as a UTC calendar-date string.
+ ******************************************************************************/
 function utcDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
+/*******************************************************************************
+ * Function: sum
+ *
+ * Adds the values in a numeric array.
+ ******************************************************************************/
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
+/*******************************************************************************
+ * Function: average
+ *
+ * Returns the truncated arithmetic mean, or zero for an empty array.
+ ******************************************************************************/
 function average(values: number[]): number {
   return values.length === 0 ? 0 : Math.trunc(sum(values) / values.length);
 }
+/*******************************************************************************
+ * Function: round
+ *
+ * Rounds a number to two decimal places.
+ ******************************************************************************/
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
+/*******************************************************************************
+ * Function: percentile
+ *
+ * Returns the nearest-rank percentile, or zero for an empty array.
+ ******************************************************************************/
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)] ?? 0;
 }
+/*******************************************************************************
+ * Function: errorText
+ *
+ * Converts an error or other thrown value into a message string.
+ ******************************************************************************/
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

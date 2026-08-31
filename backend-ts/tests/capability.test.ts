@@ -18,6 +18,11 @@ steps:
       value: ok
 `;
 
+/*******************************************************************************
+ * Function: fixture
+ *
+ * Creates a validator and governed MCP client for capability tests.
+ ******************************************************************************/
 async function fixture(ttl = 30_000) {
   const registries = await RegistryService.load(
     resolve("tests/fixtures/tools.json"),
@@ -30,6 +35,11 @@ async function fixture(ttl = 30_000) {
     timeoutMs: 1_000,
     mode: "remote",
     validator,
+    /*******************************************************************************
+     * Function: fetchImplementation
+     *
+     * Records a mock MCP request and returns a test response.
+     ******************************************************************************/
     fetchImplementation: async () => {
       requests += 1;
       return new Response(JSON.stringify({ ok: true }), {
@@ -43,6 +53,11 @@ async function fixture(ttl = 30_000) {
     localRole: "Workflow Builder",
     erpbridgeRole: "workflow_builder",
   });
+  /*******************************************************************************
+   * Function: issue
+   *
+   * Issues a dispatch capability for the test parameters.
+   ******************************************************************************/
   const issue = async () => {
     const { token, result } = await validator.validateAndIssueToken(
       "test",
@@ -64,7 +79,13 @@ async function fixture(ttl = 30_000) {
     expect(evaluated.capability).not.toBeNull();
     return { capability: evaluated.capability!, params, identity };
   };
-  return { validator, client, issue, identity, requests: () => requests };
+  return { validator, client, issue, identity, 
+    /*******************************************************************************
+     * Function: requests
+     *
+     * Returns the number of mock MCP requests recorded by the fixture.
+     ******************************************************************************/
+    requests: () => requests };
 }
 
 describe("runtime dispatch capability", () => {
@@ -313,6 +334,12 @@ describe("runtime dispatch capability", () => {
   });
 });
 
+/*******************************************************************************
+ * Function: fixtureWithRules
+ *
+ * Creates an isolated capability-test fixture with the supplied registry
+ * rules.
+ ******************************************************************************/
 async function fixtureWithRules(rules: Record<string, unknown>[]) {
   const directory = await mkdtemp(join(tmpdir(), "lcwe-capability-rules-"));
   const toolPath = join(directory, "tools.json");
@@ -335,6 +362,11 @@ async function fixtureWithRules(rules: Record<string, unknown>[]) {
     timeoutMs: 1_000,
     mode: "remote",
     validator,
+    /*******************************************************************************
+     * Function: fetchImplementation
+     *
+     * Records a mock MCP request and returns a test response.
+     ******************************************************************************/
     fetchImplementation: async () => {
       requests += 1;
       return new Response("{}");
@@ -344,11 +376,26 @@ async function fixtureWithRules(rules: Record<string, unknown>[]) {
     validator,
     client,
     identity,
+    /*******************************************************************************
+     * Function: requests
+     *
+     * Returns the number of mock MCP requests recorded by the fixture.
+     ******************************************************************************/
     requests: () => requests,
+    /*******************************************************************************
+     * Function: cleanup
+     *
+     * Removes temporary files created by the test fixture.
+     ******************************************************************************/
     cleanup: () => rm(directory, { recursive: true, force: true }),
   };
 }
 
+/*******************************************************************************
+ * Function: thresholdRule
+ *
+ * Builds the resolved-amount threshold rule used by capability tests.
+ ******************************************************************************/
 function thresholdRule(): Record<string, unknown> {
   return {
     rule_id: "TEST-THRESHOLD-001",

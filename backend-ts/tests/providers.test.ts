@@ -274,6 +274,11 @@ test.skipIf(!liveEnvironmentConfigured())(
   60_000,
 );
 
+/*******************************************************************************
+ * Function: providerRuntime
+ *
+ * Builds a provider runtime and repository for provider tests.
+ ******************************************************************************/
 function providerRuntime(
   fetchImpl: typeof fetch,
   overrides: Partial<RuntimeProviderConfiguration> = {},
@@ -285,6 +290,11 @@ function providerRuntime(
   return { runtime, repository };
 }
 
+/*******************************************************************************
+ * Function: providerResponse
+ *
+ * Creates a mock provider completion response with optional usage data.
+ ******************************************************************************/
 function providerResponse(content: string, promptTokens?: number, completionTokens?: number): Response {
   return new Response(
     JSON.stringify({
@@ -298,6 +308,11 @@ function providerResponse(content: string, promptTokens?: number, completionToke
   );
 }
 
+/*******************************************************************************
+ * Function: liveEnvironmentConfigured
+ *
+ * Checks whether the environment supplies the live provider test settings.
+ ******************************************************************************/
 function liveEnvironmentConfigured(): boolean {
   return Boolean(
     process.env.GENERATION_BASE_URL &&

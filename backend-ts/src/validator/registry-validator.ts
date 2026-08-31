@@ -97,11 +97,21 @@ const riskRank: Record<string, number> = {
   critical: 4,
 };
 
+/*******************************************************************************
+ * Function: hasDeterministicRuleEvaluator
+ *
+ * Checks whether a rule family has a deterministic evaluator.
+ ******************************************************************************/
 export function hasDeterministicRuleEvaluator(family: string): boolean {
   return evaluatedFamilies.has(normalize(family));
 }
 
 export class RegistryValidator {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a RegistryValidator instance with its required state.
+   ******************************************************************************/
   constructor(
     readonly registries: RegistryService,
     readonly repository: Repository,
@@ -122,6 +132,12 @@ export class RegistryValidator {
       throw new Error("registry validator requires a repository");
   }
 
+  /*******************************************************************************
+   * Function: validateAndIssueToken
+   *
+   * Validates a workflow plan, records the result, and issues a token on
+   * success.
+   ******************************************************************************/
   async validateAndIssueToken(
     action: string,
     rawYAML: string,
@@ -146,6 +162,11 @@ export class RegistryValidator {
     return { token, result };
   }
 
+  /*******************************************************************************
+   * Function: validatePlan
+   *
+   * Checks workflow structure, tools, parameters, roles, and registry rules.
+   ******************************************************************************/
   validatePlan(
     candidateID: string,
     rawYAML: string,
@@ -298,6 +319,11 @@ export class RegistryValidator {
     return result;
   }
 
+  /*******************************************************************************
+   * Function: verifyToken
+   *
+   * Verifies a validation token against its process-local proof.
+   ******************************************************************************/
   verifyToken(token: ValidationToken | null): boolean {
     if (token === null || typeof token !== "object") return false;
     const proof = tokenProofs.get(token);
@@ -309,6 +335,12 @@ export class RegistryValidator {
     );
   }
 
+  /*******************************************************************************
+   * Function: evaluateResolvedStep
+   *
+   * Validates resolved step parameters and issues dispatch authority on
+   * success.
+   ******************************************************************************/
   async evaluateResolvedStep(
     action: string,
     rawYAML: string,
@@ -431,6 +463,11 @@ export class RegistryValidator {
     return { capability, violation: null };
   }
 
+  /*******************************************************************************
+   * Function: verifyAndConsumeCapability
+   *
+   * Verifies a dispatch capability and consumes it to prevent reuse.
+   ******************************************************************************/
   verifyAndConsumeCapability(
     capability: DispatchCapability,
     action: string,
@@ -471,6 +508,11 @@ export class RegistryValidator {
     consumedCapabilities.add(capability);
   }
 
+  /*******************************************************************************
+   * Function: enabledRulesWithoutEvaluator
+   *
+   * Lists enabled registry rules without a deterministic evaluator.
+   ******************************************************************************/
   enabledRulesWithoutEvaluator(): { ruleId: string; family: string }[] {
     return this.registries
       .enabledRules()
@@ -485,6 +527,11 @@ export class RegistryValidator {
       );
   }
 
+  /*******************************************************************************
+   * Function: validateAnalysisStructure
+   *
+   * Checks required fields and safety constraints for an analysis step.
+   ******************************************************************************/
   private validateAnalysisStructure(
     workflow: WorkflowBlueprint,
     stepIndex: number,
@@ -525,6 +572,11 @@ export class RegistryValidator {
     }
   }
 
+  /*******************************************************************************
+   * Function: evaluatePlanRule
+   *
+   * Evaluates a registry rule against the workflow plan.
+   ******************************************************************************/
   private evaluatePlanRule(
     rule: RuleDefinition,
     workflow: WorkflowBlueprint,
@@ -686,6 +738,11 @@ export class RegistryValidator {
     }
   }
 
+  /*******************************************************************************
+   * Function: dispatchFailure
+   *
+   * Records a failed dispatch check and returns its violation details.
+   ******************************************************************************/
   private async dispatchFailure(
     action: string,
     workflowHash: string,
@@ -711,6 +768,11 @@ export class RegistryValidator {
     return { capability: null, violation };
   }
 
+  /*******************************************************************************
+   * Function: audit
+   *
+   * Appends a deterministic validation or dispatch audit entry.
+   ******************************************************************************/
   private async audit(
     action: string,
     resourceID: string,
@@ -730,6 +792,11 @@ export class RegistryValidator {
   }
 }
 
+/*******************************************************************************
+ * Function: mintValidationToken
+ *
+ * Creates an immutable validation token and stores its process-local proof.
+ ******************************************************************************/
 function mintValidationToken(
   rawYAML: string,
   registryHash: string,
@@ -745,12 +812,22 @@ function mintValidationToken(
   return token;
 }
 
+/*******************************************************************************
+ * Function: tokenProof
+ *
+ * Computes the HMAC proof for a validation token.
+ ******************************************************************************/
 function tokenProof(token: ValidationToken): Buffer {
   return createHmac("sha256", processSigningKey)
     .update(canonicalJSONBytes(token))
     .digest();
 }
 
+/*******************************************************************************
+ * Function: mintCapability
+ *
+ * Creates and records a dispatch capability bound to its execution context.
+ ******************************************************************************/
 function mintCapability(
   input: Omit<CapabilityPayload, "proof">,
 ): DispatchCapability {
@@ -771,6 +848,11 @@ function mintCapability(
   return capability;
 }
 
+/*******************************************************************************
+ * Function: capabilityProof
+ *
+ * Computes the HMAC proof for dispatch capability data.
+ ******************************************************************************/
 function capabilityProof(
   input: Omit<CapabilityPayload, "proof"> | CapabilityPayload,
 ): Buffer {
@@ -789,6 +871,11 @@ function capabilityProof(
     .digest();
 }
 
+/*******************************************************************************
+ * Function: initialResult
+ *
+ * Initializes a candidate validation result and its registry metadata.
+ ******************************************************************************/
 function initialResult(
   candidateID: string,
   versions: { tools: string; rules: string },
@@ -816,6 +903,11 @@ function initialResult(
   };
 }
 
+/*******************************************************************************
+ * Function: finish
+ *
+ * Finalizes validation scoring, failed rules, and overall pass status.
+ ******************************************************************************/
 function finish(result: CandidateValidationResult): void {
   result.failed_rules = [...new Set(result.failed_rules)].sort();
   result.score =
@@ -840,6 +932,11 @@ function finish(result: CandidateValidationResult): void {
     result.errors.length === 0;
 }
 
+/*******************************************************************************
+ * Function: failRule
+ *
+ * Adds a failed rule identifier and message to the validation result.
+ ******************************************************************************/
 function failRule(
   result: CandidateValidationResult,
   ruleID: string,
@@ -848,22 +945,48 @@ function failRule(
   result.failed_rules.push(ruleID);
   result.errors.push(message);
 }
+/*******************************************************************************
+ * Function: ruleMessage
+ *
+ * Returns a rule's configured validator message or the supplied fallback.
+ ******************************************************************************/
 function ruleMessage(rule: RuleDefinition, fallback: string): string {
   return rule.validator_message.trim() === ""
     ? fallback
     : rule.validator_message;
 }
+/*******************************************************************************
+ * Function: normalizeRole
+ *
+ * Normalizes a role name for comparison in this module.
+ ******************************************************************************/
 function normalizeRole(value: string): string {
   const normalized = normalize(value).replace(/[ -]/g, "_");
   return normalized === "platform_admin" ? "admin" : normalized;
 }
+/*******************************************************************************
+ * Function: roleAllowed
+ *
+ * Checks registry role access, including the module's administrator
+ * allowance.
+ ******************************************************************************/
 function roleAllowed(role: string, allowed: string[]): boolean {
   if (allowed.length === 0 || normalizeRole(role) === "admin") return true;
   return allowed.some((item) => normalizeRole(item) === normalizeRole(role));
 }
+/*******************************************************************************
+ * Function: normalize
+ *
+ * Trims and lowercases text for comparison.
+ ******************************************************************************/
 function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
+/*******************************************************************************
+ * Function: isEmptyParameter
+ *
+ * Detects absent parameters and supported empty-value markers.
+ ******************************************************************************/
 function isEmptyParameter(value: unknown): boolean {
   return (
     value === undefined ||
@@ -872,6 +995,11 @@ function isEmptyParameter(value: unknown): boolean {
       ["", "<nil>", "null"].includes(normalize(value)))
   );
 }
+/*******************************************************************************
+ * Function: containsTemplate
+ *
+ * Detects unresolved template expressions within nested parameters.
+ ******************************************************************************/
 function containsTemplate(value: unknown): boolean {
   if (typeof value === "string")
     return value.includes("{{") && value.includes("}}");
@@ -880,6 +1008,11 @@ function containsTemplate(value: unknown): boolean {
     return Object.values(value).some(containsTemplate);
   return false;
 }
+/*******************************************************************************
+ * Function: findSensitiveKey
+ *
+ * Finds the first sensitive field path in a nested value.
+ ******************************************************************************/
 function findSensitiveKey(value: unknown, path = ""): string | null {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
@@ -902,6 +1035,11 @@ function findSensitiveKey(value: unknown, path = ""): string | null {
   }
   return null;
 }
+/*******************************************************************************
+ * Function: ruleApplies
+ *
+ * Checks whether a rule applies to the role and tools in a workflow.
+ ******************************************************************************/
 function ruleApplies(
   rule: RuleDefinition,
   tools: ToolDefinition[],
@@ -936,17 +1074,32 @@ function ruleApplies(
       normalize(tool.erp_system ?? "").includes(normalize(rule.domain)),
   );
 }
+/*******************************************************************************
+ * Function: matchesTool
+ *
+ * Checks whether a rule applies to a tool action.
+ ******************************************************************************/
 function matchesTool(rule: RuleDefinition, action: string): boolean {
   return (
     rule.applies_to_tools.length === 0 ||
     rule.applies_to_tools.some((item) => normalize(item) === normalize(action))
   );
 }
+/*******************************************************************************
+ * Function: asStringList
+ *
+ * Converts a string or array into a string list.
+ ******************************************************************************/
 function asStringList(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.map(String);
   return [];
 }
+/*******************************************************************************
+ * Function: asNumber
+ *
+ * Converts a resolved finite numeric value or returns null.
+ ******************************************************************************/
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (
@@ -959,6 +1112,11 @@ function asNumber(value: unknown): number | null {
   }
   return null;
 }
+/*******************************************************************************
+ * Function: compare
+ *
+ * Evaluates the requested comparison between two numbers.
+ ******************************************************************************/
 function compare(left: number, right: number, operator: string): boolean {
   switch (operator) {
     case ">":
@@ -977,6 +1135,11 @@ function compare(left: number, right: number, operator: string): boolean {
       return false;
   }
 }
+/*******************************************************************************
+ * Function: hasApproval
+ *
+ * Detects an approval-related action in an action list.
+ ******************************************************************************/
 function hasApproval(actions: string[]): boolean {
   return actions.some(
     (item) =>
@@ -985,6 +1148,11 @@ function hasApproval(actions: string[]): boolean {
       normalize(item).includes("approval"),
   );
 }
+/*******************************************************************************
+ * Function: addDeferred
+ *
+ * Records a parameter rule that must be checked after variable resolution.
+ ******************************************************************************/
 function addDeferred(
   result: CandidateValidationResult,
   stepIndex: number,
@@ -1001,6 +1169,11 @@ function addDeferred(
   if (!check.rule_ids.includes(ruleID)) check.rule_ids.push(ruleID);
   check.rule_ids.sort();
 }
+/*******************************************************************************
+ * Function: evaluateDeferredRule
+ *
+ * Checks a deferred rule against resolved step parameters.
+ ******************************************************************************/
 function evaluateDeferredRule(
   rule: RuleDefinition,
   paramKey: string,
@@ -1030,10 +1203,20 @@ function evaluateDeferredRule(
     return `NO_EVALUATOR: enabled rule ${rule.rule_id} in family ${family} has no deterministic evaluator`;
   return null;
 }
+/*******************************************************************************
+ * Function: boundedValue
+ *
+ * Limits a diagnostic value to a short prefix.
+ ******************************************************************************/
 function boundedValue(value: unknown): string {
   const text = String(value ?? "").trim();
   return [...text].length <= 4 ? text : [...text].slice(0, 4).join("") + "…";
 }
+/*******************************************************************************
+ * Function: validDispatchIdentity
+ *
+ * Checks the required user and role fields of a dispatch identity.
+ ******************************************************************************/
 function validDispatchIdentity(
   identity: DispatchIdentity | null | undefined,
 ): identity is DispatchIdentity {
@@ -1046,6 +1229,11 @@ function validDispatchIdentity(
   );
 }
 
+/*******************************************************************************
+ * Function: sameDispatchIdentity
+ *
+ * Compares the user and role fields of two dispatch identities.
+ ******************************************************************************/
 function sameDispatchIdentity(
   left: DispatchIdentity,
   right: DispatchIdentity,
@@ -1057,6 +1245,11 @@ function sameDispatchIdentity(
   );
 }
 
+/*******************************************************************************
+ * Function: errorText
+ *
+ * Converts an error or other thrown value into a message string.
+ ******************************************************************************/
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

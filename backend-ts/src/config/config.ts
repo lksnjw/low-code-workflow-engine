@@ -100,6 +100,11 @@ export type AppConfig = {
   platformAdminPassword: string;
 };
 
+/*******************************************************************************
+ * Function: loadConfig
+ *
+ * Loads application settings from environment values and validates them.
+ ******************************************************************************/
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   root = process.cwd(),
@@ -266,6 +271,11 @@ export function loadConfig(
   return config;
 }
 
+/*******************************************************************************
+ * Function: validateConfig
+ *
+ * Checks application configuration for invalid or incompatible settings.
+ ******************************************************************************/
 export function validateConfig(config: AppConfig): void {
   if (config.port < 1 || config.port > 65_535)
     throw new Error("PORT must be between 1 and 65535");
@@ -376,6 +386,11 @@ export function validateConfig(config: AppConfig): void {
     throw new Error("PLATFORM_ADMIN_PASSWORD must be configured in production");
 }
 
+/*******************************************************************************
+ * Function: parseInteger
+ *
+ * Parses an integer setting or returns its fallback when absent.
+ ******************************************************************************/
 function parseInteger(
   value: string | undefined,
   fallback: number,
@@ -387,6 +402,11 @@ function parseInteger(
   return Number.parseInt(value, 10);
 }
 
+/*******************************************************************************
+ * Function: parseOptionalInteger
+ *
+ * Parses an optional integer setting and rejects invalid numeric text.
+ ******************************************************************************/
 function parseOptionalInteger(
   value: string | undefined,
   name: string,
@@ -397,6 +417,11 @@ function parseOptionalInteger(
   return Number.parseInt(value, 10);
 }
 
+/*******************************************************************************
+ * Function: parseBoolean
+ *
+ * Parses a boolean setting or returns its fallback when absent.
+ ******************************************************************************/
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value.trim() === "") return fallback;
   if (value.toLowerCase() === "true") return true;
@@ -404,6 +429,11 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   throw new Error(`invalid boolean ${JSON.stringify(value)}`);
 }
 
+/*******************************************************************************
+ * Function: parseNumber
+ *
+ * Parses a finite numeric setting or returns its fallback when absent.
+ ******************************************************************************/
 function parseNumber(
   value: string | undefined,
   fallback: number,
@@ -416,6 +446,11 @@ function parseNumber(
   return parsed;
 }
 
+/*******************************************************************************
+ * Function: nonblank
+ *
+ * Returns the fallback when the supplied value is undefined or empty.
+ ******************************************************************************/
 function nonblank(value: string | undefined, fallback: string): string {
   return value === undefined || value === "" ? fallback : value;
 }
@@ -427,6 +462,11 @@ const knownLocalRoles = new Set([
   "Client",
 ]);
 
+/*******************************************************************************
+ * Function: resolveToken
+ *
+ * Resolves a direct token or its selected environment variable.
+ ******************************************************************************/
 function resolveToken(
   env: NodeJS.ProcessEnv,
   directValue: string | undefined,
@@ -446,6 +486,11 @@ function resolveToken(
   return env[selected]?.trim() ?? "";
 }
 
+/*******************************************************************************
+ * Function: parseRoleMap
+ *
+ * Parses configured local-to-ERPBridge role mappings.
+ ******************************************************************************/
 function parseRoleMap(value: string | undefined): Record<string, string> {
   const raw = value?.trim() ?? "";
   if (raw === "") return {};
@@ -484,6 +529,11 @@ function parseRoleMap(value: string | undefined): Record<string, string> {
   return map;
 }
 
+/*******************************************************************************
+ * Function: validateRoleMap
+ *
+ * Checks role mappings for recognized local roles and valid remote targets.
+ ******************************************************************************/
 function validateRoleMap(map: Record<string, string>): void {
   for (const [localRole, remoteRole] of Object.entries(map)) {
     if (!knownLocalRoles.has(localRole))

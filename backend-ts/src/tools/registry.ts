@@ -6,6 +6,11 @@ export type DispatchIdentity = Readonly<{
   erpbridgeRole: string | null;
 }>;
 
+/*******************************************************************************
+ * Function: createDispatchIdentity
+ *
+ * Builds an immutable user and role identity for tool dispatch.
+ ******************************************************************************/
 export function createDispatchIdentity(
   user: { id: string; role: string },
   roleMap: Readonly<Record<string, string>>,
@@ -35,18 +40,39 @@ export interface ExecutableTool {
 export class ToolRegistry {
   readonly #tools = new Map<string, ExecutableTool>();
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a ToolRegistry instance with its required state.
+   ******************************************************************************/
   constructor(readonly fallback: ExecutableTool | null = null) {
     if (fallback !== null) assertExecutableTool(fallback);
   }
 
+  /*******************************************************************************
+   * Function: register
+   *
+   * Validates and registers an executable tool by name.
+   ******************************************************************************/
   register(tool: ExecutableTool): void {
     assertExecutableTool(tool);
     this.#tools.set(tool.name, tool);
   }
 
+  /*******************************************************************************
+   * Function: has
+   *
+   * Reports whether the registry contains a matching executable tool.
+   ******************************************************************************/
   has(name: string): boolean {
     return this.get(name) !== this.fallback || this.#tools.has(name);
   }
+  /*******************************************************************************
+   * Function: get
+   *
+   * Resolves a tool using supported name variations or the configured
+   * fallback.
+   ******************************************************************************/
   get(name: string): ExecutableTool | null {
     const exact = this.#tools.get(name);
     if (exact !== undefined) return exact;
@@ -70,11 +96,21 @@ export class ToolRegistry {
     }
     return this.fallback;
   }
+  /*******************************************************************************
+   * Function: names
+   *
+   * Returns registered tool names in sorted order.
+   ******************************************************************************/
   names(): string[] {
     return [...this.#tools.keys()].sort();
   }
 }
 
+/*******************************************************************************
+ * Function: assertExecutableTool
+ *
+ * Requires a tool to have a nonempty name and an execute function.
+ ******************************************************************************/
 function assertExecutableTool(
   tool: ExecutableTool | null | undefined,
 ): asserts tool is ExecutableTool {

@@ -8,6 +8,11 @@
 
 import type { Repository } from "../repository/store.js";
 
+/*******************************************************************************
+ * Function: isPolicyCheckerEnabled
+ *
+ * Reads whether the policy checker is enabled in repository settings.
+ ******************************************************************************/
 /** Reads the current policy-checker setting from the database. Defaults to
  *  off (fail-open) until an admin explicitly turns it on in Settings. */
 export async function isPolicyCheckerEnabled(repository: Repository): Promise<boolean> {
@@ -44,6 +49,11 @@ export type ErpPolicyResult = { allowed: boolean; reason?: string };
 //
 // Returns { allowed, reason? }. Fails-open if the tool errors or is missing.
 
+/*******************************************************************************
+ * Function: checkErpPolicy
+ *
+ * Evaluates an operation through the ERPBridge policy tool when available.
+ ******************************************************************************/
 export async function checkErpPolicy(
   bridgeSession: ErpBridgeSession | undefined,
   params: {
@@ -78,6 +88,11 @@ export async function checkErpPolicy(
 // Returns the raw tool response (a plan / tool-call list) — callers decide
 // what to do with it.
 
+/*******************************************************************************
+ * Function: assistQueryPlan
+ *
+ * Requests query-planning assistance from the ERPBridge policy tool.
+ ******************************************************************************/
 export async function assistQueryPlan(
   bridgeSession: ErpBridgeSession | undefined,
   params: {
@@ -109,6 +124,11 @@ export async function assistQueryPlan(
 // ── Response interpreter ──────────────────────────────────────────────────
 // Handles multiple response shapes the ERP Bridge might return.
 
+/*******************************************************************************
+ * Function: interpretPolicyResponse
+ *
+ * Normalizes supported ERP policy response shapes into an access decision.
+ ******************************************************************************/
 function interpretPolicyResponse(raw: unknown): ErpPolicyResult {
   if (raw === null || typeof raw !== "object") return { allowed: true };
 

@@ -10,6 +10,11 @@ import {
 import { Repository } from "../src/repository/store.ts";
 import { RegistryValidator } from "../src/validator/registry-validator.ts";
 
+/*******************************************************************************
+ * Function: existingOrFallback
+ *
+ * Returns the requested file path when accessible or its fallback path.
+ ******************************************************************************/
 async function existingOrFallback(path, fallback) {
   try {
     await access(path);
@@ -19,6 +24,11 @@ async function existingOrFallback(path, fallback) {
   }
 }
 
+/*******************************************************************************
+ * Function: main
+ *
+ * Loads local and live ERPBridge registries and checks their compatibility.
+ ******************************************************************************/
 async function main() {
   const config = loadConfig();
   if (config.mcpTransport !== "erpbridge-mcp")

@@ -7,6 +7,11 @@ import { takeWorkflowForCanvas, workflowYamlToCanvas, saveWorkflowForChatEdit } 
 import { workflowService } from "../../services/workflow.service";
 
 // ── Read-only step node ────────────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: ViewNode
+ *
+ * Performs the View Node operation on node for the WorkflowViewCanvas module.
+ ******************************************************************************/
 function ViewNode({ data }) {
   const [open, setOpen] = useState(false);
   const hasOutput = data.executionOutput !== undefined && data.executionOutput !== null;
@@ -84,6 +89,11 @@ function ViewNode({ data }) {
 const NODE_TYPES = { erpTool: ViewNode, default: ViewNode };
 
 // ── Main component ─────────────────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: WorkflowViewCanvas
+ *
+ * Performs the Workflow View Canvas operation on view canvas for the WorkflowViewCanvas module.
+ ******************************************************************************/
 function WorkflowViewCanvas() {
   const navigate = useNavigate();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);

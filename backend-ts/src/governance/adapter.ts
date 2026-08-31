@@ -59,6 +59,11 @@ export type GovernancePolicySet = {
 export type GovernanceFailureKind = "timeout" | "unreachable" | "parse";
 
 export class GovernanceAdapterError extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a GovernanceAdapterError instance with its required state.
+   ******************************************************************************/
   constructor(message: string, readonly kind: GovernanceFailureKind) {
     super(message);
     this.name = "GovernanceAdapterError";
@@ -80,6 +85,11 @@ export class GovernanceAdapter {
   readonly #source: GovernanceSource;
   readonly #fetch: typeof fetch;
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a GovernanceAdapter instance with its required state.
+   ******************************************************************************/
   constructor(configuration: GovernanceAdapterConfiguration) {
     this.#url = configuration.url.trim();
     this.#apiKey = configuration.apiKey.trim();
@@ -91,6 +101,11 @@ export class GovernanceAdapter {
     if (!Number.isInteger(this.#timeoutMs) || this.#timeoutMs <= 0) throw new Error("governance timeout must be a positive integer");
   }
 
+  /*******************************************************************************
+   * Function: fetchPolicy
+   *
+   * Requests and validates a policy snapshot from the governance service.
+   ******************************************************************************/
   async fetchPolicy(request: GovernanceRequest, signal?: AbortSignal): Promise<GovernancePolicySet> {
     const timeoutSignal = AbortSignal.timeout(this.#timeoutMs);
     const combinedSignal = signal === undefined ? timeoutSignal : AbortSignal.any([signal, timeoutSignal]);
@@ -139,6 +154,11 @@ export class GovernanceAdapter {
   }
 }
 
+/*******************************************************************************
+ * Function: mapRule
+ *
+ * Converts an external governance rule into a registry rule definition.
+ ******************************************************************************/
 function mapRule(rule: z.infer<typeof governanceRuleSchema>): RuleDefinition {
   return {
     rule_id: rule.id,

@@ -28,6 +28,12 @@ export type ExecutionAnalysisResult = {
   visualisation?: VisualisationSpec;
 };
 
+/*******************************************************************************
+ * Function: generateExecutionAnalysis
+ *
+ * Generates an execution summary and optional visualisation using the
+ * provider.
+ ******************************************************************************/
 export async function generateExecutionAnalysis(
   input: ExecutionAnalysisInput,
   providerRuntime: ProviderRuntime,
@@ -44,6 +50,11 @@ export async function generateExecutionAnalysis(
   };
 }
 
+/*******************************************************************************
+ * Function: buildAnalysisPrompt
+ *
+ * Assembles execution details into the analysis prompt.
+ ******************************************************************************/
 function buildAnalysisPrompt(input: ExecutionAnalysisInput): string {
   const durationSeconds = (input.durationMs / 1000).toFixed(1);
   const statusLabel =
@@ -98,10 +109,20 @@ function buildAnalysisPrompt(input: ExecutionAnalysisInput): string {
   return lines.filter((l) => l !== undefined).join("\n");
 }
 
+/*******************************************************************************
+ * Function: extractText
+ *
+ * Removes embedded visualisation blocks from response text.
+ ******************************************************************************/
 function extractText(text: string): string {
   return text.replace(/<vis>[\s\S]*?<\/vis>/g, "").trim();
 }
 
+/*******************************************************************************
+ * Function: extractVisualisation
+ *
+ * Parses and checks an embedded visualisation specification.
+ ******************************************************************************/
 function extractVisualisation(text: string): VisualisationSpec | undefined {
   const match = /<vis>([\s\S]*?)<\/vis>/i.exec(text);
   const raw = match?.[1];

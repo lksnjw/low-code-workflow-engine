@@ -36,6 +36,11 @@ export interface ValidationGate {
 }
 
 export class GovernedValidationGate implements ValidationGate {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a GovernedValidationGate instance with its required state.
+   ******************************************************************************/
   constructor(
     readonly governance: GovernanceService,
     readonly validator: RegistryValidator,
@@ -44,6 +49,11 @@ export class GovernedValidationGate implements ValidationGate {
     readonly policyGate: PolicyGateClient | null = null,
   ) {}
 
+  /*******************************************************************************
+   * Function: validateAndIssueToken
+   *
+   * Applies governance and deterministic validation before issuing a token.
+   ******************************************************************************/
   async validateAndIssueToken(action: string, rawYAML: string, user: GovernanceUser, context: GovernedValidationContext = {}): Promise<ValidationGateResult> {
     const proposal = classifyProposal(rawYAML, this.registries);
     const request: GovernanceRequest = {
@@ -98,6 +108,11 @@ export class GovernedValidationGate implements ValidationGate {
     return gate;
   }
 
+  /*******************************************************************************
+   * Function: #resolveFromPolicyGate
+   *
+   * Converts a policy-gate response into a recorded validation outcome.
+   ******************************************************************************/
   async #resolveFromPolicyGate(
     pg: Exclude<PolicyGateOutcome, { outcome: "fallback" }>,
     action: string,
@@ -147,6 +162,12 @@ export class GovernedValidationGate implements ValidationGate {
     return gate;
   }
 
+  /*******************************************************************************
+   * Function: recordDecision
+   *
+   * Records a governance gate decision and its trace metadata in the audit
+   * log.
+   ******************************************************************************/
   private async recordDecision(action: string, rawYAML: string, readOnly: boolean, decision: GovernanceDecision, passed: boolean, request: GovernanceRequest, context: GovernedValidationContext): Promise<void> {
     await this.repository.mutate((state) => {
       state.auditLogs.push({
@@ -165,6 +186,11 @@ export class GovernedValidationGate implements ValidationGate {
   }
 }
 
+/*******************************************************************************
+ * Function: traceMetadata
+ *
+ * Collects defined trace identifiers from validation context.
+ ******************************************************************************/
 function traceMetadata(
   context: GovernedValidationContext,
 ): Record<string, unknown> {
@@ -180,6 +206,12 @@ function traceMetadata(
   );
 }
 
+/*******************************************************************************
+ * Function: classifyProposal
+ *
+ * Extracts proposed tool actions and their read-only status from workflow
+ * YAML.
+ ******************************************************************************/
 function classifyProposal(rawYAML: string, registries: RegistryService): { actions: string[]; readOnly: boolean } {
   try {
     const workflow = parseWorkflowYAMLStrict(rawYAML);
@@ -201,6 +233,11 @@ function classifyProposal(rawYAML: string, registries: RegistryService): { actio
   }
 }
 
+/*******************************************************************************
+ * Function: attachDecision
+ *
+ * Adds a copy of the governance decision to validation metadata.
+ ******************************************************************************/
 function attachDecision(result: CandidateValidationResult, decision: GovernanceDecision): void {
   result.metadata.governance = structuredClone(decision);
 }

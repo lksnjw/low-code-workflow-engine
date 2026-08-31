@@ -74,6 +74,11 @@ describe("single-candidate synthesis", () => {
   });
 });
 
+/*******************************************************************************
+ * Function: setup
+ *
+ * Builds registry, validation, and provider services for synthesis tests.
+ ******************************************************************************/
 async function setup(toolPath: string, rulePath: string, fetchImplementation: typeof fetch) {
   const repository = new Repository(null);
   const registries = await RegistryService.load(resolve(toolPath), resolve(rulePath));
@@ -84,6 +89,11 @@ async function setup(toolPath: string, rulePath: string, fetchImplementation: ty
   return { service: new SynthesisService(providers, registries, validator), repository, registries };
 }
 
+/*******************************************************************************
+ * Function: providerResponse
+ *
+ * Creates a mock provider completion response with optional usage data.
+ ******************************************************************************/
 function providerResponse(content: string, usage?: { prompt_tokens: number; completion_tokens: number }): Response {
   return Response.json({ choices: [{ message: { content } }], ...(usage === undefined ? {} : { usage }) });
 }

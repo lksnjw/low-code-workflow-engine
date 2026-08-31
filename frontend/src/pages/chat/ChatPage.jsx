@@ -7,6 +7,11 @@ import { useChatSessions } from "../../hooks/useChatSessions";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { peekWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
 
+/*******************************************************************************
+ * Function: ChatPage
+ *
+ * Performs the Chat Page operation on page for the ChatPage module.
+ ******************************************************************************/
 function ChatPage() {
   const { sessionId = "" } = useParams();
   const [searchParams] = useSearchParams();

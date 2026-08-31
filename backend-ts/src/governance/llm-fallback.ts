@@ -40,6 +40,11 @@ export class LlmPolicyFallback {
   readonly #timeoutMs: number;
   #cachedPolicy: FallbackPolicy | null = null;
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a LlmPolicyFallback instance with its required state.
+   ******************************************************************************/
   constructor(config: LlmFallbackConfig) {
     this.#apiKey = config.openrouterApiKey.trim();
     this.#model = config.model.trim();
@@ -47,6 +52,11 @@ export class LlmPolicyFallback {
     this.#timeoutMs = config.timeoutMs;
   }
 
+  /*******************************************************************************
+   * Function: evaluate
+   *
+   * Applies static fallback policy and optional LLM evaluation.
+   ******************************************************************************/
   async evaluate(
     request: GovernanceRequest,
     readOnly: boolean,
@@ -82,6 +92,11 @@ export class LlmPolicyFallback {
     return staticResult;
   }
 
+  /*******************************************************************************
+   * Function: #loadPolicy
+   *
+   * Loads and caches the validated fallback policy file.
+   ******************************************************************************/
   async #loadPolicy(): Promise<FallbackPolicy> {
     if (this.#cachedPolicy !== null) return this.#cachedPolicy;
     const raw = await readFile(this.#policyPath, "utf8");
@@ -90,6 +105,11 @@ export class LlmPolicyFallback {
     return parsed;
   }
 
+  /*******************************************************************************
+   * Function: #evaluateWithLlm
+   *
+   * Requests an access decision from the configured fallback model.
+   ******************************************************************************/
   async #evaluateWithLlm(
     request: GovernanceRequest,
     readOnly: boolean,
@@ -135,6 +155,11 @@ export class LlmPolicyFallback {
     };
   }
 
+  /*******************************************************************************
+   * Function: #evaluateStatically
+   *
+   * Evaluates the request against the local fallback role and action rules.
+   ******************************************************************************/
   #evaluateStatically(
     request: GovernanceRequest,
     readOnly: boolean,
@@ -197,6 +222,11 @@ export class LlmPolicyFallback {
   }
 }
 
+/*******************************************************************************
+ * Function: buildPrompt
+ *
+ * Builds a fallback evaluation prompt from the policy and proposed request.
+ ******************************************************************************/
 function buildPrompt(
   request: GovernanceRequest,
   readOnly: boolean,

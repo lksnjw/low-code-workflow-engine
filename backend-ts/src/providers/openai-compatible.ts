@@ -33,9 +33,19 @@ type OpenAIQueryResponse = {
 export type OpenAICompatibleFailureKind = "timeout" | "rate_limit" | "server" | "client" | "transport" | "malformed" | "cancelled";
 
 export class OpenAICompatibleError extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a OpenAICompatibleError instance with its required state.
+   ******************************************************************************/
   constructor(message: string, readonly kind: OpenAICompatibleFailureKind, readonly statusCode: number | null = null) { super(message); this.name = "OpenAICompatibleError"; }
 }
 
+/*******************************************************************************
+ * Function: isGenerationFallbackEligible
+ *
+ * Checks whether a provider failure permits trying the fallback model.
+ ******************************************************************************/
 export function isGenerationFallbackEligible(error: unknown): boolean {
   // "client" (HTTP 4xx) is included so a model-specific 400 (e.g. context-too-long or unsupported params)
   // triggers the fallback model rather than failing the whole request immediately.
@@ -51,6 +61,11 @@ export class OpenAICompatibleClient implements AnalysisProvider {
   readonly #apiKey: string;
   readonly #fetch: typeof fetch;
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a OpenAICompatibleClient instance with its required state.
+   ******************************************************************************/
   constructor(options: OpenAICompatibleOptions) {
     this.baseURL = options.baseURL.trim().replace(/\/+$/, "");
     this.#apiKey = options.apiKey.trim();
@@ -65,6 +80,11 @@ export class OpenAICompatibleClient implements AnalysisProvider {
     if (!Number.isInteger(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("OpenAI-compatible timeout must be a positive integer");
   }
 
+  /*******************************************************************************
+   * Function: generate
+   *
+   * Requests a text completion and validates the provider response.
+   ******************************************************************************/
   async generate(prompt: string, model: string, signal?: AbortSignal, _context?: ProviderInvocationContext): Promise<AnalysisResponse> {
     const selectedModel = model.trim() === "" ? this.model : model;
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
@@ -105,6 +125,11 @@ export class OpenAICompatibleClient implements AnalysisProvider {
     };
   }
 
+  /*******************************************************************************
+   * Function: queryWithTools
+   *
+   * Requests a completion with tool definitions and tool-call messages.
+   ******************************************************************************/
   async queryWithTools(messages: QueryMessage[], tools: QueryToolDefinition[], options: QueryOptions): Promise<QueryTurnResult> {
     const selectedModel = (options.model ?? "").trim() === "" ? this.model : options.model!.trim();
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
@@ -159,6 +184,11 @@ export class OpenAICompatibleClient implements AnalysisProvider {
   }
 }
 
+/*******************************************************************************
+ * Function: parseQueryResponse
+ *
+ * Validates and normalizes a provider response containing tool calls.
+ ******************************************************************************/
 function parseQueryResponse(value: unknown): OpenAIQueryResponse {
   if (!isRecord(value) || !Array.isArray(value.choices)) throw new Error("Query response has an invalid shape");
   const choices: OpenAIQueryResponse["choices"] = [];
@@ -175,6 +205,11 @@ function parseQueryResponse(value: unknown): OpenAIQueryResponse {
   return { choices, ...(usage === undefined ? {} : { usage }) };
 }
 
+/*******************************************************************************
+ * Function: parseResponse
+ *
+ * Validates and normalizes a provider text-completion response.
+ ******************************************************************************/
 function parseResponse(value: unknown): OpenAIChatResponse {
   if (!isRecord(value) || !Array.isArray(value.choices)) throw new Error("OpenAI-compatible response has an invalid shape");
   const choices: OpenAIChatResponse["choices"] = [];
@@ -192,16 +227,36 @@ function parseResponse(value: unknown): OpenAIChatResponse {
   return { choices, ...(usage === undefined ? {} : { usage }) };
 }
 
+/*******************************************************************************
+ * Function: firstNonblankChoice
+ *
+ * Returns the first nonempty completion choice.
+ ******************************************************************************/
 function firstNonblankChoice(response: OpenAIChatResponse): string {
   for (const choice of response.choices) if (choice.message.content.trim() !== "") return choice.message.content.trim();
   return "";
 }
 
+/*******************************************************************************
+ * Function: stripMarkdownFence
+ *
+ * Removes an enclosing Markdown code fence from text.
+ ******************************************************************************/
 function stripMarkdownFence(value: string): string {
   const trimmed = value.trim();
   const match = /^```(?:ya?ml)?\s*\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed);
   return (match?.[1] ?? trimmed).trim();
 }
 
+/*******************************************************************************
+ * Function: nonnegativeInteger
+ *
+ * Checks whether a value is a nonnegative integer.
+ ******************************************************************************/
 function nonnegativeInteger(value: unknown): value is number { return typeof value === "number" && Number.isInteger(value) && value >= 0; }
+/*******************************************************************************
+ * Function: isRecord
+ *
+ * Checks whether a value is a non-null object other than an array.
+ ******************************************************************************/
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }

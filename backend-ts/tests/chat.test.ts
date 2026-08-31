@@ -234,6 +234,11 @@ describe("chat orchestration", () => {
     setup.tools.register({
       name: "demo.echo",
       description: "Returns a result containing credential-shaped fields.",
+      /*******************************************************************************
+       * Function: execute
+       *
+       * Returns the stubbed tool result used by the chat test.
+       ******************************************************************************/
       async execute() {
         return {
           value: "safe",
@@ -348,6 +353,11 @@ describe("chat orchestration", () => {
     setup.tools.register({
       name: "demo.echo",
       description: "Returns trace-test output.",
+      /*******************************************************************************
+       * Function: execute
+       *
+       * Returns the stubbed tool result used by the chat test.
+       ******************************************************************************/
       async execute() {
         return { value: "visible", api_key: "must-not-escape" };
       },
@@ -474,6 +484,11 @@ describe("chat orchestration", () => {
   });
 });
 
+/*******************************************************************************
+ * Function: buildTestApplication
+ *
+ * Builds the chat-test application with configurable providers and tools.
+ ******************************************************************************/
 async function buildTestApplication(
   fetchImplementation: typeof fetch,
   toolPath = "tests/fixtures/tools.json",
@@ -568,6 +583,11 @@ async function buildTestApplication(
         apiKey: "governance-test-key",
         timeoutMs: 1_000,
         source: "primary",
+        /*******************************************************************************
+         * Function: fetchImplementation
+         *
+         * Returns the mocked HTTP response required by the chat-test setup.
+         ******************************************************************************/
         fetchImplementation: async (_url, init) => {
           governanceRequests.push(JSON.parse(String(init?.body)));
           return Response.json({

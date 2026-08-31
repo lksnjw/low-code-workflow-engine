@@ -34,6 +34,12 @@ export type RuntimeArgIssue = {
 
 // ── Static validation (no LLM) ───────────────────────────────────────────────
 
+/*******************************************************************************
+ * Function: validateWorkflowStatically
+ *
+ * Checks workflow steps against available tools and their required
+ * arguments.
+ ******************************************************************************/
 export function validateWorkflowStatically(
   steps: Array<{ id: string; kind?: string; action?: string; parameters?: Record<string, unknown>; description?: string }>,
   liveTools: readonly ToolDefinition[],
@@ -94,6 +100,11 @@ export function validateWorkflowStatically(
 
 // ── Per-call argument validation (used inside action-loop) ───────────────────
 
+/*******************************************************************************
+ * Function: validateToolArguments
+ *
+ * Reports missing or invalid arguments for a registered tool.
+ ******************************************************************************/
 export function validateToolArguments(
   toolName: string,
   args: Record<string, unknown>,
@@ -120,6 +131,11 @@ export function validateToolArguments(
 
 // ── LLM data-flow analysis ───────────────────────────────────────────────────
 
+/*******************************************************************************
+ * Function: analyzeDataFlow
+ *
+ * Requests an analysis of how data passes between workflow steps.
+ ******************************************************************************/
 export async function analyzeDataFlow(
   steps: Array<{ id: string; kind?: string; action?: string; description?: string; parameters?: Record<string, unknown> }>,
   toolResolutions: ToolResolution[],
@@ -190,6 +206,11 @@ export async function analyzeDataFlow(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/*******************************************************************************
+ * Function: resolveToolName
+ *
+ * Resolves a tool by its local or MCP name and supported name variations.
+ ******************************************************************************/
 function resolveToolName(
   action: string,
   byName: Map<string, ToolDefinition>,
@@ -216,6 +237,11 @@ function resolveToolName(
   return null;
 }
 
+/*******************************************************************************
+ * Function: findClosestTool
+ *
+ * Suggests a tool using word overlap with its name and description.
+ ******************************************************************************/
 function findClosestTool(action: string, tools: readonly ToolDefinition[]): string | undefined {
   const words = action.toLowerCase().replace(/[_-]/g, " ").split(" ").filter((w) => w.length > 2);
   if (words.length === 0) return undefined;

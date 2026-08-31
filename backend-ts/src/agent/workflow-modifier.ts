@@ -16,6 +16,11 @@ OUTPUT RULES:
 4. Do not add comments to the YAML.
 5. If the modification is impossible or would break the workflow, output the ORIGINAL YAML unchanged and add a YAML comment on line 1: # UNCHANGED: <reason>`;
 
+/*******************************************************************************
+ * Function: modifyWorkflow
+ *
+ * Requests a workflow modification and validates the returned YAML.
+ ******************************************************************************/
 export async function modifyWorkflow(
   currentYaml: string,
   instruction: string,
@@ -66,6 +71,11 @@ export async function modifyWorkflow(
   return { yaml: newYaml, changeDescription, ok: true };
 }
 
+/*******************************************************************************
+ * Function: describeChange
+ *
+ * Summarizes the requested modification and the change in YAML line count.
+ ******************************************************************************/
 function describeChange(before: string, after: string, instruction: string): string {
   const beforeLines = before.split("\n").length;
   const afterLines = after.split("\n").length;

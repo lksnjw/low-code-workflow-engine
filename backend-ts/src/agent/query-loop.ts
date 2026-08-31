@@ -88,6 +88,11 @@ CHART FORMATTING — when numeric data suits a chart, include exactly one <vis> 
 </vis>
 Rules: "type" must be exactly one of bar/line/pie/table. "data" values must be real numbers from tool results — never invented. Emit at most one <vis> block per response.`;
 
+/*******************************************************************************
+ * Function: runQueryLoop
+ *
+ * Runs the query agent with tool calls and optional read-only enforcement.
+ ******************************************************************************/
 export async function runQueryLoop(
   input: QueryLoopInput,
   readOnlyTools: readonly ToolDefinition[],
@@ -206,6 +211,11 @@ export async function runQueryLoop(
   return buildResult(notice, toolCallLog, toolSteps, MAX_ITERATIONS, true, totalTokens, started);
 }
 
+/*******************************************************************************
+ * Function: buildResult
+ *
+ * Assembles the query response, tool history, usage, and timing.
+ ******************************************************************************/
 function buildResult(
   text: string,
   toolCallLog: ToolCallLogEntry[],
@@ -229,10 +239,20 @@ function buildResult(
   };
 }
 
+/*******************************************************************************
+ * Function: extractText
+ *
+ * Removes embedded visualisation blocks from response text.
+ ******************************************************************************/
 function extractText(text: string): string {
   return text.replace(/<vis>[\s\S]*?<\/vis>/g, "").trim();
 }
 
+/*******************************************************************************
+ * Function: extractVisualisation
+ *
+ * Parses and checks an embedded visualisation specification.
+ ******************************************************************************/
 function extractVisualisation(text: string): VisualisationSpec | undefined {
   const match = /<vis>([\s\S]*?)<\/vis>/i.exec(text);
   const raw = match?.[1];
@@ -252,6 +272,11 @@ function extractVisualisation(text: string): VisualisationSpec | undefined {
   return undefined;
 }
 
+/*******************************************************************************
+ * Function: assertAllReadOnly
+ *
+ * Rejects tools that are not explicitly marked as read-only.
+ ******************************************************************************/
 function assertAllReadOnly(tools: readonly ToolDefinition[]): void {
   for (const tool of tools) {
     if (tool.is_read_only !== true) {
@@ -263,10 +288,20 @@ function assertAllReadOnly(tools: readonly ToolDefinition[]): void {
   }
 }
 
+/*******************************************************************************
+ * Function: stableHash
+ *
+ * Serializes sorted top-level keys for a stable tool-argument comparison.
+ ******************************************************************************/
 function stableHash(obj: Record<string, unknown>): string {
   return JSON.stringify(Object.keys(obj).sort().reduce<Record<string, unknown>>((acc, k) => { acc[k] = obj[k]; return acc; }, {}));
 }
 
+/*******************************************************************************
+ * Function: redactCredentials
+ *
+ * Replaces values under credential-like keys with redaction markers.
+ ******************************************************************************/
 function redactCredentials(args: Record<string, unknown>): Record<string, unknown> {
   const credentialKeys = /(?:password|secret|token|key|credential|auth)/i;
   return Object.fromEntries(
@@ -274,10 +309,20 @@ function redactCredentials(args: Record<string, unknown>): Record<string, unknow
   );
 }
 
+/*******************************************************************************
+ * Function: escapeAttr
+ *
+ * Removes quote and markup characters from an attribute value.
+ ******************************************************************************/
 function escapeAttr(value: string): string {
   return value.replace(/['"<>&]/g, "");
 }
 
+/*******************************************************************************
+ * Function: errorText
+ *
+ * Converts an error or other thrown value into a message string.
+ ******************************************************************************/
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

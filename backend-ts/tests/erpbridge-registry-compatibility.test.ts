@@ -7,6 +7,11 @@ import {
 } from "../src/tools/erpbridge-registry-compatibility.js";
 import type { ToolDefinition } from "../src/registry/schemas.js";
 
+/*******************************************************************************
+ * Function: localTool
+ *
+ * Builds a local tool definition for registry compatibility tests.
+ ******************************************************************************/
 function localTool(
   name: string,
   remoteName: string,

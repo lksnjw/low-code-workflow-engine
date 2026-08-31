@@ -3,6 +3,11 @@ import type { GovernedMCPClient } from "./mcp-client.js";
 import type { DispatchIdentity, ExecutableTool } from "./registry.js";
 
 export class GenericMCPTool implements ExecutableTool {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a GenericMCPTool instance with its required state.
+   ******************************************************************************/
   constructor(
     readonly name: string,
     readonly description: string,
@@ -16,6 +21,11 @@ export class GenericMCPTool implements ExecutableTool {
     )
       throw new Error("generic MCP tool requires a name and governed client");
   }
+  /*******************************************************************************
+   * Function: execute
+   *
+   * Executes this tool through its governed MCP client.
+   ******************************************************************************/
   execute(
     capability: DispatchCapability,
     parameters: Record<string, unknown>,

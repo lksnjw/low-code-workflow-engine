@@ -10,6 +10,12 @@ const entrySource = await readFile(entry, "utf8");
 
 const localTypeScriptResolver = {
   name: "local-typescript-resolver",
+  /*******************************************************************************
+   * Function: setup
+   *
+   * Configures relative TypeScript source resolution for the production
+   * bundler.
+   ******************************************************************************/
   setup(buildContext) {
     buildContext.onResolve({ filter: /^\.\.?\// }, (args) => {
       const requested = resolve(args.resolveDir, args.path);

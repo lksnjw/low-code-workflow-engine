@@ -207,6 +207,11 @@ describe("complete HTTP route graph", () => {
   }, 30_000);
 });
 
+/*******************************************************************************
+ * Function: materializePath
+ *
+ * Replaces route parameters with concrete values for HTTP tests.
+ ******************************************************************************/
 function materializePath(pattern: string): string {
   return pattern
     .replaceAll(":provider", "test")
@@ -216,6 +221,11 @@ function materializePath(pattern: string): string {
     .replace("*", "system-health");
 }
 
+/*******************************************************************************
+ * Function: parseJSON
+ *
+ * Parses a test response as JSON when possible.
+ ******************************************************************************/
 function parseJSON(value: string): unknown {
   try {
     return JSON.parse(value);
@@ -223,6 +233,11 @@ function parseJSON(value: string): unknown {
     return null;
   }
 }
+/*******************************************************************************
+ * Function: isRecord
+ *
+ * Checks whether a value is a non-null object other than an array.
+ ******************************************************************************/
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

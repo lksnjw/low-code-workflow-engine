@@ -28,6 +28,11 @@ export class PolicyGateClient {
   readonly #timeoutMs: number;
   readonly #fetch: typeof fetch;
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a PolicyGateClient instance with its required state.
+   ******************************************************************************/
   constructor(config: PolicyGateClientConfig) {
     this.#baseUrl = config.url.trim().replace(/\/+$/, "");
     this.#apiKey = config.apiKey.trim();
@@ -35,6 +40,11 @@ export class PolicyGateClient {
     this.#fetch = config.fetchImplementation ?? fetch;
   }
 
+  /*******************************************************************************
+   * Function: evaluate
+   *
+   * Sends a request to the external policy gate and parses its decision.
+   ******************************************************************************/
   async evaluate(request: GovernanceRequest, signal?: AbortSignal): Promise<PolicyGateOutcome> {
     const timeoutSignal = AbortSignal.timeout(this.#timeoutMs);
     const combined = signal === undefined ? timeoutSignal : AbortSignal.any([signal, timeoutSignal]);
@@ -106,6 +116,11 @@ export class PolicyGateClient {
   }
 }
 
+/*******************************************************************************
+ * Function: buildPrompt
+ *
+ * Builds a policy-evaluation prompt from the governance request.
+ ******************************************************************************/
 function buildPrompt(request: GovernanceRequest): string {
   const parts: string[] = [
     `User intent: ${request.intent}`,

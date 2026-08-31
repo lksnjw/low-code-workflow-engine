@@ -8,6 +8,11 @@ import type { DispatchIdentity } from "./registry.js";
 export type MCPMode = "remote" | "mock";
 
 export class MCPHTTPError extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a MCPHTTPError instance with its required state.
+   ******************************************************************************/
   constructor(readonly statusCode: number) {
     super(`MCP bridge returned HTTP ${statusCode}`);
     this.name = "MCPHTTPError";
@@ -24,6 +29,12 @@ export type GovernedMCPClient = Readonly<{
   ): Promise<Record<string, unknown>>;
 }>;
 
+/*******************************************************************************
+ * Function: createGovernedMCPClient
+ *
+ * Creates an MCP client that verifies dispatch capabilities before
+ * execution.
+ ******************************************************************************/
 export function createGovernedMCPClient(options: {
   baseURL: string;
   timeoutMs: number;
@@ -34,6 +45,11 @@ export function createGovernedMCPClient(options: {
   const fetchImplementation = options.fetchImplementation ?? fetch;
 
   // This is intentionally closure-private. No module export can send MCP HTTP.
+  /*******************************************************************************
+   * Function: performHTTPRequest
+   *
+   * Sends serialized tool parameters to the remote MCP bridge.
+   ******************************************************************************/
   async function performHTTPRequest(
     action: string,
     parameterBytes: Buffer,
@@ -72,6 +88,11 @@ export function createGovernedMCPClient(options: {
   }
 
   return Object.freeze({
+    /*******************************************************************************
+     * Function: execute
+     *
+     * Verifies and consumes dispatch authority before mock or remote execution.
+     ******************************************************************************/
     async execute(
       action: string,
       capability: DispatchCapability,
@@ -100,6 +121,11 @@ export function createGovernedMCPClient(options: {
   });
 }
 
+/*******************************************************************************
+ * Function: mockFetchAttendance
+ *
+ * Returns deterministic attendance data for mock MCP requests.
+ ******************************************************************************/
 function mockFetchAttendance(
   parameters: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -130,6 +156,11 @@ function mockFetchAttendance(
   return { attendance, count: attendance.length };
 }
 
+/*******************************************************************************
+ * Function: firstString
+ *
+ * Returns the first nonempty string representation that is not a nil marker.
+ ******************************************************************************/
 function firstString(...values: unknown[]): string {
   for (const value of values) {
     const text = String(value ?? "").trim();

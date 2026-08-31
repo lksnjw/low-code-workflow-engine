@@ -29,6 +29,11 @@ export type HandlerServices = {
 
 export type EnrichedValidationResult = ValidationGateResult & { gateExplanation?: GateExplanation };
 
+/*******************************************************************************
+ * Function: validateWorkflow
+ *
+ * Runs the configured validation gate and attaches audit trace metadata.
+ ******************************************************************************/
 export async function validateWorkflow(
   services: HandlerServices,
   action: string,
@@ -59,48 +64,103 @@ export async function validateWorkflow(
   return gate;
 }
 
+/*******************************************************************************
+ * Function: requestParam
+ *
+ * Reads a named request route parameter as a string.
+ ******************************************************************************/
 export function requestParam(request: FastifyRequest, name: string): string {
   return String((request.params as Record<string, unknown>)[name] ?? "");
 }
 
+/*******************************************************************************
+ * Function: queryRecord
+ *
+ * Returns request query parameters as a record.
+ ******************************************************************************/
 export function queryRecord(request: FastifyRequest): Record<string, unknown> {
   return isRecord(request.query) ? request.query : {};
 }
 
+/*******************************************************************************
+ * Function: bodyRecord
+ *
+ * Returns an object request body or null when its shape is invalid.
+ ******************************************************************************/
 export function bodyRecord(request: FastifyRequest): Record<string, unknown> | null {
   return isRecord(request.body) && request.body.invalidJSONBody !== true ? request.body : null;
 }
 
+/*******************************************************************************
+ * Function: isRecord
+ *
+ * Checks whether a value is a non-null object other than an array.
+ ******************************************************************************/
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/*******************************************************************************
+ * Function: stringValue
+ *
+ * Returns a string value or an empty string for other types.
+ ******************************************************************************/
 export function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/*******************************************************************************
+ * Function: booleanValue
+ *
+ * Returns a boolean value or the supplied fallback.
+ ******************************************************************************/
 export function booleanValue(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+/*******************************************************************************
+ * Function: numberValue
+ *
+ * Returns a finite numeric value or the supplied fallback.
+ ******************************************************************************/
 export function numberValue(value: unknown, fallback: number): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number.parseInt(value, 10);
   return fallback;
 }
 
+/*******************************************************************************
+ * Function: nextID
+ *
+ * Advances the repository counter and builds a prefixed identifier.
+ ******************************************************************************/
 export function nextID(state: RepositoryState, prefix: string): string {
   state.counter += 1;
   return `${prefix}_${state.counter}_${randomBytes(4).toString("hex")}`;
 }
 
+/*******************************************************************************
+ * Function: now
+ *
+ * Returns the current time as an ISO timestamp.
+ ******************************************************************************/
 export function now(): string { return new Date().toISOString(); }
 
+/*******************************************************************************
+ * Function: pageValues
+ *
+ * Reads and normalizes pagination parameters from a query.
+ ******************************************************************************/
 export function pageValues(request: FastifyRequest): { page: number; limit: number } {
   const query = queryRecord(request);
   return { page: Math.max(1, Math.trunc(numberValue(query.page, 1))), limit: Math.max(1, Math.trunc(numberValue(query.limit, 20))) };
 }
 
+/*******************************************************************************
+ * Function: paginate
+ *
+ * Slices a collection and supplies pagination metadata.
+ ******************************************************************************/
 export function paginate<T>(items: T[], request: FastifyRequest): { items: T[]; meta: { page: number; limit: number; total: number; totalPages: number } } {
   const { page, limit } = pageValues(request);
   const total = items.length;
@@ -108,6 +168,11 @@ export function paginate<T>(items: T[], request: FastifyRequest): { items: T[]; 
   return { items: items.slice((page - 1) * limit, page * limit), meta: { page, limit, total, totalPages } };
 }
 
+/*******************************************************************************
+ * Function: appendAudit
+ *
+ * Appends an audit entry describing a repository change.
+ ******************************************************************************/
 export function appendAudit(
   state: RepositoryState,
   actor: CurrentUser,
@@ -133,6 +198,12 @@ export function appendAudit(
   });
 }
 
+/*******************************************************************************
+ * Function: publicUser
+ *
+ * Projects user data into its public representation without the password
+ * hash.
+ ******************************************************************************/
 export function publicUser(user: User): Record<string, unknown> {
   return {
     id: user.id,
@@ -151,10 +222,20 @@ export function publicUser(user: User): Record<string, unknown> {
   };
 }
 
+/*******************************************************************************
+ * Function: initials
+ *
+ * Builds uppercase initials from the first two name components.
+ ******************************************************************************/
 export function initials(name: string): string {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
 export class HandlerFailure extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a HandlerFailure instance with its required state.
+   ******************************************************************************/
   constructor(readonly status: number, message: string, readonly meta: unknown = null) { super(message); }
 }

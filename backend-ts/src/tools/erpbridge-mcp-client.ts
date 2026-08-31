@@ -29,12 +29,22 @@ export type ErpbridgeMcpSession = Readonly<{
 }>;
 
 export class ErpbridgeMcpToolError extends Error {
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a ErpbridgeMcpToolError instance with its required state.
+   ******************************************************************************/
   constructor(readonly result: Record<string, unknown>) {
     super("MCP tool failed");
     this.name = "ErpbridgeMcpToolError";
   }
 }
 
+/*******************************************************************************
+ * Function: createErpbridgeMcpSession
+ *
+ * Connects an ERPBridge MCP session and exposes its tool client adapters.
+ ******************************************************************************/
 export async function createErpbridgeMcpSession(options: {
   baseURL: string;
   token: string;
@@ -58,14 +68,29 @@ export async function createErpbridgeMcpSession(options: {
     throw error;
   }
   let closed = false;
+  /*******************************************************************************
+   * Function: close
+   *
+   * Closes the ERPBridge MCP session once.
+   ******************************************************************************/
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
     await sdkClient.close();
   };
   return Object.freeze({
+    /*******************************************************************************
+     * Function: clientFor
+     *
+     * Creates a governed client for the selected ERPBridge tool definition.
+     ******************************************************************************/
     clientFor: (definition: ToolDefinition) =>
       createToolClient(sdkClient, options.validator, definition, () => closed),
+    /*******************************************************************************
+     * Function: callToolDirect
+     *
+     * Calls a named tool directly through the connected ERPBridge SDK session.
+     ******************************************************************************/
     callToolDirect: async (toolName: string, args: Record<string, unknown>) => {
       if (closed) throw new Error("ERPBridge MCP session is closed");
       const result = await sdkClient.callTool(toolName, args);
@@ -73,11 +98,22 @@ export async function createErpbridgeMcpSession(options: {
       if (envelope.isError === true) throw new ErpbridgeMcpToolError(envelope);
       return envelope;
     },
+    /*******************************************************************************
+     * Function: listTools
+     *
+     * Retrieves tool definitions from the connected ERPBridge MCP session.
+     ******************************************************************************/
     listTools: () => sdkClient.listTools(),
     close,
   });
 }
 
+/*******************************************************************************
+ * Function: createToolClient
+ *
+ * Builds an ERPBridge client that checks dispatch capability and role
+ * access.
+ ******************************************************************************/
 function createToolClient(
   sdkClient: ErpbridgeMcpSdkClient,
   validator: RegistryValidator,
@@ -87,6 +123,11 @@ function createToolClient(
   const remoteName = definition.mcp_tool_name.trim();
   const guarded = definition.allowed_roles.length > 0;
   return Object.freeze({
+    /*******************************************************************************
+     * Function: execute
+     *
+     * Verifies dispatch authority and calls the mapped ERPBridge tool.
+     ******************************************************************************/
     async execute(
       action: string,
       capability: DispatchCapability,
@@ -132,17 +173,32 @@ function createToolClient(
   });
 }
 
+/*******************************************************************************
+ * Function: asResultRecord
+ *
+ * Requires an ERPBridge tool result to be an object record.
+ ******************************************************************************/
 function asResultRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new Error("ERPBridge MCP result must be an object");
   return value as Record<string, unknown>;
 }
 
+/*******************************************************************************
+ * Function: localRoleAllowed
+ *
+ * Checks whether a normalized local role is in the allowed role list.
+ ******************************************************************************/
 function localRoleAllowed(role: string, allowed: readonly string[]): boolean {
   const normalized = normalizeRole(role);
   return allowed.some((item) => normalizeRole(item) === normalized);
 }
 
+/*******************************************************************************
+ * Function: normalizeRole
+ *
+ * Normalizes a role name for comparison in this module.
+ ******************************************************************************/
 function normalizeRole(role: string): string {
   return role.trim().toLowerCase().replace(/[ -]/g, "_");
 }

@@ -53,10 +53,20 @@ export function saveWorkflowForCanvas(payload) {
 // ── Chat-edit round-trip helpers ─────────────────────────────────────────────
 // saveWorkflowForChatEdit: called from canvas when user clicks "Edit in Chat"
 // payload: { yaml, workflowId, workflowName }
+/*******************************************************************************
+ * Function: saveWorkflowForChatEdit
+ *
+ * Saves workflow for chat edit for the workflowCanvas utils module.
+ ******************************************************************************/
 export function saveWorkflowForChatEdit(payload) {
   localStorage.setItem(CHAT_EDIT_KEY, JSON.stringify(payload));
 }
 
+/*******************************************************************************
+ * Function: takeWorkflowForChatEdit
+ *
+ * Performs the take Workflow For Chat Edit operation on workflow for chat edit for the workflowCanvas utils module.
+ ******************************************************************************/
 export function takeWorkflowForChatEdit() {
   const raw = localStorage.getItem(CHAT_EDIT_KEY);
   if (!raw) return null;
@@ -64,16 +74,31 @@ export function takeWorkflowForChatEdit() {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+/*******************************************************************************
+ * Function: peekWorkflowForChatEdit
+ *
+ * Performs the peek Workflow For Chat Edit operation on workflow for chat edit for the workflowCanvas utils module.
+ ******************************************************************************/
 export function peekWorkflowForChatEdit() {
   const raw = localStorage.getItem(CHAT_EDIT_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+/*******************************************************************************
+ * Function: clearWorkflowForChatEdit
+ *
+ * Clears workflow for chat edit for the workflowCanvas utils module.
+ ******************************************************************************/
 export function clearWorkflowForChatEdit() {
   localStorage.removeItem(CHAT_EDIT_KEY);
 }
 
+/*******************************************************************************
+ * Function: takeWorkflowForCanvas
+ *
+ * Performs the take Workflow For Canvas operation on workflow for canvas for the workflowCanvas utils module.
+ ******************************************************************************/
 export function takeWorkflowForCanvas() {
   const raw = localStorage.getItem(CANVAS_WORKFLOW_KEY);
   if (!raw) return null;
@@ -216,6 +241,11 @@ export function workflowYamlToCanvas(yaml, metadata = {}) {
   };
 }
 
+/*******************************************************************************
+ * Function: workflowCreationPayload
+ *
+ * Performs the workflow Creation Payload operation on creation payload for the workflowCanvas utils module.
+ ******************************************************************************/
 export function workflowCreationPayload(workflow, yaml) {
   return {
     name: workflow.name,

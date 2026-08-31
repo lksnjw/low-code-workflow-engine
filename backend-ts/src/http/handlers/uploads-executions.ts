@@ -28,6 +28,11 @@ import {
 
 export const UPLOAD_EXECUTION_UNHANDLED = Symbol("upload-execution-unhandled");
 
+/*******************************************************************************
+ * Function: handleUploadExecutionRoute
+ *
+ * Dispatches upload, workflow import, and execution-detail requests.
+ ******************************************************************************/
 export async function handleUploadExecutionRoute(
   route: RouteDefinition,
   request: FastifyRequest,
@@ -75,6 +80,11 @@ export async function handleUploadExecutionRoute(
   return UPLOAD_EXECUTION_UNHANDLED;
 }
 
+/*******************************************************************************
+ * Function: uploadFile
+ *
+ * Stores an uploaded file and its metadata.
+ ******************************************************************************/
 async function uploadFile(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -106,6 +116,11 @@ async function uploadFile(
   });
   return reply.status(201).send(ok(item, "File uploaded", null));
 }
+/*******************************************************************************
+ * Function: getUpload
+ *
+ * Returns metadata for the requested upload.
+ ******************************************************************************/
 async function getUpload(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -117,6 +132,11 @@ async function getUpload(
   if (item === null) throw new HandlerFailure(404, "Upload not found");
   return reply.send(ok(item, "OK", null));
 }
+/*******************************************************************************
+ * Function: downloadUpload
+ *
+ * Returns the stored upload content with download headers.
+ ******************************************************************************/
 async function downloadUpload(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -143,6 +163,11 @@ async function downloadUpload(
     )
     .send(Buffer.from(item.content, "base64"));
 }
+/*******************************************************************************
+ * Function: deleteUpload
+ *
+ * Deletes an upload and its stored content.
+ ******************************************************************************/
 async function deleteUpload(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -156,6 +181,11 @@ async function deleteUpload(
   return reply.send(ok({ deleted: true }, "Upload deleted", null));
 }
 
+/*******************************************************************************
+ * Function: importWorkflow
+ *
+ * Parses and validates an uploaded workflow before storing it.
+ ******************************************************************************/
 async function importWorkflow(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -231,6 +261,11 @@ async function importWorkflow(
     .send(ok(publicWorkflow(workflow), "Workflow imported", null));
 }
 
+/*******************************************************************************
+ * Function: executionLogs
+ *
+ * Returns log entries for a visible execution.
+ ******************************************************************************/
 async function executionLogs(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -244,6 +279,11 @@ async function executionLogs(
   );
   return reply.send(ok(logs, "OK", { nextCursor: null }));
 }
+/*******************************************************************************
+ * Function: executionTimeline
+ *
+ * Returns the step timeline for a visible execution.
+ ******************************************************************************/
 async function executionTimeline(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -260,6 +300,11 @@ async function executionTimeline(
     ),
   );
 }
+/*******************************************************************************
+ * Function: executionHealing
+ *
+ * Returns healing information for a visible execution.
+ ******************************************************************************/
 async function executionHealing(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -282,6 +327,11 @@ async function executionHealing(
   return reply.send(ok(report, "OK", null));
 }
 
+/*******************************************************************************
+ * Function: retryExecution
+ *
+ * Loads a visible execution and retries its workflow.
+ ******************************************************************************/
 async function retryExecution(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -302,6 +352,12 @@ async function retryExecution(
   return runWorkflowFor(workflow, request, reply, user, services);
 }
 
+/*******************************************************************************
+ * Function: requireExecution
+ *
+ * Loads an execution or rejects the request when it is unavailable to the
+ * user.
+ ******************************************************************************/
 async function requireExecution(
   id: string,
   user: CurrentUser,
@@ -316,6 +372,11 @@ async function requireExecution(
     throw new HandlerFailure(404, "Execution not found");
   return execution;
 }
+/*******************************************************************************
+ * Function: approveExecution
+ *
+ * Approves a pending execution checkpoint and delegates resumption.
+ ******************************************************************************/
 async function approveExecution(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -331,6 +392,11 @@ async function approveExecution(
   return resumeWorkflowApproval(execution, note, request, reply, user, services);
 }
 
+/*******************************************************************************
+ * Function: rejectExecution
+ *
+ * Rejects a pending execution approval and records the outcome.
+ ******************************************************************************/
 async function rejectExecution(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -354,6 +420,11 @@ async function rejectExecution(
   return reply.send(ok(updated, "Execution rejected", null));
 }
 
+/*******************************************************************************
+ * Function: publicWorkflow
+ *
+ * Projects workflow data into the response shape for this handler.
+ ******************************************************************************/
 function publicWorkflow(workflow: Workflow): Record<string, unknown> {
   const {
     yaml: _yaml,
@@ -363,6 +434,11 @@ function publicWorkflow(workflow: Workflow): Record<string, unknown> {
   } = workflow;
   return item;
 }
+/*******************************************************************************
+ * Function: errorText
+ *
+ * Converts an error or other thrown value into a message string.
+ ******************************************************************************/
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

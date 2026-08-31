@@ -255,6 +255,11 @@ describe("governance failure matrix", () => {
   });
 });
 
+/*******************************************************************************
+ * Function: governedSetup
+ *
+ * Builds registry, validation, and governance services for a test scenario.
+ ******************************************************************************/
 async function governedSetup(primaryFetch: typeof fetch, secondaryFetch?: typeof fetch, cacheTTLms = 10_000, timeoutMs = 1_000) {
   const repository = new Repository(null);
   const registries = await RegistryService.load(
@@ -282,6 +287,11 @@ async function governedSetup(primaryFetch: typeof fetch, secondaryFetch?: typeof
   return { repository, registries, validator, governance, gate };
 }
 
+/*******************************************************************************
+ * Function: primaryAdapter
+ *
+ * Creates the primary governance adapter with a mocked fetch implementation.
+ ******************************************************************************/
 function primaryAdapter(fetchImplementation: typeof fetch): GovernanceAdapter {
   return new GovernanceAdapter({
     url: governanceURL,
@@ -292,10 +302,20 @@ function primaryAdapter(fetchImplementation: typeof fetch): GovernanceAdapter {
   });
 }
 
+/*******************************************************************************
+ * Function: baseRequest
+ *
+ * Builds the baseline governance request used by tests.
+ ******************************************************************************/
 function baseRequest() {
   return { requestId: "req-1", user, intent: "read", proposedActions: ["fetch_attendance"], caseContext: {} };
 }
 
+/*******************************************************************************
+ * Function: rule
+ *
+ * Builds a test governance rule with optional overrides.
+ ******************************************************************************/
 function rule(id: string, family: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
@@ -306,6 +326,11 @@ function rule(id: string, family: string, overrides: Record<string, unknown> = {
   };
 }
 
+/*******************************************************************************
+ * Function: policyResponse
+ *
+ * Creates a JSON policy response for governance adapter tests.
+ ******************************************************************************/
 function policyResponse(policyVersion: string, rules: unknown[], extra: Record<string, unknown> = {}): Response {
   return new Response(JSON.stringify({ policyVersion, rules, ...extra }), {
     status: 200,

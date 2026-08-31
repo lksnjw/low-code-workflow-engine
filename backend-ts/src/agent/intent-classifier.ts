@@ -64,6 +64,11 @@ const QUERY_PATTERNS = [
 
 const GENERATION_VERB_PATTERN = /\b(generate|create|build|make|design|write|automate)\b/;
 
+/*******************************************************************************
+ * Function: levenshtein
+ *
+ * Calculates the edit distance between two strings.
+ ******************************************************************************/
 function levenshtein(a: string, b: string): number {
   const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
   for (let i = 0; i <= a.length; i++) dp[i]![0] = i;
@@ -83,6 +88,11 @@ function levenshtein(a: string, b: string): number {
 // Scan every ~8-char window of the whitespace-stripped message for a near
 // match (edit distance <= 2) to "workflow" rather than requiring an exact
 // substring.
+/*******************************************************************************
+ * Function: mentionsWorkflowFuzzy
+ *
+ * Detects approximate mentions of workflow despite spelling variations.
+ ******************************************************************************/
 function mentionsWorkflowFuzzy(normalized: string): boolean {
   const stripped = normalized.replace(/[^a-z]/g, "");
   const target = "workflow";
@@ -96,6 +106,11 @@ function mentionsWorkflowFuzzy(normalized: string): boolean {
   return false;
 }
 
+/*******************************************************************************
+ * Function: classifyIntent
+ *
+ * Classifies a chat message using the configured intent patterns.
+ ******************************************************************************/
 export function classifyIntent(message: string): Intent {
   const normalized = message.toLowerCase().trim();
 

@@ -10,6 +10,11 @@ export type RegistryCompatibilityReport = Readonly<{
   duplicateRemoteNames: string[];
 }>;
 
+/*******************************************************************************
+ * Function: compareErpbridgeRegistry
+ *
+ * Compares local and remote tool definitions for registry drift.
+ ******************************************************************************/
 export function compareErpbridgeRegistry(
   localTools: readonly ToolDefinition[],
   remoteTools: readonly ErpbridgeMcpSdkTool[],
@@ -56,6 +61,11 @@ export function compareErpbridgeRegistry(
   };
 }
 
+/*******************************************************************************
+ * Function: assertErpbridgeRegistryCompatible
+ *
+ * Rejects a registry compatibility report containing drift.
+ ******************************************************************************/
 export function assertErpbridgeRegistryCompatible(
   report: RegistryCompatibilityReport,
 ): void {
@@ -65,6 +75,11 @@ export function assertErpbridgeRegistryCompatible(
   );
 }
 
+/*******************************************************************************
+ * Function: sameJSON
+ *
+ * Compares values using their canonical JSON bytes.
+ ******************************************************************************/
 function sameJSON(
   left: Record<string, unknown>,
   right: Record<string, unknown>,

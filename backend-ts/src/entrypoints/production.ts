@@ -43,6 +43,11 @@ import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 // built-in connect timeout — an unresponsive dependency would otherwise hang
 // startup forever with zero log output. Race every such call against a hard
 // deadline so failures are fast and visible instead of silent.
+/*******************************************************************************
+ * Function: withTimeout
+ *
+ * Rejects an operation if it does not finish within the time limit.
+ ******************************************************************************/
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -141,6 +146,11 @@ if (config.mcpTransport === "erpbridge-mcp") {
     console.warn("[erpbridge] MCP session failed to start — ERP tools will be unavailable:", err instanceof Error ? err.message : String(err));
   }
 }
+/*******************************************************************************
+ * Function: clientFor
+ *
+ * Selects the MCP client for the supplied tool definition.
+ ******************************************************************************/
 const clientFor = (definition: ToolDefinition): GovernedMCPClient | null =>
   erpbridgeSession !== null
     ? erpbridgeSession.clientFor(definition)
@@ -252,6 +262,11 @@ const app = await buildApp({
 });
 let shuttingDown = false;
 const schedulerInterval = setInterval(() => { void runScheduledWorkflows(); }, 60_000);
+/*******************************************************************************
+ * Function: shutdown
+ *
+ * Closes application services during process shutdown.
+ ******************************************************************************/
 const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -272,6 +287,11 @@ process.once("SIGTERM", () => {
 await app.listen({ host: "0.0.0.0", port: config.port });
 console.log("[scheduler] Workflow cron scheduler started (60 s tick)");
 
+/*******************************************************************************
+ * Function: bootstrapAdministrator
+ *
+ * Creates or updates the bootstrap administrator from startup configuration.
+ ******************************************************************************/
 async function bootstrapAdministrator(
   repository: Repository,
   email: string,
@@ -307,6 +327,11 @@ async function bootstrapAdministrator(
   });
 }
 
+/*******************************************************************************
+ * Function: reconcileInterruptedExecutions
+ *
+ * Marks interrupted running executions as failed after a restart.
+ ******************************************************************************/
 async function reconcileInterruptedExecutions(
   repository: Repository,
 ): Promise<void> {
@@ -336,6 +361,11 @@ async function reconcileInterruptedExecutions(
   });
 }
 
+/*******************************************************************************
+ * Function: ensureRuntimeContext
+ *
+ * Copies the initial registry context when no runtime copy exists.
+ ******************************************************************************/
 async function ensureRuntimeContext(
   source: string,
   target: string,
@@ -348,6 +378,11 @@ async function ensureRuntimeContext(
   }
 }
 
+/*******************************************************************************
+ * Function: staticProviderConfiguration
+ *
+ * Builds provider settings from application configuration when configured.
+ ******************************************************************************/
 function staticProviderConfiguration(): RuntimeProviderConfiguration | null {
   const baseURL = config.generationBaseURL ?? "";
   if (baseURL === "") return null;
@@ -365,6 +400,11 @@ function staticProviderConfiguration(): RuntimeProviderConfiguration | null {
 }
 
 // ── Cron scheduler ────────────────────────────────────────────────────────────
+/*******************************************************************************
+ * Function: cronFieldMatches
+ *
+ * Matches a cron field containing a wildcard or comma-separated integers.
+ ******************************************************************************/
 function cronFieldMatches(field: string, value: number): boolean {
   if (field === "*") return true;
   return field.split(",").some((part) => {
@@ -373,6 +413,11 @@ function cronFieldMatches(field: string, value: number): boolean {
   });
 }
 
+/*******************************************************************************
+ * Function: cronMatches
+ *
+ * Matches a five-field schedule against the supplied UTC date.
+ ******************************************************************************/
 function cronMatches(expr: string, date: Date): boolean {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return false;
@@ -386,6 +431,11 @@ function cronMatches(expr: string, date: Date): boolean {
   );
 }
 
+/*******************************************************************************
+ * Function: runScheduledWorkflows
+ *
+ * Starts eligible workflows whose schedules match the current UTC tick.
+ ******************************************************************************/
 async function runScheduledWorkflows(): Promise<void> {
   const tick = new Date();
   const scheduled = await repository.read((state) =>

@@ -35,6 +35,11 @@ let _policyCache: PolicyEntry[] | null = null;
 let _policyCachedAt = 0;
 const POLICY_CACHE_TTL_MS = 30_000;
 
+/*******************************************************************************
+ * Function: loadPolicyFiles
+ *
+ * Loads and caches semantic policy entries from local JSON files.
+ ******************************************************************************/
 function loadPolicyFiles(): PolicyEntry[] {
   const now = Date.now();
   if (_policyCache !== null && now - _policyCachedAt < POLICY_CACHE_TTL_MS) return _policyCache;
@@ -56,6 +61,11 @@ function loadPolicyFiles(): PolicyEntry[] {
   return entries;
 }
 
+/*******************************************************************************
+ * Function: matchesToolName
+ *
+ * Checks a tool name against an exact name or policy pattern.
+ ******************************************************************************/
 function matchesToolName(entry: PolicyEntry, toolName: string): boolean {
   if (entry.tool !== undefined) return entry.tool === toolName;
   if (entry.tool_pattern !== undefined) {
@@ -65,6 +75,11 @@ function matchesToolName(entry: PolicyEntry, toolName: string): boolean {
 }
 
 // Source 1: env vars — POLICY_DENIED_TOOLS=tool_a,tool_b and POLICY_DENIED_ROLES=Manager:tool_a,Client:tool_b
+/*******************************************************************************
+ * Function: checkEnvPolicy
+ *
+ * Checks tool access against environment-defined denials.
+ ******************************************************************************/
 function checkEnvPolicy(ctx: SemanticValidatorContext): SemanticValidationResult | null {
   const deniedTools = (process.env.POLICY_DENIED_TOOLS ?? "").split(",").map((t) => t.trim()).filter(Boolean);
   if (deniedTools.includes(ctx.toolName)) {
@@ -85,6 +100,11 @@ function checkEnvPolicy(ctx: SemanticValidatorContext): SemanticValidationResult
 }
 
 // Source 2: JSON policy files in policy/semantic/
+/*******************************************************************************
+ * Function: checkFilePolicy
+ *
+ * Checks tool access against matching local policy entries.
+ ******************************************************************************/
 function checkFilePolicy(ctx: SemanticValidatorContext): SemanticValidationResult | null {
   const entries = loadPolicyFiles();
   for (const entry of entries) {
@@ -105,6 +125,11 @@ function checkFilePolicy(ctx: SemanticValidatorContext): SemanticValidationResul
 }
 
 // Source 3: MCP check_policy tool (optional — called if session exposes it)
+/*******************************************************************************
+ * Function: checkMcpPolicy
+ *
+ * Calls the optional MCP policy tool and interprets its response.
+ ******************************************************************************/
 async function checkMcpPolicy(ctx: SemanticValidatorContext, session: ErpbridgeMcpSession): Promise<SemanticValidationResult | null> {
   try {
     const tools = await session.listTools();
@@ -130,6 +155,11 @@ async function checkMcpPolicy(ctx: SemanticValidatorContext, session: ErpbridgeM
   return null;
 }
 
+/*******************************************************************************
+ * Function: validateSemantics
+ *
+ * Evaluates environment, file, and optional MCP policies for a tool call.
+ ******************************************************************************/
 export async function validateSemantics(
   ctx: SemanticValidatorContext,
   session: ErpbridgeMcpSession | null,
@@ -151,6 +181,11 @@ export async function validateSemantics(
   return { allowed: true, source: "default_allow" };
 }
 
+/*******************************************************************************
+ * Function: invalidatePolicyCache
+ *
+ * Clears cached semantic policy entries.
+ ******************************************************************************/
 export function invalidatePolicyCache(): void {
   _policyCache = null;
   _policyCachedAt = 0;

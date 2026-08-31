@@ -5,6 +5,11 @@ export type ExecutionReader = {
   permissions: readonly string[];
 };
 
+/*******************************************************************************
+ * Function: canReadExecution
+ *
+ * Checks whether the user has permission to read an execution.
+ ******************************************************************************/
 export function canReadExecution(
   user: ExecutionReader,
   execution: Execution,
@@ -15,6 +20,11 @@ export function canReadExecution(
   );
 }
 
+/*******************************************************************************
+ * Function: visibleExecutions
+ *
+ * Filters executions to those the current user can read.
+ ******************************************************************************/
 export function visibleExecutions(
   user: ExecutionReader,
   executions: readonly Execution[],

@@ -34,6 +34,11 @@ const GOVERNANCE_RULE_FAMILIES: Record<string, string> = {
   "GOVERNANCE-UNAVAILABLE": "Governance Service Unavailable",
 };
 
+/*******************************************************************************
+ * Function: projectGateExplanation
+ *
+ * Builds readable explanations for failed governance and registry rules.
+ ******************************************************************************/
 export function projectGateExplanation(
   failedRuleIds: readonly string[],
   registries: RegistryService,
@@ -75,6 +80,11 @@ export function projectGateExplanation(
   return { explanations, policyVersion, registryHash };
 }
 
+/*******************************************************************************
+ * Function: resolveFamily
+ *
+ * Determines a rule family from its type or identifier.
+ ******************************************************************************/
 function resolveFamily(ruleType: string, ruleId: string): string {
   const normalized = ruleType.trim().toLowerCase().replace(/[- ]/g, "_");
   const fromType = RULE_TYPE_FAMILY[normalized];
@@ -91,6 +101,11 @@ function resolveFamily(ruleType: string, ruleId: string): string {
   return ruleType.trim() !== "" ? ruleType : "Validation Rule";
 }
 
+/*******************************************************************************
+ * Function: buildConditionText
+ *
+ * Formats a rule condition as a readable requirement.
+ ******************************************************************************/
 function buildConditionText(rule: { condition: { type: string; parameter: string; operator: string; value: unknown }; description: string }): string {
   const { type, parameter, operator, value } = rule.condition;
   if (type.trim() === "" && parameter.trim() === "") {
@@ -104,6 +119,11 @@ function buildConditionText(rule: { condition: { type: string; parameter: string
   return rule.description.trim() !== "" ? rule.description : "A policy condition was not met.";
 }
 
+/*******************************************************************************
+ * Function: operatorLabel
+ *
+ * Returns a readable label for a condition operator.
+ ******************************************************************************/
 function operatorLabel(op: string): string {
   const map: Record<string, string> = {
     eq: "must equal", "=": "must equal",
@@ -116,6 +136,11 @@ function operatorLabel(op: string): string {
   return map[op.toLowerCase()] ?? op;
 }
 
+/*******************************************************************************
+ * Function: humanizeParameter
+ *
+ * Converts a parameter identifier into a readable label.
+ ******************************************************************************/
 function humanizeParameter(param: string): string {
   return param
     .replace(/_/g, " ")
@@ -124,6 +149,11 @@ function humanizeParameter(param: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/*******************************************************************************
+ * Function: governanceCondition
+ *
+ * Describes the condition associated with a governance gate rule.
+ ******************************************************************************/
 function governanceCondition(ruleId: string): string {
   if (ruleId === "GOVERNANCE-HUMAN-REVIEW") {
     return "The governance system requires a human reviewer to approve this action before it can proceed.";
@@ -134,6 +164,11 @@ function governanceCondition(ruleId: string): string {
   return "A governance check is required.";
 }
 
+/*******************************************************************************
+ * Function: governanceMessage
+ *
+ * Returns guidance for a governance gate outcome.
+ ******************************************************************************/
 function governanceMessage(ruleId: string): string {
   if (ruleId === "GOVERNANCE-HUMAN-REVIEW") {
     return "This workflow requires manual approval. Contact your administrator or approver to proceed.";

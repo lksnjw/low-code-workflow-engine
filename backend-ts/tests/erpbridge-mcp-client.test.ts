@@ -27,6 +27,11 @@ const builderIdentity: DispatchIdentity = Object.freeze({
   erpbridgeRole: "workflow_builder",
 });
 
+/*******************************************************************************
+ * Function: fakeSdk
+ *
+ * Creates a mock ERPBridge MCP SDK client for transport tests.
+ ******************************************************************************/
 function fakeSdk(
   result: unknown = { content: [{ type: "text", text: "ok" }] },
 ): ErpbridgeMcpSdkClient & {
@@ -45,6 +50,11 @@ function fakeSdk(
   };
 }
 
+/*******************************************************************************
+ * Function: fixture
+ *
+ * Creates a governed ERPBridge client with the supplied test options.
+ ******************************************************************************/
 async function fixture(
   sdk: ErpbridgeMcpSdkClient,
   identity: DispatchIdentity = builderIdentity,

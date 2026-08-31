@@ -53,6 +53,11 @@ export class GovernanceService {
   #state: PersistedGovernance = { lastPrimaryPolicyVersion: null, snapshot: null };
   readonly #llmFallback: LlmPolicyFallback | null;
 
+  /*******************************************************************************
+   * Function: constructor
+   *
+   * Initializes a GovernanceService instance with its required state.
+   ******************************************************************************/
   constructor(
     readonly primary: GovernanceAdapter | null,
     readonly secondary: GovernanceAdapter | null,
@@ -65,6 +70,11 @@ export class GovernanceService {
     this.#llmFallback = llmFallback;
   }
 
+  /*******************************************************************************
+   * Function: initialize
+   *
+   * Restores persisted governance state and its registry rule snapshot.
+   ******************************************************************************/
   async initialize(): Promise<void> {
     const stored = await this.repository.read((state) => state.governancePolicy);
     const parsed = persistedGovernanceSchema.safeParse(stored);
@@ -73,6 +83,12 @@ export class GovernanceService {
     if (this.#state.snapshot !== null) this.applySnapshot(this.#state.snapshot);
   }
 
+  /*******************************************************************************
+   * Function: govern
+   *
+   * Resolves governance policy and evaluates the request using available
+   * sources.
+   ******************************************************************************/
   async govern<T>(
     request: GovernanceRequest,
     readOnly: boolean,
@@ -149,6 +165,11 @@ export class GovernanceService {
     });
   }
 
+  /*******************************************************************************
+   * Function: allowed
+   *
+   * Evaluates locally and returns an allowed outcome with governance metadata.
+   ******************************************************************************/
   private async allowed<T>(policy: GovernancePolicySet, status: GovernanceDecisionStatus, warning: string | null, evaluateLocally: () => Promise<T>): Promise<GovernanceOutcome<T>> {
     const value = await evaluateLocally();
     return {
@@ -158,6 +179,11 @@ export class GovernanceService {
     };
   }
 
+  /*******************************************************************************
+   * Function: blocked
+   *
+   * Builds a blocked governance outcome with its reason and policy metadata.
+   ******************************************************************************/
   private blocked(status: "BLOCKED" | "HUMAN_REVIEW", reason: string, policyVersion?: string, source?: GovernanceSource | "cache", evidenceIds: string[] = []): GovernanceOutcome<never> {
     return {
       allowed: false,
@@ -165,6 +191,11 @@ export class GovernanceService {
     };
   }
 
+  /*******************************************************************************
+   * Function: decision
+   *
+   * Assembles governance status, policy provenance, and registry metadata.
+   ******************************************************************************/
   private decision(status: GovernanceDecisionStatus, policyVersion: string | null, source: GovernanceSource | "cache" | null, evidenceIds: string[], warning: string | null, reason: string | null): GovernanceDecision {
     return {
       status,
@@ -177,6 +208,11 @@ export class GovernanceService {
     };
   }
 
+  /*******************************************************************************
+   * Function: acceptPrimary
+   *
+   * Persists and applies a fresh primary governance policy snapshot.
+   ******************************************************************************/
   private async acceptPrimary(policy: GovernancePolicySet): Promise<void> {
     const snapshot = persistedSnapshot(policy, this.cacheTTLms);
     const next = { lastPrimaryPolicyVersion: policy.policyVersion, snapshot } satisfies PersistedGovernance;
@@ -185,6 +221,11 @@ export class GovernanceService {
     this.applySnapshot(snapshot);
   }
 
+  /*******************************************************************************
+   * Function: acceptSecondary
+   *
+   * Persists and applies a secondary governance policy snapshot.
+   ******************************************************************************/
   private async acceptSecondary(policy: GovernancePolicySet): Promise<void> {
     const snapshot = persistedSnapshot(policy, this.cacheTTLms);
     const next = { lastPrimaryPolicyVersion: this.#state.lastPrimaryPolicyVersion, snapshot } satisfies PersistedGovernance;
@@ -193,17 +234,32 @@ export class GovernanceService {
     this.applySnapshot(snapshot);
   }
 
+  /*******************************************************************************
+   * Function: persist
+   *
+   * Stores a copy of the governance state in the repository.
+   ******************************************************************************/
   private async persist(value: PersistedGovernance): Promise<void> {
     await this.repository.mutate((state) => {
       state.governancePolicy = structuredClone(value);
     });
   }
 
+  /*******************************************************************************
+   * Function: applySnapshot
+   *
+   * Applies the governance snapshot's rules to the runtime registry.
+   ******************************************************************************/
   private applySnapshot(snapshot: Pick<PersistedSnapshot, "rules" | "ruleVersion">): void {
     this.registries.replaceRuleSnapshot(snapshot.rules, snapshot.ruleVersion);
   }
 }
 
+/*******************************************************************************
+ * Function: persistedSnapshot
+ *
+ * Builds a persisted policy snapshot with its fetch and expiry times.
+ ******************************************************************************/
 function persistedSnapshot(policy: GovernancePolicySet, cacheTTLms: number): PersistedSnapshot {
   const fetchedAt = Date.now();
   return {
@@ -217,12 +273,22 @@ function persistedSnapshot(policy: GovernancePolicySet, cacheTTLms: number): Per
   };
 }
 
+/*******************************************************************************
+ * Function: normalizeFailure
+ *
+ * Converts an unknown failure into a governance adapter error.
+ ******************************************************************************/
 function normalizeFailure(error: unknown): GovernanceAdapterError {
   return error instanceof GovernanceAdapterError
     ? error
     : new GovernanceAdapterError(error instanceof Error ? error.message : String(error), "unreachable");
 }
 
+/*******************************************************************************
+ * Function: preferredFailure
+ *
+ * Selects a governance failure while prioritizing policy parse errors.
+ ******************************************************************************/
 function preferredFailure(primary: GovernanceAdapterError, secondary: GovernanceAdapterError | null): GovernanceAdapterError {
   if (secondary?.kind === "parse") return secondary;
   if (primary.kind === "parse") return primary;
