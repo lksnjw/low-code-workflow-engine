@@ -24,10 +24,15 @@ export const chatService = {
 /*******************************************************************************
  * Function: getSession
  *
- * Gets session for the chat service module.
+ * Gets session for the chat service module. Paginated — defaults to the
+ * most recent `limit` messages; pass `before` (a message id) to page
+ * further back in history instead of loading the whole conversation.
  ******************************************************************************/
-  async getSession(sessionId) {
-    const response = await apiClient.get(`/chat/sessions/${sessionId}`);
+  async getSession(sessionId, { limit, before } = {}) {
+    const params = {};
+    if (limit) params.limit = limit;
+    if (before) params.before = before;
+    const response = await apiClient.get(`/chat/sessions/${sessionId}`, { params });
     return response.data.data;
   },
 

@@ -13,6 +13,7 @@ export const features = Object.freeze({
   registry: true,
   profile: true,
   datafeed: false,
+  pipelineUpload: true,
   registrySearch: false,
   registryImport: false,
   registryContext: false,

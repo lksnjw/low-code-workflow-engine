@@ -85,6 +85,9 @@ function ChatPage() {
           onSend={handleSend}
           loading={chat.loading}
           error={chat.error}
+          hasMoreMessages={chat.hasMoreMessages}
+          loadingMore={chat.loadingMore}
+          onLoadMore={chat.loadMore}
         />
       </div>
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { chatService } from "../services/chat.service";
 
@@ -40,6 +40,31 @@ export function useChat(sessionId) {
   resetRef.current = sendMutation.reset;
   useEffect(() => { resetRef.current(); }, [sessionId]);
 
+  const [loadingMore, setLoadingMore] = useState(false);
+/*******************************************************************************
+ * Function: loadMore
+ *
+ * Fetches the next-older page of messages and prepends them to the
+ * currently loaded window, instead of ever loading a session's full
+ * history in one request.
+ ******************************************************************************/
+  const loadMore = useCallback(async () => {
+    const current = queryClient.getQueryData(["chat-session", sessionId]);
+    const oldest = current?.messages?.[0];
+    if (!sessionId || !oldest || !current?.hasMoreMessages || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const older = await chatService.getSession(sessionId, { before: oldest.id });
+      queryClient.setQueryData(["chat-session", sessionId], (curr = {}) => ({
+        ...curr,
+        messages: [...(older.messages || []), ...(curr.messages || [])],
+        hasMoreMessages: Boolean(older.hasMoreMessages),
+      }));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [queryClient, sessionId, loadingMore]);
+
 /*******************************************************************************
  * Function: send
  *
@@ -77,6 +102,9 @@ export function useChat(sessionId) {
     loading: sendMutation.isPending,
     error: error?.response?.data?.message || (error ? "Chat could not complete the request. Try again." : ""),
     send,
+    hasMoreMessages: Boolean(session.data?.hasMoreMessages),
+    loadingMore,
+    loadMore,
   };
 }
 

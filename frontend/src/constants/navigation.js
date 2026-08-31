@@ -137,6 +137,14 @@ const allNavigationGroups = [
     ],
   },
   {
+    id: "pipeline_upload",
+    label: "Document Upload",
+    description: "CSV and PDF/image pipeline ingestion",
+    icon: "mdi:cloud-upload-outline",
+    requiredAny: ["workflow:read"],
+    subMenu: [{ id: "upload", label: "Upload Documents", path: "/datafeed/upload" }],
+  },
+  {
     id: "registry_search",
     label: "Registry Search",
     description: "Semantic retrieval inspection",

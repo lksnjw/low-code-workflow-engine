@@ -14,6 +14,7 @@ import Button from "../../components/shared/ui/Button";
 import { executionService } from "../../services/execution.service";
 import { workflowService } from "../../services/workflow.service";
 import { Icon } from "@iconify/react";
+import { cronToFriendly, friendlyToCron, describeFriendlySchedule, WEEKDAY_LABELS } from "../../utils/cron.utils";
 
 /*******************************************************************************
  * Function: WorkflowDetailPage
@@ -165,14 +166,26 @@ function WorkflowDetailPage() {
 function ScheduleSection({ workflow, onSaved }) {
   const raw = workflow.triggerRaw;
   const [scheduleEnabled, setScheduleEnabled] = useState(raw?.type === "schedule");
-  const [cronExpr, setCronExpr] = useState(raw?.config?.cron || "");
+  const [friendly, setFriendly] = useState(() => cronToFriendly(raw?.config?.cron));
   const [scheduleState, setScheduleState] = useState({ saving: false, saved: false });
+
+  const updateFriendly = (patch) => { setFriendly((f) => ({ ...f, ...patch })); setScheduleState({ saving: false, saved: false }); };
+  const toggleDay = (day) => {
+    updateFriendly({
+      daysOfWeek: friendly.daysOfWeek.includes(day)
+        ? friendly.daysOfWeek.filter((d) => d !== day)
+        : [...friendly.daysOfWeek, day],
+    });
+  };
+
+  const cronExpr = friendlyToCron(friendly);
+  const canSave = !scheduleEnabled || (cronExpr.trim() !== "" && (friendly.frequency !== "weekly" || friendly.daysOfWeek.length > 0));
 
   const handleSaveSchedule = async () => {
     setScheduleState({ saving: true, saved: false });
     try {
       const trigger = scheduleEnabled && cronExpr.trim()
-        ? { type: "schedule", displayName: `Schedule: ${cronExpr}`, config: { cron: cronExpr.trim() } }
+        ? { type: "schedule", displayName: `Schedule: ${describeFriendlySchedule(friendly)}`, config: { cron: cronExpr.trim() } }
         : { type: "manual", displayName: "Manual" };
       await workflowService.update(workflow.id, { trigger });
       setScheduleState({ saving: false, saved: true });
@@ -198,23 +211,97 @@ function ScheduleSection({ workflow, onSaved }) {
           />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable automatic scheduling</span>
         </label>
+
         {scheduleEnabled && (
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              Cron expression
-              <span className="ml-2 font-normal text-gray-400">(e.g. <code>0 9 * * 1</code> = every Monday at 9 AM)</span>
-            </label>
-            <input
-              type="text"
-              value={cronExpr}
-              onChange={(e) => { setCronExpr(e.target.value); setScheduleState({ saving: false, saved: false }); }}
-              placeholder="0 9 * * 1"
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-sm text-gray-900 focus:border-primary focus:outline-none dark:border-gray-700 dark:bg-darkBackground dark:text-white"
-            />
+          <div className="space-y-4 rounded-xl border border-gray-100 p-4 dark:border-gray-800">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-xs">
+                <span className="font-bold uppercase tracking-wide text-gray-500">Repeats</span>
+                <select
+                  value={friendly.frequency}
+                  onChange={(e) => updateFriendly({ frequency: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary dark:border-gray-700 dark:bg-darkBackground dark:text-white"
+                >
+                  <option value="daily">Every day</option>
+                  <option value="weekly">Every week</option>
+                  <option value="monthly">Every month</option>
+                  <option value="custom">Custom (advanced)</option>
+                </select>
+              </label>
+
+              {friendly.frequency !== "custom" && (
+                <label className="block text-xs">
+                  <span className="font-bold uppercase tracking-wide text-gray-500">Time (UTC)</span>
+                  <input
+                    type="time"
+                    value={friendly.time}
+                    onChange={(e) => updateFriendly({ time: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary dark:border-gray-700 dark:bg-darkBackground dark:text-white"
+                  />
+                </label>
+              )}
+
+              {friendly.frequency === "monthly" && (
+                <label className="block text-xs">
+                  <span className="font-bold uppercase tracking-wide text-gray-500">Day of month</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={friendly.dayOfMonth}
+                    onChange={(e) => updateFriendly({ dayOfMonth: Number(e.target.value) })}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary dark:border-gray-700 dark:bg-darkBackground dark:text-white"
+                  />
+                </label>
+              )}
+            </div>
+
+            {friendly.frequency === "weekly" && (
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Days of week</span>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {WEEKDAY_LABELS.map((label, day) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => toggleDay(day)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                        friendly.daysOfWeek.includes(day)
+                          ? "bg-primary text-white"
+                          : "border border-gray-300 text-gray-600 hover:border-primary hover:text-primary dark:border-gray-700 dark:text-gray-300"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {friendly.frequency === "custom" && (
+              <label className="block text-xs">
+                <span className="font-bold uppercase tracking-wide text-gray-500">
+                  Cron expression <span className="font-normal normal-case text-gray-400">(5-field, UTC — e.g. 0 9 * * 1 = every Monday at 9 AM)</span>
+                </span>
+                <input
+                  type="text"
+                  value={friendly.raw}
+                  onChange={(e) => updateFriendly({ raw: e.target.value })}
+                  placeholder="0 9 * * 1"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-primary dark:border-gray-700 dark:bg-darkBackground dark:text-white"
+                />
+              </label>
+            )}
+
+            <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+              <Icon icon="mdi:information-outline" className="h-3.5 w-3.5 shrink-0" />
+              {describeFriendlySchedule(friendly)}
+            </p>
           </div>
         )}
+
         <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={handleSaveSchedule} disabled={scheduleState.saving}>
+          <Button variant="secondary" onClick={handleSaveSchedule} disabled={scheduleState.saving || !canSave}>
             {scheduleState.saving ? "Saving…" : "Save Schedule"}
           </Button>
           {scheduleState.saved && (

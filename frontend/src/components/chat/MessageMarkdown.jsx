@@ -1,5 +1,57 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Icon } from "@iconify/react";
+
+// An LLM answer occasionally comes back as an HTML fragment instead of
+// markdown (e.g. a query summary formatted with <h3>/<ul>/<li>) — the
+// tokenizer below has no concept of HTML tags, so that would otherwise
+// render as literal escaped text ("<h3>Sales</h3>" on screen, not a real
+// heading). Detect that case up front and render it properly instead.
+const HTML_FRAGMENT_RE = /^\s*<([a-z][a-z0-9]*)\b[^>]*>/i;
+/*******************************************************************************
+ * Function: looksLikeHtml
+ *
+ * Determines whether message text is an HTML fragment rather than markdown.
+ ******************************************************************************/
+function looksLikeHtml(text) {
+  return HTML_FRAGMENT_RE.test(text);
+}
+
+/*******************************************************************************
+ * Function: HtmlMessage
+ *
+ * Renders an HTML-fragment message safely — sandboxed in an iframe with
+ * scripts disabled (sandbox=""), so nothing in AI-generated or ERP-sourced
+ * content can execute. Auto-grows to fit its content since a sandboxed
+ * iframe with no scripts can't report its own height back to the parent.
+ ******************************************************************************/
+function HtmlMessage({ html }) {
+  const [height, setHeight] = useState(120);
+  const iframeRef = useRef(null);
+
+  const handleLoad = useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (doc?.documentElement) setHeight(Math.min(600, doc.documentElement.scrollHeight + 16));
+  }, []);
+
+  const styledHtml = `<style>body{margin:0;font:14px/1.5 -apple-system,sans-serif;color:#1f2937;}h1,h2,h3,h4{margin:0.6em 0 0.3em;}p{margin:0.4em 0;}ul,ol{margin:0.3em 0;padding-left:1.3em;}</style>${html}`;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700">
+      <iframe
+        ref={iframeRef}
+        title="Formatted response"
+        srcDoc={styledHtml}
+        // allow-same-origin only — lets the parent read scrollHeight to
+        // auto-size the frame. allow-scripts is deliberately NOT granted,
+        // so nothing in this content can execute regardless.
+        sandbox="allow-same-origin"
+        onLoad={handleLoad}
+        style={{ height }}
+        className="w-full transition-[height]"
+      />
+    </div>
+  );
+}
 
 /** Tokenise a line into bold/italic/code/link spans */
 /*******************************************************************************
@@ -243,7 +295,9 @@ function tokenize(text) {
  ******************************************************************************/
 function MessageMarkdown({ text }) {
   if (!text) return null;
-  const blocks = tokenize(String(text));
+  const str = String(text);
+  if (looksLikeHtml(str)) return <HtmlMessage html={str} />;
+  const blocks = tokenize(str);
 
   return (
     <div className="space-y-2 text-sm leading-6">

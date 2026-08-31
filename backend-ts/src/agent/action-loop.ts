@@ -2,7 +2,7 @@ import type { ToolDefinition } from "../registry/schemas.js";
 import type { ProviderRuntime } from "../providers/runtime.js";
 import type { QueryMessage, QueryToolDefinition } from "../analysisprovider/query-types.js";
 import type { GovernanceUser } from "../governance/gate.js";
-import { validateToolArguments } from "./workflow-runtime-validator.js";
+import { normalizeToolArguments, validateToolArguments } from "./workflow-runtime-validator.js";
 
 export type GovernanceCheck = (
   toolName: string,
@@ -81,6 +81,7 @@ DATA PASSING RULES:
 - After a read/get tool: extract the relevant field values (name, email, status, amount, etc.).
 - For email/notification tools: compose the message body from actual fetched records. Format as a readable list with labels.
 - Pass data as a JSON object with named fields, never as a raw string unless the tool requires it.
+- For the send-email tool specifically: "from" and "to" are each a single email address as a plain string (e.g. "to": "user@example.com") — never an array, never wrapped in [ ], even for one recipient.
 
 APPROVAL CHECKPOINTS — follow exactly, no exceptions:
 - If a step (or the task) tells you a human approval checkpoint has been reached, or the action you are about to take exceeds a stated policy threshold requiring manual sign-off (e.g. a payment, purchase order, or refund above a named limit), STOP. Do not call that tool or any tool after it. End your response stating clearly what requires approval and why, so a human can act on it.
@@ -170,17 +171,24 @@ export async function runActionLoop(
       const isReadOnly = toolDef?.is_read_only === true;
       const displayName = toolDef?.display_name ?? humanizeName(call.name);
 
+      // Check the payload against the tool's real schema — not just what the
+      // description implies — and silently fix the one shape mistake that's
+      // both common and unambiguous (a scalar wrapped in a single-element
+      // array). Everything below uses this corrected payload, including the
+      // governance check, so a false read from a malformed arg never happens.
+      const { args: normalizedArguments, corrections } = normalizeToolArguments(call.arguments, toolDef);
+
       // Governance check — required for all write tools
       if (!isReadOnly && toolDef !== undefined) {
         const govCtx = input.traceId !== undefined
           ? { traceId: input.traceId, sessionId: input.sessionId }
           : { sessionId: input.sessionId };
-        const gov = await checkGovernance(call.name, toolDef, call.arguments, input.user, govCtx);
+        const gov = await checkGovernance(call.name, toolDef, normalizedArguments, input.user, govCtx);
         if (!gov.allowed) {
           steps.push({
             toolName: call.name,
             displayName,
-            arguments: call.arguments,
+            arguments: normalizedArguments,
             result: null,
             isReadOnly: false,
             governanceStatus: "blocked",
@@ -201,15 +209,16 @@ export async function runActionLoop(
       // ── Runtime argument validation ──────────────────────────────────────
       // Validate args against schema BEFORE calling the tool.
       // Feed any issues back in the tool result so the LLM can self-correct.
-      const argIssues = validateToolArguments(call.name, call.arguments, toolDef);
+      const argIssues = validateToolArguments(call.name, normalizedArguments, toolDef);
       const argWarnings: string[] = [
         ...argIssues.missing.map((m) => `MISSING_REQUIRED_ARG: ${m}`),
         ...argIssues.invalid.map((m) => `INVALID_ARG_VALUE: ${m}`),
+        ...corrections.map((c) => `AUTO_CORRECTED: ${c}`),
       ];
 
       let rawResult: unknown = null;
       try {
-        rawResult = await callTool(call.name, call.arguments);
+        rawResult = await callTool(call.name, normalizedArguments);
         const serialized = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult, null, 2);
         // Append any argument warnings so the LLM notices and fixes them next iteration
         const warnBlock = argWarnings.length > 0
@@ -218,7 +227,7 @@ export async function runActionLoop(
         steps.push({
           toolName: call.name,
           displayName,
-          arguments: redactCredentials(call.arguments),
+          arguments: redactCredentials(normalizedArguments),
           result: rawResult,
           isReadOnly,
           governanceStatus: isReadOnly ? "skipped" : "allowed",
@@ -239,7 +248,7 @@ export async function runActionLoop(
         steps.push({
           toolName: call.name,
           displayName,
-          arguments: redactCredentials(call.arguments),
+          arguments: redactCredentials(normalizedArguments),
           result: null,
           isReadOnly,
           governanceStatus: isReadOnly ? "skipped" : "allowed",

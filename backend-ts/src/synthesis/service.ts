@@ -278,6 +278,7 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
     "- Every step MUST have a description field — a short plain-English phrase describing what the step does (e.g. 'Fetch all warehouses from ERP'). Never leave description empty or use a tool name as the description.",
     "- Every non-approval step MUST have action set to an EXACT tool name from TOOL_REGISTRY_JSON below. NO EXCEPTIONS.",
     "- COPY THE TOOL NAME CHARACTER-FOR-CHARACTER from TOOL_REGISTRY_JSON — including any hyphens. For example, if the registry lists 'send-email', you MUST write action: send-email (with hyphen), NOT send_email (with underscore). Tool names are case-sensitive and hyphen/underscore differences matter.",
+    "- For send-email specifically: 'from' and 'to' are each a single email address written as a plain YAML string (e.g. to: user@example.com) — never a YAML list/array, never wrapped in [ ], even for one recipient.",
     "- The ONLY step kinds that exist are the default (tool) and kind: approval. DO NOT use kind: condition, kind: http, or any other kind — nothing in this system interprets them and the workflow will fail.",
     "",
     "APPROVAL STEPS (kind: approval):",

@@ -13,6 +13,26 @@ server {
     add_header Cache-Control "public, max-age=31536000, immutable";
   }
 
+  # Same-origin BFF proxy for the ERP data-transformation pipeline API. The
+  # browser never sees the real base URL or the API key — both come from
+  # container env vars (ERP_PIPELINE_API_URL / ERP_PIPELINE_API_KEY) and are
+  # substituted into this file at container startup by nginx's built-in
+  # envsubst-on-templates entrypoint step (this file lives at
+  # /etc/nginx/templates/default.conf.template). More specific than /api/
+  # below, so nginx's longest-prefix match sends /api/pipeline/* here first.
+  location /api/pipeline/ {
+    proxy_pass ${ERP_PIPELINE_API_URL}/;
+    proxy_http_version 1.1;
+    proxy_connect_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_read_timeout 300s;
+    proxy_buffering off;
+    proxy_set_header X-API-Key "${ERP_PIPELINE_API_KEY}";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
   location /api/ {
     proxy_pass http://backend;
     proxy_http_version 1.1;

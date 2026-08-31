@@ -105,6 +105,64 @@ export function validateWorkflowStatically(
  *
  * Reports missing or invalid arguments for a registered tool.
  ******************************************************************************/
+type ToolInputSchema = { required?: string[]; properties?: Record<string, { type?: string }> };
+
+const TYPE_CHECKERS: Record<string, (v: unknown) => boolean> = {
+  string: (v) => typeof v === "string",
+  number: (v) => typeof v === "number",
+  integer: (v) => typeof v === "number" && Number.isInteger(v),
+  boolean: (v) => typeof v === "boolean",
+  array: (v) => Array.isArray(v),
+  object: (v) => typeof v === "object" && v !== null && !Array.isArray(v),
+};
+
+function describeType(value: unknown): string {
+  if (Array.isArray(value)) return "an array";
+  if (value === null) return "null";
+  return typeof value;
+}
+
+/*******************************************************************************
+ * Function: normalizeToolArguments
+ *
+ * Silently fixes the one argument shape mistake the LLM makes often: wrapping
+ * a single scalar value in an array (e.g. an email "to" field sent as
+ * ["user@example.com"] instead of "user@example.com"). Live MCP-discovered
+ * tools frequently have no usable input schema (or one whose declared types
+ * can't be trusted), so this doesn't wait for a schema to confirm the field
+ * is a scalar — it unwraps any single-element array of a primitive value
+ * unconditionally, UNLESS the schema explicitly says that field really is
+ * an array. That's the one case where fixing it could break something real
+ * (e.g. a genuine multi-recipient list that happens to have one item today).
+ ******************************************************************************/
+export function normalizeToolArguments(
+  args: Record<string, unknown>,
+  toolDef: ToolDefinition | undefined,
+): { args: Record<string, unknown>; corrections: string[] } {
+  const schema = toolDef?.input_schema as ToolInputSchema | undefined;
+  const properties = schema?.properties ?? {};
+
+  const corrections: string[] = [];
+  const normalized: Record<string, unknown> = { ...args };
+  for (const [key, value] of Object.entries(args)) {
+    if (!Array.isArray(value) || value.length !== 1) continue;
+    const [only] = value;
+    if (typeof only !== "string" && typeof only !== "number" && typeof only !== "boolean") continue;
+    if (properties[key]?.type === "array") continue; // schema explicitly wants a list — leave it alone
+    normalized[key] = only;
+    corrections.push(`"${key}": unwrapped a single-element array — the tool expects a plain ${typeof only}, not a list`);
+  }
+  return { args: normalized, corrections };
+}
+
+/*******************************************************************************
+ * Function: validateToolArguments
+ *
+ * Reports missing or invalid arguments for a registered tool — checked
+ * against the tool's actual input schema (types included), not just its
+ * description, so a shape mistake the LLM makes (e.g. an array where the
+ * schema wants a plain string) gets caught before it's trusted as correct.
+ ******************************************************************************/
 export function validateToolArguments(
   toolName: string,
   args: Record<string, unknown>,
@@ -112,9 +170,7 @@ export function validateToolArguments(
 ): RuntimeArgIssue {
   if (toolDef === undefined) return { toolName, missing: [], invalid: [`Tool "${toolName}" not found in registry`] };
 
-  const schema = toolDef.input_schema as
-    | { required?: string[]; properties?: Record<string, unknown> }
-    | undefined;
+  const schema = toolDef.input_schema as ToolInputSchema | undefined;
   if (schema === undefined) return { toolName, missing: [], invalid: [] };
 
   const required = (schema.required ?? []) as string[];
@@ -125,6 +181,17 @@ export function validateToolArguments(
   const invalid = Object.entries(args)
     .filter(([, v]) => typeof v === "string" && PLACEHOLDER_RE.test(v))
     .map(([k]) => `"${k}" contains a placeholder value — must be a real value from prior step results`);
+
+  // Type mismatches against the tool's real schema.
+  const properties = schema.properties ?? {};
+  for (const [key, value] of Object.entries(args)) {
+    const expectedType = properties[key]?.type;
+    if (typeof expectedType !== "string") continue;
+    const checker = TYPE_CHECKERS[expectedType];
+    if (checker !== undefined && !checker(value)) {
+      invalid.push(`"${key}" should be of type "${expectedType}" per the tool's schema, but got ${describeType(value)}`);
+    }
+  }
 
   return { toolName, missing, invalid };
 }

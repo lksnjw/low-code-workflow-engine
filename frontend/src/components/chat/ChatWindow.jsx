@@ -77,13 +77,15 @@ const QUICK_PROMPTS = [
  *
  * Performs the Chat Window operation on window for the ChatWindow module.
  ******************************************************************************/
-function ChatWindow({ messages, onSend, loading, error }) {
+function ChatWindow({ messages, onSend, loading, error, hasMoreMessages, loadingMore, onLoadMore }) {
   const [draft, setDraft] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [availableModels, setAvailableModels] = useState([]);
   const [editContext, setEditContext] = useState(() => peekWorkflowForChatEdit());
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const lastMessageIdRef = useRef(null);
 
   useEffect(() => {
     settingsService.providers().then((providers) => {
@@ -100,9 +102,33 @@ function ChatWindow({ messages, onSend, loading, error }) {
     }).catch(() => {});
   }, []);
 
+  // Only auto-scroll to bottom when a message is actually appended (a new
+  // send, or the last message changing) — never when older messages get
+  // prepended by "Load earlier messages", which would otherwise yank the
+  // view away from the history the user just asked to see.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const lastId = messages[messages.length - 1]?.id ?? null;
+    if (lastId !== lastMessageIdRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      lastMessageIdRef.current = lastId;
+    }
   }, [messages, loading]);
+
+/*******************************************************************************
+ * Function: handleLoadMore
+ *
+ * Loads the next-older page of messages while preserving the reader's
+ * current scroll position (prepending content would otherwise shove
+ * everything they were looking at further down the page).
+ ******************************************************************************/
+  const handleLoadMore = useCallback(async () => {
+    const el = scrollContainerRef.current;
+    const prevHeight = el?.scrollHeight ?? 0;
+    await onLoadMore?.();
+    requestAnimationFrame(() => {
+      if (el) el.scrollTop += el.scrollHeight - prevHeight;
+    });
+  }, [onLoadMore]);
 
 /*******************************************************************************
  * Function: handleSend
@@ -171,9 +197,26 @@ function ChatWindow({ messages, onSend, loading, error }) {
       )}
 
       {/* ── Messages ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto max-w-3xl space-y-5">
           {isEmpty && <ChatWelcome onPrompt={setDraft} prompts={QUICK_PROMPTS} />}
+
+          {hasMoreMessages && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 transition hover:border-primary hover:text-primary disabled:opacity-50 dark:border-gray-700 dark:text-gray-400"
+              >
+                {loadingMore
+                  ? <Icon icon="mdi:loading" className="h-3.5 w-3.5 animate-spin" />
+                  : <Icon icon="mdi:chevron-up" className="h-3.5 w-3.5" />
+                }
+                {loadingMore ? "Loading…" : "Load earlier messages"}
+              </button>
+            </div>
+          )}
 
           {messages.map((msg, idx) => (
             <ChatMessage key={msg.id ?? `${msg.role}-${idx}`} message={msg} />

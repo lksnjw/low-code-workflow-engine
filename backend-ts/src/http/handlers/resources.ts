@@ -8,7 +8,7 @@ import { withoutSecretFields } from "../../redact/secrets.js";
 import { providerConfigurationFromRecord, validateRuntimeProviderConfiguration } from "../../providers/runtime.js";
 import { requestTraceId } from "../../trace/request-trace.js";
 import type { RouteDefinition } from "../generated-routes.js";
-import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, paginate, requestParam, stringValue } from "./common.js";
+import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, numberValue, paginate, queryRecord, requestParam, stringValue } from "./common.js";
 import { classifyIntent } from "../../agent/intent-classifier.js";
 import { runQueryLoop, type ToolStep } from "../../agent/query-loop.js";
 import { runActionLoop } from "../../agent/action-loop.js";
@@ -380,9 +380,38 @@ async function createChat(request: FastifyRequest, reply: FastifyReply, user: Cu
 /*******************************************************************************
  * Function: getChat
  *
- * Returns a chat session when it is visible to the current user.
+ * Returns a chat session when it is visible to the current user. Messages
+ * are paginated — without a real limit, a long conversation's full history
+ * (with all its workflow-generation artifacts) can push a single response
+ * past platform-level proxy buffer limits and get silently truncated in
+ * transit. Defaults to the most recent `limit` messages; pass `before=<id>`
+ * to page further back in history.
  ******************************************************************************/
-async function getChat(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { const chat = await services.repository.read((state) => { const value = state.chats[requestParam(request, "id")]; return value !== undefined && (user.permissions.includes("workflow:read") || value.ownerId === user.id) ? structuredClone(value) : null; }); if (chat === null) throw new HandlerFailure(404, "Chat session not found"); const trimmed = { ...chat, messages: trimRedundantRetrieval(chat.messages as Array<Record<string, unknown>>) }; return reply.send(ok(trimmed, "OK", null)); }
+async function getChat(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
+  const chat = await services.repository.read((state) => { const value = state.chats[requestParam(request, "id")]; return value !== undefined && (user.permissions.includes("workflow:read") || value.ownerId === user.id) ? structuredClone(value) : null; });
+  if (chat === null) throw new HandlerFailure(404, "Chat session not found");
+
+  const allMessages = trimRedundantRetrieval(chat.messages as Array<Record<string, unknown>>);
+  const query = queryRecord(request);
+  const limit = Math.max(1, Math.min(200, Math.trunc(numberValue(query.limit, 30))));
+  const beforeId = typeof query.before === "string" ? query.before : "";
+
+  let endIndex = allMessages.length;
+  if (beforeId !== "") {
+    const idx = allMessages.findIndex((m) => m.id === beforeId);
+    if (idx !== -1) endIndex = idx;
+  }
+  const startIndex = Math.max(0, endIndex - limit);
+  const pageMessages = allMessages.slice(startIndex, endIndex);
+
+  const trimmed = {
+    ...chat,
+    messages: pageMessages,
+    hasMoreMessages: startIndex > 0,
+    totalMessageCount: allMessages.length,
+  };
+  return reply.send(ok(trimmed, "OK", null));
+}
 /*******************************************************************************
  * Function: updateChat
  *

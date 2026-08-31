@@ -333,18 +333,55 @@ function ActionStepsList({ steps, blocked }) {
       {open && (
         <div className="border-t border-violet-100 px-3 pb-2 pt-1.5 dark:border-violet-900/40">
           <div className="space-y-1">
-            {steps.map((step, i) => (
-              <div key={i} className="flex items-center gap-2 text-[11px]">
-                <Icon
-                  icon={step.governanceStatus === "blocked" ? "mdi:shield-alert" : step.error ? "mdi:alert-circle" : step.isReadOnly ? "mdi:eye-outline" : "mdi:check-circle"}
-                  className={`h-3 w-3 shrink-0 ${step.governanceStatus === "blocked" ? "text-amber-500" : step.error ? "text-red-500" : "text-emerald-500"}`}
-                />
-                <span className="font-semibold text-gray-700 dark:text-gray-300">{step.displayName ?? step.toolName}</span>
-                {step.governanceReason && <span className="truncate text-gray-400">{step.governanceReason}</span>}
-                {step.error && <span className="truncate text-red-400">{step.error}</span>}
-              </div>
-            ))}
+            {steps.map((step, i) => <ActionStepRow key={i} step={step} />)}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/*******************************************************************************
+ * Function: ActionStepRow
+ *
+ * One tool-call step in the chat's action list. When the step's arguments
+ * carry an "html" field (e.g. send-email's body), shows a "Preview" toggle
+ * that renders the actual HTML — sandboxed in an iframe with no script
+ * execution — instead of leaving it as an unreadable escaped-markup string.
+ ******************************************************************************/
+function ActionStepRow({ step }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const html = typeof step.arguments?.html === "string" && step.arguments.html.trim() !== "" ? step.arguments.html : null;
+
+  return (
+    <div className="text-[11px]">
+      <div className="flex items-center gap-2">
+        <Icon
+          icon={step.governanceStatus === "blocked" ? "mdi:shield-alert" : step.error ? "mdi:alert-circle" : step.isReadOnly ? "mdi:eye-outline" : "mdi:check-circle"}
+          className={`h-3 w-3 shrink-0 ${step.governanceStatus === "blocked" ? "text-amber-500" : step.error ? "text-red-500" : "text-emerald-500"}`}
+        />
+        <span className="font-semibold text-gray-700 dark:text-gray-300">{step.displayName ?? step.toolName}</span>
+        {step.governanceReason && <span className="truncate text-gray-400">{step.governanceReason}</span>}
+        {step.error && <span className="truncate text-red-400">{step.error}</span>}
+        {html && (
+          <button
+            type="button"
+            onClick={() => setPreviewOpen((v) => !v)}
+            className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 font-semibold text-gray-500 hover:border-primary hover:text-primary dark:border-gray-700 dark:text-gray-400"
+          >
+            <Icon icon="mdi:file-code-outline" className="h-3 w-3" />
+            {previewOpen ? "Hide" : "Preview"}
+          </button>
+        )}
+      </div>
+      {html && previewOpen && (
+        <div className="mt-1.5 overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700">
+          <iframe
+            title={`${step.displayName ?? step.toolName} preview`}
+            srcDoc={html}
+            sandbox=""
+            className="h-48 w-full"
+          />
         </div>
       )}
     </div>
