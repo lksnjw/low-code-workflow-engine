@@ -1,7 +1,8 @@
 import { createBridgeProtocolAdapter } from "./erpbridge-protocol-adapter.js";
+import { consumeLibraryReadDelegation } from "../documents/library-client.js";
 import { exactBridgeName, hasReservedBridgeRole } from "./erpbridge-contract.js";
 import { validateToolInput } from "./tool-input-schema.js";
-import { safeMcpResult, MCP_RESULT_BYTES } from "./mcp-result.js";
+import { safeMcpToolResult, safeMcpResult, MCP_RESULT_BYTES } from "./mcp-result.js";
 import { createHash } from "node:crypto";
 import { boundedOperation } from "../core/bounded-operation.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
@@ -18,6 +19,8 @@ import { consumeOperationDispatchPermit, type OperationDispatchPermit } from "./
 import { supportedRemoteReadError } from "./read-business-error.js";
 import { consumeProtectedOperationDispatchPermit, isProtectedOperationDispatchPermit, type ProtectedOperationDispatchPermit } from "./protected-operation-dispatch-permit.js";
 import { capabilityContractHash } from "../registry/capability-admission.js";
+import { assertErpnextWriteArguments, assertErpnextWriteReceipt } from "./erpnext-document-write.js";
+import { erpChatInputIssues } from "./erp-chat-input.js";
 
 export type ErpbridgeMcpSdkTool = {
   name: string;
@@ -53,6 +56,9 @@ export type ErpbridgeMcpSession = Readonly<{
   clientFor(definition: ToolDefinition, expectedPin?: ReadAdmissionPin): GovernedMCPClient;
   callToolDirect(toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>>;
   listTools(signal?: AbortSignal): Promise<readonly ErpbridgeMcpSdkTool[]>;
+  /** Explicit server-enabled administrator chat boundary. Token scope remains
+   * upstream-owned; callback commits exact human-confirmed dispatch intent. */
+  executeAdministratorTool?(tool: ErpbridgeMcpSdkTool, args: Record<string,unknown>, actorId:string, beforeDispatch:()=>Promise<void>, signal?:AbortSignal):Promise<Record<string,unknown>>;
   close(): Promise<void>;
 }>;
 
@@ -104,6 +110,7 @@ export function consumeAcknowledgedReadErrorEvidence(error: unknown, binding: ob
  * Connects an ERPBridge MCP session and exposes its tool client adapters.
  ******************************************************************************/
 export async function createErpbridgeMcpSession(options: {
+  userMcpCredentials?: import("./user-mcp-credentials.js").UserMcpCredentials;
   connectionId?: string;
   baseURL: string;
   token: string;
@@ -115,6 +122,7 @@ export async function createErpbridgeMcpSession(options: {
   admissionAuthorizer?: (definition: ToolDefinition, connectionBinding: string, expectedPin?: ReadAdmissionPin) => Promise<void>;
   // Trusted backend lifecycle revision, never a model/client argument.
   connectionRevision?: string;
+  administratorChatActions?: boolean;
 }): Promise<ErpbridgeMcpSession> {
   if (options.connectionId !== undefined && !/^[a-z][a-z0-9_-]{0,63}$/.test(options.connectionId)) throw new Error("ERPBridge connection identity is invalid");
   if (!Number.isInteger(options.timeoutMs) || options.timeoutMs <= 0 || options.timeoutMs > 2_147_483_647)
@@ -162,6 +170,8 @@ export async function createErpbridgeMcpSession(options: {
   catch (error) { void close().catch(() => {}); throw error; }
   const assertAdmission = async (definition: ToolDefinition, expectedPin?: ReadAdmissionPin, signal?: AbortSignal): Promise<void> => {
     if (unavailable()) throw new Error("ERPBridge MCP session is closed or unavailable");
+    if (definition.bridge_contract?.selector === "digest-pinned-alias" && !definition.is_read_only)
+      throw new Error("Digest-pinned serving aliases are restricted to reviewed read-only dispatch");
     if (sdkClient.metadataComplete && !options.admissionAuthorizer) throw new Error("Explicit persisted capability admission is required before ERP dispatch");
     if (options.admissionAuthorizer) await run("ERPBridge capability admission", () => options.admissionAuthorizer!(definition, admissionBinding, expectedPin), signal);
     assertStorageAuthority();
@@ -176,27 +186,54 @@ export async function createErpbridgeMcpSession(options: {
     admissionBinding,
     dispatchBoundary: "sdk-entry/v1" as const,
     assertAdmission,
+    ...(options.administratorChatActions ? {executeAdministratorTool:async(tool:ErpbridgeMcpSdkTool,args:Record<string,unknown>,actorId:string,beforeDispatch:()=>Promise<void>,signal?:AbortSignal)=>{
+      const assertAdministrator=()=>options.validator.repository.readAuthoritative(state=>{
+        const actor=state.users[actorId],role=actor&&state.roles[actor.roleId];
+        if(!actor||actor.status.toLowerCase()!=="active"||actor.roleId!=="role_admin"||role?.name!=="Platform Admin")throw new Error("Current built-in administrator authority is required");
+      });
+      await assertAdministrator();
+      const remote=await run("Administrator tool contract",()=>sdkClient.listTools(),signal),selected=remote.filter(value=>value.name===tool.name);
+      if(selected.length!==1||!canonicalJSONBytes(selected[0]).equals(canonicalJSONBytes(tool))||erpChatInputIssues(tool,args).length)
+        throw new Error("ERP tool contract or arguments changed; nothing dispatched");
+      const identity={userId:actorId,localRole:"Platform Admin",erpbridgeRole:null};
+      const personal=options.userMcpCredentials?await options.userMcpCredentials.prepare(identity,options.connectionId??"erpbridge-default"):undefined;
+      try{
+        await assertAdministrator();await run("Administrator action checkpoint",beforeDispatch,signal);
+        const result=await run("Administrator ERP tool",()=>{
+          personal?.assertCurrent();
+          return (personal?.sdk??sdkClient).callTool(tool.name,structuredClone(args),{"toolplane.resourceDigest":tool._meta?.["toolplane.resourceDigest"]});
+        },signal);
+        const notFound=tool.annotations?.readOnlyHint===true&&/^get_/.test(tool.name)&&supportedRemoteReadError(result)==="not_found";
+        return {...safeMcpResult(result,tool.outputSchema,{allowReadJsonText:tool.annotations?.readOnlyHint===true}),
+          ...(notFound?{readBusinessOutcome:"NOT_FOUND"}:{})};
+      }finally{await personal?.close().catch(()=>{});}
+    }} : {}),
     /*******************************************************************************
      * Function: clientFor
      *
      * Creates a governed client for the selected ERPBridge tool definition.
      ******************************************************************************/
     clientFor: (definition: ToolDefinition, expectedPin?: ReadAdmissionPin) =>
-      createToolClient(async (name, args, signal, beforeDispatch, authorize) => {
+      createToolClient(async (name, args, signal, beforeDispatch, authorize, identity) => {
+        const personal = options.userMcpCredentials ? await options.userMcpCredentials.prepare(identity, options.connectionId ?? "erpbridge-default") : undefined;
+        try {
         if (sdkClient.metadataComplete && !definition.bridge_contract) throw new Error("ERPBridge tool has no reviewed immutable revision");
         if (sdkClient.metadataComplete || options.admissionAuthorizer) await assertAdmission(definition, expectedPin, signal);
         if (beforeDispatch) await run("ERPBridge dispatch checkpoint", beforeDispatch, signal);
         // Discovery admits a reviewed immutable identity. Dispatch pins both
         // exact name and digest; the bridge owns the final active/origin check.
         // An extra tools/list here would add latency without granting authority.
-        return run("ERPBridge MCP tool call", () => {
+        return await run("ERPBridge MCP tool call", () => {
           // No awaited policy/storage work between one-use capability consumption
           // and SDK entry. Its registry/identity/argument/expiry checks are fresh.
+          personal?.assertCurrent();
           authorize();
+          const businessSdk = personal?.sdk ?? sdkClient;
           return definition.bridge_contract
-            ? sdkClient.callTool(name, args, { "toolplane.resourceDigest": definition.bridge_contract.resource_digest })
-            : sdkClient.callTool(name, args);
+            ? businessSdk.callTool(name, args, { "toolplane.resourceDigest": definition.bridge_contract.resource_digest })
+            : businessSdk.callTool(name, args);
         }, signal);
+        } finally { await personal?.close().catch(() => {}); }
       }, options.validator, definition, () => closed || sdkClient.available === false),
     /*******************************************************************************
      * Function: callToolDirect
@@ -241,7 +278,7 @@ export async function createErpbridgeMcpSession(options: {
  * access.
  ******************************************************************************/
 function createToolClient(
-  callTool: (name: string, args: Record<string, unknown>, signal: AbortSignal | undefined, beforeDispatch: (() => Promise<void>) | undefined, authorize: () => void) => Promise<unknown>,
+  callTool: (name: string, args: Record<string, unknown>, signal: AbortSignal | undefined, beforeDispatch: (() => Promise<void>) | undefined, authorize: () => void, identity: DispatchIdentity) => Promise<unknown>,
   validator: RegistryValidator,
   definition: ToolDefinition,
   isClosed: () => boolean,
@@ -265,6 +302,7 @@ function createToolClient(
       assertDispatch?: () => void,
       operationPermit?: OperationDispatchPermit | ProtectedOperationDispatchPermit,
       readErrorBinding?: object,
+      libraryDelegation?: object,
     ): Promise<Record<string, unknown>> {
       if (signal?.aborted)
         throw signal.reason instanceof Error
@@ -273,6 +311,7 @@ function createToolClient(
       // Caller mutation while admission/checkpoint awaits must not change the
       // bytes authorized or the role injected into the eventual SDK call.
       parameters = structuredClone(parameters); identity = structuredClone(identity);
+      assertErpnextWriteArguments(definition, parameters);
       const isReadOnly = definition.is_read_only === true;
       const parameterBytes = canonicalJSONBytes(parameters);
       if (isClosed()) throw new Error("ERPBridge MCP session is closed");
@@ -292,7 +331,7 @@ function createToolClient(
         throw new Error(
           "dispatch identity local role is not allowed for this ERPBridge tool",
         );
-      const args = guarded
+      const args: Record<string, unknown> = guarded
         ? { ...parameters, role: identity.erpbridgeRole! }
         : { ...parameters };
       let protectedPermit: ProtectedOperationDispatchPermit | undefined;
@@ -306,7 +345,11 @@ function createToolClient(
           consumeOperationDispatchPermit(operationPermit as OperationDispatchPermit | undefined, definition, parameterBytes, identity);
         }
         validator.verifyAndConsumeCapability(capability, action, parameterBytes, identity);
-      });
+        // Keep GLOBAL-SAFETY-002 intact: no credential enters the authored
+        // workflow, validation token, argument pins or policy request. The
+        // exact one-use server ticket is consumed only at synchronous SDK entry.
+        if (libraryDelegation) args.access_token = consumeLibraryReadDelegation(libraryDelegation, definition, parameters, identity);
+      }, identity);
       const envelope = boundResult(result, definition);
       if (envelope.isError === true) {
         const error = new ErpbridgeMcpToolError(envelope);
@@ -317,6 +360,7 @@ function createToolClient(
         }
         throw error;
       }
+      assertErpnextWriteReceipt(definition, parameters, envelope.structuredContent);
       if (protectedPermit) acknowledgedProtectedEffects.set(envelope, { permit: protectedPermit, result: structuredClone(envelope),
         contractHash: capabilityContractHash(definition), argumentBytes: parameterBytes, identityBytes: canonicalJSONBytes(identity), completedAt: new Date().toISOString() });
       return envelope;
@@ -325,7 +369,7 @@ function createToolClient(
 }
 
 function boundResult(result: unknown, definition?: ToolDefinition): Record<string, unknown> {
-  const envelope = safeMcpResult(result, definition?.bridge_contract?.output_schema);
+  const envelope = safeMcpToolResult(result, definition);
   if (definition?.bridge_contract) {
     const contract = definition.bridge_contract;
     // Locally recorded request provenance, not a server-signed effect receipt.

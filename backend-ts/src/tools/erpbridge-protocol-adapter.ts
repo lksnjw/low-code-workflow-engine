@@ -2,9 +2,27 @@ import { Client, StreamableHTTPClientTransport, SdkHttpError } from "@modelconte
 import type { ErpbridgeMcpSdkClient, ErpbridgeMcpSdkTool } from "./erpbridge-mcp-client.js";
 import { boundedMcpFetch } from "./mcp-bounded-fetch.js";
 import { superviseMcpNotifications } from "./mcp-notification-stream.js";
+import { z } from "zod";
 
-/** Engine-owned adapter: preserve ToolPlane fields absent from SDK 1.1.0's
- * projection. Notification GET recovery only; no business replay, OAuth
+// Discovery is not admission. Preserve the original JSON Schema objects,
+// including array-root output declarations, instead of the SDK's legacy
+// object-only outputSchema projection. Unsupported schemas/remote contracts
+// remain visible but cannot pass the engine's separate review/dispatch gate.
+const schemaObject = z.record(z.string(), z.unknown());
+const discoveryPage = z.object({
+  tools: z.array(z.object({
+    name: z.string().min(1).max(256).refine(name => name === name.trim(), "Tool name must be exact"),
+    description: z.string().optional(),
+    inputSchema: schemaObject.refine(schema => schema.type === "object", "Tool input schema must declare an object"),
+    outputSchema: schemaObject.optional(),
+    annotations: schemaObject.optional(),
+    _meta: schemaObject.optional(),
+  }).passthrough()).max(2048),
+  nextCursor: z.string().min(1).max(4096).optional(),
+}).passthrough();
+
+/** Engine-owned adapter: preserve original discovery schemas and ToolPlane
+ * metadata with the pinned SDK. Notification GET recovery only; no business replay, OAuth
  * step-up, sampling or elicitation. */
 export function createBridgeProtocolAdapter(options: { baseURL: string; token: string; timeoutMs: number; fetch?: typeof fetch }): ErpbridgeMcpSdkClient {
   const root = new URL(options.baseURL);
@@ -41,7 +59,7 @@ export function createBridgeProtocolAdapter(options: { baseURL: string; token: s
       const tools: ErpbridgeMcpSdkTool[] = [], cursors = new Set<string>();
       let cursor: string | undefined;
       for (let page = 0; page < 16; page++) {
-        const result = await client.request({ method: "tools/list", ...(cursor ? { params: { cursor } } : {}) }, requestOptions);
+        const result = await client.request({ method: "tools/list", ...(cursor ? { params: { cursor } } : {}) }, discoveryPage, requestOptions);
         tools.push(...structuredClone(result.tools) as ErpbridgeMcpSdkTool[]);
         if (tools.length > 2048 || Buffer.byteLength(JSON.stringify(tools)) > 2_000_000) throw new Error("ERPBridge discovery exceeds supported limits");
         if (result.nextCursor === undefined) return tools;

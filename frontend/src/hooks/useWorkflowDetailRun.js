@@ -32,15 +32,17 @@ export function useWorkflowDetailRun(workflowId, onChanged, actorId) {
       if (typeof result?.id !== "string" || !result.id.trim()) throw new Error("The run receipt has no execution ID.");
       save({ ...empty, result });
       void Promise.resolve().then(() => onChanged?.()).catch(() => {});
+      return result;
     } catch (cause) {
       const executionId = cause?.response?.data?.meta?.executionId;
       if (sent && executionId) {
-        try { const result = await executionService.get(executionId); if (result?.id !== executionId) throw new Error("Wrong receipt"); save({ ...empty, result }); return; }
+        try { const result = await executionService.get(executionId); if (result?.id !== executionId) throw new Error("Wrong receipt"); save({ ...empty, result }); return result; }
         catch { /* Retain uncertainty; never repeat admission. */ }
       }
       const unconfirmed = cause?.runAdmissionUnconfirmed ?? (sent && (!cause?.response || Boolean(executionId) || cause.response.status >= 500));
       if (!unconfirmed) locks.current.delete(scope);
       save({ ...empty, unconfirmed, error: unconfirmed ? "The run outcome is unconfirmed. Review Execution History before another run; nothing was retried." : cause?.response?.data?.message || cause?.message || "Run was not admitted." });
+      return null;
     }
   };
   const dismiss = snapshot => {

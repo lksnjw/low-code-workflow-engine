@@ -18,12 +18,16 @@ import { operationTaskCommandSchema, recoverOperationTaskOutboxes } from "../run
 import { operationJobQueue } from "../runner/operation-jobs.js";
 import { advanceWorkflowLifecycle as advanceOwnedWorkflowLifecycle } from "../runner/workflow-lifecycle.js";
 import { firebaseReadTaskDeadlineMs } from "../firebase/read-task-deadline.js";
+import { firebaseChatTaskDeadlineMs } from "../firebase/chat-task-deadline.js";
+import { scheduledInvocationNeeded } from "../firebase/scheduled-maintenance.js";
 
 const runtimeSecret = defineSecret("LCWE_RUNTIME_CONFIG");
 // Deployment metadata and runtime queue scope must agree. Do not derive this
 // from a deploy-shell-only variable that is absent in the deployed instance.
 const region = "asia-south1";
 const common = { region, timeoutSeconds: 300, concurrency: 1, maxInstances: 2, minInstances: 0, memory: "512MiB" as const, secrets: [runtimeSecret] };
+const processing = { ...common, cpu: 2, memory: "4GiB" as const };
+const maintenance = { ...common, cpu: 2, memory: "1GiB" as const };
 function composition() {
   const root = resolve(import.meta.dirname, "assets"), config = loadFunctionConfig(runtimeSecret.value(), root);
   return { config, root, transport: openFirebaseReadTaskTransport(config.firestoreProjectId!, region),
@@ -34,7 +38,12 @@ function composition() {
 
 // Only the API edge is public. Existing JWT/RBAC routes remain authoritative.
 // No secret lookup, repository/MCP startup, bootstrap or listener at import.
-export const api = onRequest({ ...common, invoker: "public", cors: false }, async (request, response) => {
+// Give API and processing workers more memory/CPU. Dispatch concurrency still
+// follows the qualified database and ERP execution limits.
+// Keep one API edge warm for interactive use. Workers remain scale-to-zero;
+// increasing their parallelism before removing the namespace writer would
+// increase contention, not safe ERP throughput.
+export const api = onRequest({ ...processing, minInstances: 1, maxInstances: 4, concurrency: 4, invoker: "public", cors: false }, async (request, response) => {
   const controller = new AbortController();
   const abort = () => controller.abort();
   const disconnected = () => { if (!response.writableEnded) abort(); };
@@ -51,7 +60,7 @@ export const api = onRequest({ ...common, invoker: "public", cors: false }, asyn
 });
 
 // Private IAM boundary; deployment must grant only its trusted task identity.
-export const executeReadTask = onTaskDispatched({ ...common, invoker: "private",
+export const executeReadTask = onTaskDispatched({ ...processing, invoker: "private",
   retryConfig: { maxAttempts: 20, minBackoffSeconds: 15, maxBackoffSeconds: 300, maxDoublings: 4 },
   rateLimits: { maxConcurrentDispatches: 1, maxDispatchesPerSecond: 1 } }, async request => {
   try {
@@ -62,16 +71,16 @@ export const executeReadTask = onTaskDispatched({ ...common, invoker: "private",
   } catch { throw new Error("Read task invocation was not acknowledged; retry the original task, never a replacement ERP execution"); }
 });
 
-export const executeChatTask = onTaskDispatched({ ...common, invoker: "private",
+export const executeChatTask = onTaskDispatched({ ...processing, invoker: "private",
   retryConfig: { maxAttempts: 20, minBackoffSeconds: 15, maxBackoffSeconds: 300, maxDoublings: 4 },
   rateLimits: { maxConcurrentDispatches: 1, maxDispatchesPerSecond: 1 } }, async request => {
   try {
     const command = chatTaskCommandSchema.parse(request.data), input = composition();
-    await executeFunctionChatTask(input, command, { timeoutMs: 60_000 });
+    await executeFunctionChatTask(input, command, { timeoutMs: firebaseChatTaskDeadlineMs(input.config.functionsChatTaskTimeoutMs) });
   } catch { throw new Error("Chat task invocation was not acknowledged; retry the original operation, never a replacement chat turn"); }
 });
 
-export const executeReadbackTask = onTaskDispatched({ ...common, invoker: "private",
+export const executeReadbackTask = onTaskDispatched({ ...processing, invoker: "private",
   retryConfig: { maxAttempts: 20, minBackoffSeconds: 15, maxBackoffSeconds: 300, maxDoublings: 4 },
   rateLimits: { maxConcurrentDispatches: 1, maxDispatchesPerSecond: 1 } }, async request => {
   try {
@@ -82,7 +91,7 @@ export const executeReadbackTask = onTaskDispatched({ ...common, invoker: "priva
   } catch { throw new Error("Status query task was not acknowledged; retry the original query, never resend its original ERP action"); }
 });
 
-export const executeOperationTask = onTaskDispatched({ ...common, invoker: "private",
+export const executeOperationTask = onTaskDispatched({ ...processing, invoker: "private",
   retryConfig: { maxAttempts: 20, minBackoffSeconds: 15, maxBackoffSeconds: 300, maxDoublings: 4 },
   rateLimits: { maxConcurrentDispatches: 1, maxDispatchesPerSecond: 1 } }, async request => {
   try {
@@ -95,9 +104,10 @@ export const executeOperationTask = onTaskDispatched({ ...common, invoker: "priv
 
 // This reconciles queue intent only. Business recurrence admission/approval
 // remains a separate adapter; this trigger cannot send mail or run ERP tools.
-export const recoverReadTaskDispatch = onSchedule({ ...common, schedule: "every 1 minutes", timeZone: "Asia/Colombo",
+export const recoverReadTaskDispatch = onSchedule({ ...maintenance, schedule: "every 1 minutes", timeZone: "Asia/Colombo",
   retryCount: 3, minBackoffSeconds: 15, maxBackoffSeconds: 300 }, async () => {
-  try { await withFunctionResources(composition(), async resources => {
+  try { const input = composition(); if (!await scheduledInvocationNeeded(input.config, "dispatch")) return;
+    await withFunctionResources(input, async resources => {
     await recoverReadTaskOutboxes(resources.repository, 10); await recoverChatTaskOutboxes(resources.repository, 10);
     await recoverReadbackTaskOutboxes(resources.repository, 10);
     await recoverOperationTaskOutboxes(resources.repository, 10);
@@ -108,9 +118,10 @@ export const recoverReadTaskDispatch = onSchedule({ ...common, schedule: "every 
 // Business recurrence and denial-only expiry, not an ERP execution trigger.
 // Ignore event/browser clock overrides. Each occurrence retains its original
 // publication, report window, service identity and task outbox across retries.
-export const advanceWorkflowLifecycle = onSchedule({ ...common, schedule: "every 1 minutes", timeZone: "Asia/Colombo",
+export const advanceWorkflowLifecycle = onSchedule({ ...maintenance, schedule: "every 1 minutes", timeZone: "Asia/Colombo",
   retryCount: 3, minBackoffSeconds: 15, maxBackoffSeconds: 300 }, async () => {
-  try { await withFunctionRuntime(composition(), async ({ services }) => {
+  try { const input = composition(); if (!await scheduledInvocationNeeded(input.config, "lifecycle")) return;
+    await withFunctionRuntime(input, async ({ services }) => {
     const result = await advanceOwnedWorkflowLifecycle(services, { timeoutMs: 60_000, occurrenceLimit: 10, expiryLimit: 50 });
     if (result.pending) throw new Error("Original occurrence admission remains unconfirmed");
   }); }

@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import type { ChatOperation, RepositoryState } from "../repository/store.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import { HandlerFailure, type CurrentUser } from "../http/handlers/common.js";
-import { assertChatAuthority } from "../http/handlers/model-selection.js";
+import { assertActorAuthority, assertChatAuthority } from "../http/handlers/model-selection.js";
+import { canReviewChat } from "../http/chat-scope.js";
 import { assertCurrentWorkflowEditor } from "../workflows/commands.js";
 
 export function authorityFingerprint(user: CurrentUser) {
@@ -39,6 +40,12 @@ export function projectChatProgress(state: Readonly<RepositoryState>, user: Curr
   return { operation: publicChatOperation(op), events, nextCursor, hasMore: nextCursor < op.lastSequence };
 }
 export function projectSessionOperations(state: Readonly<RepositoryState>, user: CurrentUser, id: string) {
+  // Administrative message review must not impersonate the operation actor or
+  // expose private worker journals/cancellation identities.
+  assertActorAuthority(state, user);
+  const chat = state.chats[id];
+  if (!chat || !canReviewChat(user, chat)) throw new HandlerFailure(404, "Chat session not found");
+  if (chat.ownerId !== user.id) return [];
   assertChatAuthority(state, user, id);
   return Object.values(state.chatOperations).filter(op => op.sessionId === id && op.actorId === user.id).sort((a,b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
     .filter(op => { try { authorizeChatOperation(state, op, user); return true; } catch { return false; } })

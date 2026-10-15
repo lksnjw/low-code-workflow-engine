@@ -10,6 +10,13 @@ test.each(["", "0", "999", "300001", "1.5", "NaN", "Infinity", "-1"])("unsafe AP
   expect(() => createAppConfig({ VITE_API_REQUEST_TIMEOUT_MS: value })).toThrow(/VITE_API_REQUEST_TIMEOUT_MS/);
 });
 
+test("Functions can explicitly select HTTP polling without a WebSocket endpoint", () => {
+  const config = createAppConfig({ VITE_PROGRESS_TRANSPORT: "http-polling", VITE_API_BASE_URL: "https://backend.example.test/api" });
+  expect(config.wsBaseUrl).toBeNull();
+  expect(() => createAppConfig({ VITE_PROGRESS_TRANSPORT: "unknown" })).toThrow("Unsupported progress transport");
+  expect(() => createAppConfig({ VITE_PROGRESS_TRANSPORT: "http-polling", VITE_WS_BASE_URL: "wss://backend.example.test/ws" })).toThrow("HTTP polling cannot advertise");
+});
+
 test("local development retains same-origin API and ws routing", () => {
   expect(createAppConfig({ DEV: true }, "http://localhost:5173")).toMatchObject({ apiBaseUrl: "/api", wsBaseUrl: "ws://localhost:5173/ws", pipelineUploadEnabled: true });
   expect(createAppConfig({ DEV: true }, "http://127.0.0.1:5173")).toMatchObject({ apiBaseUrl: "/api", wsBaseUrl: "ws://127.0.0.1:5173/ws", pipelineUploadEnabled: true });

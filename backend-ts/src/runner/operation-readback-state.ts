@@ -9,6 +9,8 @@ export const readbackEvaluationSchema = z.object({ profile: z.literal("operation
   outcome: z.enum(["APPLIED", "NOT_APPLIED", "UNRESOLVED"]), observedAt: at, settled: z.boolean(),
   evidenceMeaning: z.literal("operation-state"), canResume: z.literal(false), noReplay: z.literal(true), deliveryVerified: z.literal(false) }).strict();
 export const operationReadbackJobSchema = z.object({ profile: z.literal("operation-readback-job/v1"), id, executionId: id, intentId: id, nodeId: id,
+  erpCredentialSecret: z.object({ profile: z.literal("user-mcp-binding/v1"), actorId: id, revisions: z.record(z.string(), z.number().int().nonnegative()),
+    environmentSecret: z.record(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), z.string().regex(/^[a-f0-9]{64}$/)).optional() }).strict().optional(),
   baseVersion: z.number().int().positive(), factsHash: hash, actorId: id, roleId: id, admittedRole: id, keyHash: hash, requestFingerprint: hash,
   targetId: id, targetHash: hash, connectionBinding: z.string().min(1).max(512), argumentHash: hash,
   admission: z.object({ connectionId: id, capabilityId: id, revisionId: id, admissionVersion: z.number().int().positive(), contractHash: hash }).strict(),

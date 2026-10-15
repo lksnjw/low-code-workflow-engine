@@ -305,7 +305,7 @@ function MessageMarkdown({ text }) {
   const blocks = tokenize(str);
 
   return (
-    <div className="space-y-2 text-sm leading-6">
+    <div className="min-w-0 max-w-full space-y-2 text-sm leading-6 [overflow-wrap:anywhere]">
       {blocks.map((block, idx) => {
         if (block.type === "h1") return <h1 key={idx} className="text-xl font-black text-gray-950 dark:text-white"><InlineContent text={block.text} /></h1>;
         if (block.type === "h2") return <h2 key={idx} className="mt-1 text-base font-bold text-gray-900 dark:text-white"><InlineContent text={block.text} /></h2>;

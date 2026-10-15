@@ -6,12 +6,13 @@ export type ReadWorkerLease = { profile: "read-worker-lease/v1"; executionId: st
   acquiredAt: string; renewedAt: string; expiresAt: string; seal: string };
 export type ReadWorkerContext = { assertActive(): void; assertDispatch(): void };
 export class ReadWorkerLeaseFailure extends Error { constructor(readonly code: string = "READ_WORKER_LEASE_LOST") { super("Read worker ownership is unavailable or expired; no further dispatch is authorized"); } }
+export const readJobHasInput=(job:ReadJob)=>job.inputFields!==undefined ? job.inputCiphertext===undefined && !!job.inputFields && typeof job.inputFields==="object" && !Array.isArray(job.inputFields) : typeof job.inputCiphertext==="string" && !!job.inputCiphertext;
 
 const seal = (key: string, job: ReadJob, item: Execution, lease: Omit<ReadWorkerLease, "seal">) => {
   if (Buffer.byteLength(key) < 32) throw new Error("Read lease requires a server-held key");
   return createHmac("sha256", key).update(canonicalJSONBytes({ profile: "read-worker-lease-seal/v1", lease,
     job: { version: job.version, executionId: job.executionId, actorId: job.actorId, admittedRole: job.admittedRole, requestFingerprint: job.requestFingerprint,
-      idempotencyScope: job.idempotencyScope, connectionFingerprint: job.connectionFingerprint, inputCiphertext: job.inputCiphertext, createdAt: job.createdAt, queueSequence: job.queueSequence, claimedAt: job.claimedAt },
+      idempotencyScope: job.idempotencyScope, connectionFingerprint: job.connectionFingerprint, ...(job.inputFields?{inputFields:job.inputFields}:{inputCiphertext:job.inputCiphertext}), createdAt: job.createdAt, queueSequence: job.queueSequence, claimedAt: job.claimedAt },
     workflowId: item.workflowId, actorId: item.startedBy.id, snapshot: item.workflowSnapshot })).digest("hex");
 };
 const iso = (now: number) => new Date(now).toISOString();
@@ -19,7 +20,7 @@ function bounds(now: number, duration: number) { if (!Number.isSafeInteger(now) 
 
 export function issueReadWorkerLease(key: string, job: ReadJob, item: Execution, ownerId: string, now: number, duration: number): ReadWorkerLease {
   bounds(now, duration);
-  if (!ownerId || job.version !== 1 || job.state !== "CLAIMED" || job.workerId !== ownerId || job.executionId !== item.id || job.actorId !== item.startedBy.id || item.status !== "RUNNING" || !item.readProgress || !Number.isSafeInteger(item.readProgress.epoch) || item.readProgress.epoch < 1 || typeof job.inputCiphertext !== "string" || !job.inputCiphertext) throw new ReadWorkerLeaseFailure("READ_WORKER_LEASE_INVALID");
+  if (!ownerId || job.version !== 1 || job.state !== "CLAIMED" || job.workerId !== ownerId || job.executionId !== item.id || job.actorId !== item.startedBy.id || item.status !== "RUNNING" || !item.readProgress || !Number.isSafeInteger(item.readProgress.epoch) || item.readProgress.epoch < 1 || !readJobHasInput(job)) throw new ReadWorkerLeaseFailure("READ_WORKER_LEASE_INVALID");
   const value: Omit<ReadWorkerLease, "seal"> = { profile: "read-worker-lease/v1", executionId: item.id, ownerId, leaseId: randomBytes(16).toString("hex"), epoch: item.readProgress.epoch,
     acquiredAt: iso(now), renewedAt: iso(now), expiresAt: iso(now + duration) };
   return { ...value, seal: seal(key, job, item, value) };
@@ -27,7 +28,7 @@ export function issueReadWorkerLease(key: string, job: ReadJob, item: Execution,
 
 export function assertReadWorkerLease(key: string, job: ReadJob | undefined, item: Execution | undefined, expected: Pick<ReadWorkerLease, "executionId" | "ownerId" | "leaseId" | "epoch">, now: number, duration: number): ReadWorkerLease {
   bounds(now, duration); const lease = job?.lease;
-  if (!job || !item || !lease || job.version !== 1 || job.state !== "CLAIMED" || item.status !== "RUNNING" || job.executionId !== expected.executionId || item.id !== expected.executionId || job.workerId !== expected.ownerId ||
+  if (!job || !item || !lease || !readJobHasInput(job) || job.version !== 1 || job.state !== "CLAIMED" || item.status !== "RUNNING" || job.executionId !== expected.executionId || item.id !== expected.executionId || job.workerId !== expected.ownerId ||
       !Number.isSafeInteger(expected.epoch) || expected.epoch < 1 || !/^[a-f0-9]{32}$/.test(lease.leaseId) || job.actorId !== item.startedBy.id || item.readProgress?.epoch !== expected.epoch || lease.profile !== "read-worker-lease/v1" || lease.executionId !== expected.executionId || lease.ownerId !== expected.ownerId || lease.leaseId !== expected.leaseId || lease.epoch !== expected.epoch ||
       Object.keys(lease).some(key => !["profile", "executionId", "ownerId", "leaseId", "epoch", "acquiredAt", "renewedAt", "expiresAt", "seal"].includes(key))) throw new ReadWorkerLeaseFailure("READ_WORKER_LEASE_INVALID");
   const acquired = Date.parse(lease.acquiredAt), renewed = Date.parse(lease.renewedAt), expires = Date.parse(lease.expiresAt);

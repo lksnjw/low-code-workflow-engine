@@ -171,8 +171,12 @@ export const executionService = {
  *
  * Performs the retry operation on the application for the execution service module.
  ******************************************************************************/
-  async retry(id, input = {}) {
-    return normalizeExecution(unwrap(await apiClient.post(`/executions/${id}/retry`, { input }, { timeout: 300000 })));
+  async retry(id, acknowledgeUnconfirmed = false) {
+    const original = await this.get(id);
+    if (original.retryAdmission?.allowed !== true) throw new Error(original.retryAdmission?.reason || "This execution cannot be safely restarted.");
+    return normalizeExecution(await runAdmissionService.admit(original.workflowId, undefined, {
+      retry: { sourceExecutionId: id, acknowledgeUnconfirmed },
+    }));
   },
 /*******************************************************************************
  * Function: approve

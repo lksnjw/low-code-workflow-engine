@@ -43,6 +43,25 @@ test("lost admission acknowledgement finds its original receipt with no second P
   expect((await runAdmissionService.admit("flow", {})).id).toBe("run-one");
   expect(apiClient.post).toHaveBeenCalledTimes(1); expect(runAdmissionService.pending("flow").executionId).toBe("run-one");
 });
+
+test("double-clicked retry has one new command, a separate lock scope and exact source lineage", async () => {
+  const retry = { sourceExecutionId: "original-failed", acknowledgeUnconfirmed: true };
+  const child = { ...run, retrySource: { sourceExecutionId: retry.sourceExecutionId } };
+  apiClient.post.mockResolvedValue(wrap(child));
+  apiClient.get.mockImplementation(async path => path.endsWith("/readiness") ? wrap({ can_attempt_run: true, operation_job_admission: "operation-job/v1" }) : path.includes("/run-receipts/") ? wrap(receipt()) : wrap(child));
+  const results = await Promise.all([runAdmissionService.admit("flow", undefined, { retry }), runAdmissionService.admit("flow", undefined, { retry })]);
+  expect(results.map(value => value.id)).toEqual(["run-one", "run-one"]); expect(apiClient.post).toHaveBeenCalledTimes(1);
+  expect(apiClient.post).toHaveBeenCalledWith("/executions/original-failed/retry", { input: undefined, mode: "async-operation", idempotencyKey: "stable-request-key-0001", expectedActorId: "actor", retry }, { timeout: 300000 });
+  expect(runAdmissionService.pending("flow")).toBeNull(); expect(Object.keys(localStorage).some(key => key.includes(".retry.original-failed"))).toBe(true);
+});
+
+test("lost retry response recovers the original new execution without repeating the POST", async () => {
+  const retry = { sourceExecutionId: "original-failed", acknowledgeUnconfirmed: false }, child = { ...run, retrySource: { sourceExecutionId: "original-failed" } };
+  apiClient.post.mockRejectedValue(new Error("Lost response"));
+  apiClient.get.mockImplementation(async path => path.endsWith("/readiness") ? wrap({ can_attempt_run: true, operation_job_admission: "operation-job/v1" }) : path.includes("/run-receipts/") ? wrap(receipt()) : wrap(child));
+  expect((await runAdmissionService.admit("flow", undefined, { retry })).id).toBe("run-one");
+  expect((await runAdmissionService.admit("flow", undefined, { retry })).id).toBe("run-one"); expect(apiClient.post).toHaveBeenCalledTimes(1);
+});
 test("NOT_FOUND is uncertainty, not permission for a new key or automatic resend", async () => {
   apiClient.post.mockRejectedValue(new Error("Lost response"));
   apiClient.get.mockImplementation(async path => path.endsWith("/readiness") ? wrap({ can_attempt_run: true, operation_job_admission: "operation-job/v1" }) : wrap(receipt({ outcome: "NOT_FOUND", executionId: null, status: null })));
@@ -84,6 +103,16 @@ test("only exact server-confirmed terminal evidence allows explicit new admissio
   expect(await runAdmissionService.release("flow", run)).toBe(false); expect(runAdmissionService.pending("flow")).not.toBeNull();
   expect(await runAdmissionService.release("flow", run)).toBe(true); expect(runAdmissionService.pending("flow")).toBeNull();
   await runAdmissionService.admit("flow", {}); expect(apiClient.post).toHaveBeenCalledTimes(2);
+});
+
+test("a pre-dispatch recovery requires fresh server proof before releasing a browser run lock", async () => {
+  await runAdmissionService.admit("flow", {});
+  const stopped = { ...run, status: "RECOVERY_REQUIRED", retryAdmission: { canReviewForNewRun: true } };
+  apiClient.get.mockResolvedValueOnce(wrap(receipt({ status: "RECOVERY_REQUIRED", safeToReviewForNewRun: false })));
+  expect(await runAdmissionService.release("flow", stopped)).toBe(false);
+  apiClient.get.mockResolvedValueOnce(wrap(receipt({ status: "RECOVERY_REQUIRED", safeToReviewForNewRun: true })));
+  expect(await runAdmissionService.release("flow", stopped)).toBe(true);
+  expect(apiClient.post).toHaveBeenCalledTimes(1);
 });
 test.each(["storage", "locks", "corrupt", "unready", "wrong-mode"])("%s fails before POST and never overwrites an uncertain identity", async kind => {
   if (kind === "storage") jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Quota exhausted"); });

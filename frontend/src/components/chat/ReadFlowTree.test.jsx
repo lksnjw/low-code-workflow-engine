@@ -53,7 +53,7 @@ test("decision nodes have a distinct diamond, literal meaning and keyboard-selec
   const button = screen.getByRole("button", { name: "Select condition gate" });
   expect(button.getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(button); expect(select).toHaveBeenCalledWith("gate");
-  expect(screen.getByText("No decision recorded for this snapshot")).toBeTruthy();
+  expect(screen.getByText("Waiting for this decision to run")).toBeTruthy();
 });
 
 const collection = maxItems => sequence({ kind: "foreach", id: "each", maxItems, items: { schema: { type: "array", items: { type: "string" } }, value: { kind: "array", items: [] } }, collect: { schema: { type: "string" }, value: { kind: "literal", value: "" } }, body: flow });
@@ -71,7 +71,7 @@ test("structured branches are nested and both remain inspectable without claimin
   expect(within(screen.getByRole("region", { name: "gate If yes" })).getByRole("button", { name: "yes" })).toBeTruthy();
   expect(within(screen.getByRole("region", { name: "gate If no" })).getByRole("button", { name: "no" })).toBeTruthy();
   expect(screen.getByText("Workflow input → enabled must be Yes or No.")).toBeTruthy();
-  expect(screen.getByText("No decision recorded for this snapshot")).toBeTruthy();
+  expect(screen.getByText("Waiting for this decision to run")).toBeTruthy();
   expect(container.querySelector("pre")).toBeNull(); expect(screen.queryByText(/Selected/)).toBeNull();
 });
 
@@ -79,12 +79,12 @@ test.each(["then", "else"])("only confirmed %s decision highlights one selected 
   render(<ReadFlowTree flow={flow} steps={steps} renderAction={renderAction} decisions={{ gate: { status: "DONE", selected } }} />);
   expect(screen.getByText(`${selected === "then" ? "If yes" : "If no"} · Selected`)).toBeTruthy();
   expect(screen.getByText(`${selected === "then" ? "If no" : "If yes"} · Not selected`)).toBeTruthy();
-  expect(screen.getByText(/Recorded decision:.*no tool call/)).toBeTruthy();
+  expect(screen.getByText(`Selected: ${selected === "then" ? "Yes path" : "No path"} · the other path did not run`)).toBeTruthy();
 });
 
 test("failed/unknown predicate is never labelled an automatically selected false branch", () => {
   render(<ReadFlowTree flow={flow} steps={steps} renderAction={renderAction} decisions={{ gate: { status: "FAILED" } }} />);
-  expect(screen.getByText("Condition failed · no branch selected")).toBeTruthy(); expect(screen.queryByText(/· Selected/)).toBeNull();
+  expect(screen.getByText("Decision stopped · no path was selected")).toBeTruthy(); expect(screen.queryByText(/· Selected/)).toBeNull();
 });
 
 test("invalid structural views are labelled declarations, not silently interpreted as an executable chain", () => {
@@ -100,7 +100,7 @@ test.each([sequence(null), sequence(action("yes"), action("yes")), sequence(acti
 
 test("an invalid saved decision cannot invent a selected false branch", () => {
   render(<ReadFlowTree flow={flow} steps={steps} renderAction={renderAction} decisions={{ gate: { status: "DONE", selected: "unknown" } }} />);
-  expect(screen.getByText("No decision recorded for this snapshot")).toBeTruthy();
+  expect(screen.getByText("Waiting for this decision to run")).toBeTruthy();
   expect(screen.queryByText(/· Selected/)).toBeNull();
 });
 
@@ -109,7 +109,7 @@ test("typed branch values and false returns are separate from condition decision
   typed.nodes.push({ kind: "return", id: "answer", output: { schema: { type: "boolean" }, value: { kind: "literal", value: false } } });
   render(<ReadFlowTree flow={typed} steps={steps} renderAction={renderAction} values={{ gate: { kind: "merge", status: "DONE" }, answer: { kind: "return", status: "DONE" } }} valueOutputs={{ gate: { value: "selected value" }, answer: { value: false } }} />);
   expect(screen.getByText("selected value")).toBeTruthy(); expect(within(screen.getByRole("region", { name: "Return answer" })).getByText("No")).toBeTruthy();
-  expect(screen.getByText("Saved selected-branch value · no tool call")).toBeTruthy(); expect(screen.getByText("No decision recorded for this snapshot")).toBeTruthy();
+  expect(screen.getByText("Saved selected-branch value · no tool call")).toBeTruthy(); expect(screen.getByText("Waiting for this decision to run")).toBeTruthy();
 });
 
 test("unconfirmed value payloads never become saved returns", () => {

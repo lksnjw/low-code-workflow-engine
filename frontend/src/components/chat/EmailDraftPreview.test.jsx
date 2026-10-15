@@ -98,3 +98,42 @@ test("directory recipient resolution is rendered as readable provenance, not raw
   expect(screen.getByText(/Recipient resolved from the company directory: Maya Perera/)).toBeTruthy();
   expect(screen.queryByText(/recipient-directory-resolution\/v1/)).toBeNull();
 });
+
+test("an incomplete saved draft can continue through the normal chat agent without sending or requesting approval", async () => {
+  let acknowledge;
+  const onContinue = jest.fn(() => new Promise(resolve => { acknowledge = resolve; }));
+  render(<EmailDraftPreview draft={{ ...draft, originalRequest: "get the orders and email them", body: "", reportStatus: "NOT_PREPARED" }} onContinue={onContinue} />);
+  const button = screen.getByRole("button", { name: "Prepare email with assistant" });
+  fireEvent.click(button); fireEvent.click(button);
+  expect(onContinue).toHaveBeenCalledTimes(1);
+  expect(onContinue.mock.calls[0][0]).toContain("get the orders");
+  expect(onContinue.mock.calls[0][0]).toContain("current recipient manager@example.test");
+  expect(onContinue.mock.calls[0][0]).toContain("Do not send it yet");
+  expect(screen.getByRole("button", { name: "Preparing in chat…" }).disabled).toBe(true);
+  expect(screen.getByLabelText("Message draft").disabled).toBe(true);
+  acknowledge({ operation: { id: "chat-operation", status: "QUEUED" } });
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Preparation requested in chat"));
+  expect(sendMessage).not.toHaveBeenCalled();
+});
+
+test("unsaved edits or an active chat block email preparation, while historical and foreign drafts offer no recovery action", () => {
+  const onContinue = jest.fn();
+  const view = render(<EmailDraftPreview draft={draft} onContinue={onContinue} />);
+  fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "other@example.test" } });
+  expect(screen.getByRole("button", { name: "Prepare email with assistant" }).disabled).toBe(true);
+  view.rerender(<EmailDraftPreview draft={draft} onContinue={onContinue} busy />);
+  expect(screen.getByRole("button", { name: "Prepare email with assistant" }).disabled).toBe(true);
+  view.rerender(<EmailDraftPreview draft={draft} onContinue={onContinue} superseded />);
+  expect(screen.queryByRole("button", { name: "Prepare email with assistant" })).toBeNull();
+  expect(onContinue).not.toHaveBeenCalled();
+});
+
+test("unconfirmed preparation locks repeats and preserves the draft", async () => {
+  const onContinue = jest.fn(async () => null);
+  render(<EmailDraftPreview draft={draft} onContinue={onContinue} />);
+  fireEvent.click(screen.getByRole("button", { name: "Prepare email with assistant" }));
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("acknowledgement is unconfirmed"));
+  expect(screen.getByRole("button", { name: "Prepare email with assistant" }).disabled).toBe(true);
+  expect(screen.getByLabelText("Message draft").value).toBe(draft.body);
+  expect(sendMessage).not.toHaveBeenCalled();
+});

@@ -5,6 +5,7 @@ import type {
   StoredRecord,
 } from "../repository/store.js";
 import { canReadExecution, type ExecutionReader } from "./execution-scope.js";
+import { canReviewChat } from "./chat-scope.js";
 
 export type TraceChainEntry = {
   kind: string;
@@ -21,7 +22,7 @@ export type TraceChainEntry = {
  ******************************************************************************/
 export function buildTraceChain(
   state: RepositoryState,
-  user: ExecutionReader,
+  user: ExecutionReader & { role?: string },
   traceId: string,
 ): TraceChainEntry[] {
   const entries: Array<TraceChainEntry & { sequence: number }> = [];
@@ -43,11 +44,7 @@ export function buildTraceChain(
   };
 
   for (const chat of Object.values(state.chats)) {
-    if (
-      chat.ownerId !== user.id &&
-      !user.permissions.includes("workflow:read")
-    )
-      continue;
+    if (!canReviewChat(user, chat)) continue;
     for (const message of chat.messages) {
       if (message.traceId === traceId)
         append("chat.message", message, stringValue(message.createdAt));

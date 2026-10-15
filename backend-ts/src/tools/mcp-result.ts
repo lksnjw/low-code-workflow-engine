@@ -1,5 +1,6 @@
 import { withoutSecretFields } from "../redact/secrets.js";
 import { validateToolInput } from "./tool-input-schema.js";
+import type { ToolDefinition } from "../registry/schemas.js";
 
 export const MCP_RESULT_BYTES = 512_000;
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -52,12 +53,27 @@ function content(value: unknown): Record<string, unknown> {
 }
 /** Validate original bytes/schema before redaction. Metadata is an allow-listed
  * projection, not instructions or permission. HTTP 200 is not tool success. */
-export function safeMcpResult(value: unknown, outputSchema?: Record<string, unknown>): Record<string, unknown> {
+export function safeMcpResult(value: unknown, outputSchema?: Record<string, unknown>, options?: { allowReadJsonText?: boolean }): Record<string, unknown> {
   if (!record(value) || !Array.isArray(value.content) || value.content.length > 128 ||
       (value.isError !== undefined && typeof value.isError !== "boolean") ||
       (value.structuredContent !== undefined && !record(value.structuredContent)) || Buffer.byteLength(JSON.stringify(value)) > MCP_RESULT_BYTES) throw invalid();
-  if (!value.isError && outputSchema && (value.structuredContent === undefined || validateToolInput(outputSchema, value.structuredContent).length))
-    throw new Error("ERPBridge output does not match its reviewed output schema; remote outcome requires review");
+  let jsonContent: unknown;
+  if (!value.isError && outputSchema) {
+    let output = value.structuredContent;
+    // Compatibility is explicit and read-only at the governed call boundary.
+    // Validate original JSON against the original schema, before redaction;
+    // do not relabel arrays or fabricate an object-shaped structuredContent.
+    if (output === undefined && options?.allowReadJsonText && value.content.length === 1 &&
+        record(value.content[0]) && value.content[0].type === "text" && typeof value.content[0].text === "string") {
+      try { output = JSON.parse(value.content[0].text); } catch { /* remains invalid */ }
+    }
+    if (output === undefined || validateToolInput(outputSchema, output).length)
+      throw new Error("ERPBridge output does not match its reviewed output schema; remote outcome requires review");
+    // Engine-owned typed view, not a changed MCP structuredContent envelope.
+    // Always derive it from the original validated receipt, never a caller's
+    // jsonContent field. This keeps array/scalar JSON usable in workflow maps.
+    if (options?.allowReadJsonText) jsonContent = withoutSecretFields(output);
+  }
   const blocks = value.content.map(content);
   const meta: Record<string, unknown> = {};
   if (record(value._meta) && record(value._meta["com.erpbridge/error"])) {
@@ -67,8 +83,24 @@ export function safeMcpResult(value: unknown, outputSchema?: Record<string, unkn
       ...(Number.isSafeInteger(e.retryAfterMs) && (e.retryAfterMs as number) >= 0 ? { retryAfterMs: e.retryAfterMs } : {}),
     };
   }
-  return { content: blocks, ...(value.structuredContent !== undefined ? { structuredContent: withoutSecretFields(value.structuredContent) } : {}),
+  const result = { content: blocks, ...(value.structuredContent !== undefined ? { structuredContent: withoutSecretFields(value.structuredContent) } : {}),
+    ...(jsonContent !== undefined ? { jsonContent } : {}),
     ...(value.isError !== undefined ? { isError: value.isError } : {}), ...(Object.keys(meta).length ? { _meta: meta } : {}) };
+  if (Buffer.byteLength(JSON.stringify(result)) > MCP_RESULT_BYTES) throw invalid();
+  return result;
+}
+
+/** The same declared data path is used by runtime, compiler and canvas hints. */
+export function reviewedReadOutputKey(tool: ToolDefinition): "jsonContent" | "structuredContent" {
+  return tool.is_read_only && tool.bridge_contract?.selector === "digest-pinned-alias" && tool.bridge_contract.output_schema
+    ? "jsonContent" : "structuredContent";
+}
+
+/** Use the same reviewed read profile at dispatch, checkpoints and simulation.
+ * Merely receiving text or a remote hint never enables this compatibility. */
+export function safeMcpToolResult(value: unknown, tool?: ToolDefinition): Record<string, unknown> {
+  return safeMcpResult(value, tool?.bridge_contract?.output_schema,
+    { allowReadJsonText: tool?.is_read_only === true && tool.bridge_contract?.selector === "digest-pinned-alias" });
 }
 
 /** Receipt and model context are separate: never feed binary data or resource

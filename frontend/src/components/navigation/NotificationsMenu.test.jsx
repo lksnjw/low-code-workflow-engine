@@ -4,6 +4,7 @@ import { jest, test, expect, beforeEach, afterEach } from "@jest/globals";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 let review;
+jest.unstable_mockModule("../../context/NotificationContext", () => ({ useNotifications: () => ({ activity: [] }) }));
 jest.unstable_mockModule("@tanstack/react-query", () => ({ useQuery: options => options.queryKey[0] === "execution-review-inbox" ? review : { isFetchedAfterMount: true, data: [], refetch: jest.fn() } }));
 const { default: NotificationsMenu } = await import("./NotificationsMenu");
 const user = { id: "reviewer", roleId: "reviewer", permissions: ["execution:approve"] };

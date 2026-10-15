@@ -58,6 +58,17 @@ test("only declared workflow input and preceding structured outputs are suggeste
   expect(value.nodes.flatMap(node => node.dataSources).every(source => !source.expression.includes("last") && !/private|credential|token/.test(source.expression))).toBe(true);
 });
 
+test("run inputs preserve declared choices and bounds without leaking secret enums or sample defaults", () => {
+  const source: WorkflowBlueprint = { ...blueprint, trigger: { type: "manual", config: { inputSchema: { type: "object", properties: {
+    customer_type: { type: "string", enum: ["Company", "Individual"], default: "PRIVATE_DEFAULT" },
+    quantity: { type: "integer", enum: [1, 2, 3] }, rows: { type: "array", items: { type: "string" }, maxItems: 3 },
+    api_token: { type: "string", enum: ["PRIVATE_TOKEN"], examples: ["PRIVATE_EXAMPLE"] },
+  }, required: ["customer_type", "quantity"], additionalProperties: false } } } };
+  const value = contract(source);
+  expect("inputSchema" in value && value.inputSchema).toMatchObject({ properties: { customer_type: { enum: ["Company", "Individual"] }, quantity: { enum: [1, 2, 3] }, rows: { maxItems: 3 }, api_token: { writeOnly: true } } });
+  expect(JSON.stringify(value)).not.toContain("PRIVATE_");
+});
+
 test("flat operation authoring exposes analysis input choices and its declared structured output to the following tool", () => {
   const source: WorkflowBlueprint = { name: "Analysis authoring", trigger: { type: "manual" }, steps: [
     { id: "first", action: tool.name, parameters: { count: 1 } },

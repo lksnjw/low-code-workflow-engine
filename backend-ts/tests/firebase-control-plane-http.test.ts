@@ -8,8 +8,10 @@ import { isFunctionControlPlaneRequest } from "../src/firebase/control-plane-htt
 import { testProviderConnection, providerConfigurationFromRecord, ProviderRuntime } from "../src/providers/runtime.js";
 import { SAFETY_CONTRACT } from "../src/prompts/contracts.js";
 
-const fixtures = vi.hoisted(() => ({ open: vi.fn(), construct: vi.fn() }));
+const fixtures = vi.hoisted(() => ({ open: vi.fn(), construct: vi.fn(), progress: vi.fn() }));
 vi.mock("../src/entrypoints/application-runtime.js", () => ({ openApplicationResources: fixtures.open, constructApplicationRuntime: fixtures.construct }));
+vi.mock("../src/storage/firestore-progress-reader.js", () => ({ openFirestoreProgressReader: fixtures.progress }));
+vi.mock("../src/firebase/progress-reader-pool.js", () => ({ borrowProgressReader: fixtures.progress }));
 const closers: (() => Promise<unknown>)[] = [];
 beforeEach(() => { vi.resetAllMocks(); fixtures.construct.mockRejectedValue(new Error("Broken active provider prevents full runtime construction")); });
 afterEach(async () => { vi.unstubAllGlobals(); await Promise.all(closers.splice(0).map(close => close())); });
@@ -23,6 +25,7 @@ async function setup(multiple = false) {
     state.providers.replacement = { id: "replacement", name: "Replacement", active: multiple, type: "openai_compatible", apiKey: "synthetic-private-key", baseUrl: "https://replacement.example.test/v1", model: "pinned-model" };
   });
   const close = vi.fn(async () => {}), opened: Repository[] = [];
+  fixtures.progress.mockImplementation(() => ({ snapshot: async () => JSON.parse(storage.bytes!.toString()), close: async () => {} }));
   fixtures.open.mockImplementation(async () => {
     const repository = await Repository.open(storage);
     opened.push(repository);

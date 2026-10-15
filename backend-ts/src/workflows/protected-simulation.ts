@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "../registry/schemas.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import { withoutSecretFields } from "../redact/secrets.js";
-import { safeMcpResult } from "../tools/mcp-result.js";
+import { safeMcpToolResult } from "../tools/mcp-result.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { assertReadErrorContract } from "../tools/read-business-error.js";
 import { readErrorContractSchema } from "../registry/read-error-schema.js";
@@ -118,7 +118,7 @@ export async function simulateProtectedWorkflow(yaml: string, input: Record<stri
         throw new FixtureBusinessFailure(id);
       }
       if (!Object.hasOwn(fixtures.outputs, key)) return stop(id, "action", "MISSING_FIXTURE", { arguments: args });
-      try { output = safeMcpResult(fixtures.outputs[key], tool.bridge_contract?.output_schema); }
+      try { output = safeMcpToolResult(fixtures.outputs[key], tool); }
       catch { return stop(id, "action", "FIXTURE_OUTPUT_INVALID"); }
       used.add(key);
       if (output.isError === true) return stop(id, "action", "FIXTURE_TOOL_ERROR", { arguments: args });

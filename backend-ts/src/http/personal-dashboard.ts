@@ -30,7 +30,7 @@ export function personalDashboard(state: Readonly<RepositoryState>, user: Curren
     visibleRuns.add(run.id);
     const workflow = state.workflows[run.workflowId], task: Task = {
       id: `run:${run.id}`, kind: "run", name: run.workflowName, status: run.status,
-      at: run.scheduleSource?.scheduledFor ?? run.startedAt, date: day(run.scheduleSource?.scheduledFor ?? run.startedAt),
+      at: run.scheduleSource?.scheduledFor ?? run.snapshotScheduleSource?.scheduledFor ?? run.startedAt, date: day(run.scheduleSource?.scheduledFor ?? run.snapshotScheduleSource?.scheduledFor ?? run.startedAt),
       workflowId: canReadWorkflows && workflow && canViewWorkflow(workflow, user) ? workflow.id : null, executionId: run.id,
       important: dashboardAttentionStatuses.has(run.status) || run.status === "FAILED",
     };

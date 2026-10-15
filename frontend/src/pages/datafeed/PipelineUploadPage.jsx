@@ -1,43 +1,61 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import Card from "../../components/shared/ui/Card";
 import Button from "../../components/shared/ui/Button";
 import { pipelineService } from "../../services/pipeline.service";
 import { useNotifications } from "../../context/NotificationContext";
+import DocumentCatalog from "../../components/datafeed/DocumentCatalog";
+import { useAuthContext } from "../../context/AuthContext";
+import { authorityScope } from "../../utils/authAuthority";
+import SmartDocumentIntake from "../../components/datafeed/SmartDocumentIntake";
 
 const DOCUMENT_TYPES = ["", "payslip", "invoice", "contract", "other"];
 const SENSITIVITY_LEVELS = ["", "public", "internal", "confidential", "restricted"];
 
+function fileError(file, extensions) {
+  if (!file) return null;
+  if (!extensions.includes(file.name.split(".").pop()?.toLowerCase())) return { message: `Choose a supported file: ${extensions.join(", ")}.` };
+  return file.size === 0 ? { message: "The selected file is empty. Choose a file containing data." } : null;
+}
+
+function indexingError(job) {
+  return job.status === "succeeded" ? null : { code: job.error_code, message: job.error_message || `Indexing ended with status ${job.status}. The uploaded file was kept; it is not confirmed fully searchable.` };
+}
+
 /*******************************************************************************
  * Function: PipelineUploadPage
  *
- * Upload screen for the ERP data-transformation pipeline — CSV/TSV/TXT for
+ * Upload screen for the ERP data-transformation pipeline — CSV/TSV for
  * schema indexing, and PDF/image documents for OCR + semantic indexing.
  * Every request goes through this app's own same-origin proxy; the pipeline
  * API key is injected server-side and never reaches the browser.
  ******************************************************************************/
 function PipelineUploadPage() {
+  const { user } = useAuthContext();
+  return <PipelineUploadWorkspace key={authorityScope(user)} schemaAdministrator={user?.permissions?.includes("registry:write")} canPrepare={user?.permissions?.includes("pipeline:upload") && user?.permissions?.some(permission => ["chat:use", "workflow:write"].includes(permission))} />;
+}
+
+function PipelineUploadWorkspace({ schemaAdministrator, canPrepare }) {
   return (
     <div className="space-y-6">
       <section>
         <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Data pipeline</p>
         <h1 className="page-heading mt-3 text-gray-950 dark:text-white">Files &amp; Documents</h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">
-          Upload tabular schemas or attach PDF and image records to an exact person or business record. Your role
-          must include Data Pipeline Upload; the pipeline credential remains only on the application backend.
+          Upload a business file and let the assistant prepare its record details. Review missing fields and the detected destination before saving.
         </p>
       </section>
 
-      <section className="surface-panel grid gap-4 rounded-2xl px-5 py-4 text-sm md:grid-cols-3">
-        <FlowStep number="1" title="Identify" detail="Bind a document to its source, entity, and exact record key." />
-        <FlowStep number="2" title="Scan & index" detail="The pipeline extracts text, uses OCR when needed, and stores searchable vectors." />
-        <FlowStep number="3" title="Retrieve in chat" detail="The agent searches and resolves content through reviewed ERPBridge read tools." />
-      </section>
+      {canPrepare && <SmartDocumentIntake />}
 
+      <DocumentCatalog />
+      <details><summary className="cursor-pointer text-sm font-semibold text-gray-500">Advanced import tools</summary>
+      <p className="my-3 text-sm text-gray-500">Administrative schema imports and exact legacy record associations. Normal document uploads use automatic preparation above or the chat attachment button.</p>
       <div className="grid gap-6 xl:grid-cols-2">
         <CsvUploadCard />
-        <DocumentUploadCard />
+        {schemaAdministrator && <DocumentUploadCard />}
       </div>
+      </details>
     </div>
   );
 }
@@ -45,7 +63,7 @@ function PipelineUploadPage() {
 /*******************************************************************************
  * Function: CsvUploadCard
  *
- * Handles CSV/TSV/TXT upload, then polls schema_index_job_id (when present)
+ * Handles CSV/TSV upload, then polls schema_index_job_id (when present)
  * until the schema-indexing job reaches a terminal state.
  ******************************************************************************/
 function CsvUploadCard() {
@@ -55,31 +73,37 @@ function CsvUploadCard() {
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
+  const polling = useRef(null);
+  useEffect(() => () => polling.current?.abort(), []);
   const { notify } = useNotifications();
 
   const reset = () => { setStatus("idle"); setResult(null); setJob(null); setError(null); };
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (!file || polling.current) return;
+    const controller = new AbortController(); polling.current = controller;
     setStatus("uploading"); setResult(null); setJob(null); setError(null);
     try {
       const uploaded = await pipelineService.uploadCsv(file);
+      if (controller.signal.aborted) return;
       setResult(uploaded);
       notify(`${file.name} uploaded — ${uploaded.columns ?? 0} columns detected`, "success");
       if (uploaded.schema_index_job_id) {
         setStatus("indexing");
-        const finalJob = await pipelineService.waitForJob(uploaded.schema_index_job_id, { onTick: setJob });
+        const finalJob = await pipelineService.waitForJob(uploaded.schema_index_job_id, { onTick: setJob, signal: controller.signal });
+        if (controller.signal.aborted) return;
         setJob(finalJob);
-        setStatus("done");
+        const failure = indexingError(finalJob); setError(failure); setStatus(failure ? "error" : "done");
       } else {
         setStatus("done");
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       const apiError = err?.error ?? { message: "CSV upload failed" };
       setError(apiError);
       setStatus("error");
       notify(apiError.message || "CSV upload failed", "error");
-    }
+    } finally { if (polling.current === controller) polling.current = null; }
   };
 
   const busy = status === "uploading" || status === "indexing";
@@ -88,22 +112,23 @@ function CsvUploadCard() {
     <Card>
       <div className="mb-4 flex items-center gap-2">
         <Icon icon="mdi:file-delimited-outline" className="h-5 w-5 text-primary" />
-        <h2 className="section-title">CSV / TSV / TXT</h2>
+        <h2 className="section-title">CSV / TSV</h2>
       </div>
 
-      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-center transition hover:border-primary dark:border-gray-700">
+      <label className="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-center transition hover:border-primary focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30 dark:border-gray-700">
         <Icon icon="mdi:cloud-upload-outline" className="h-8 w-8 text-gray-400" />
         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-          {file ? file.name : "Choose a CSV, TSV, or TXT file"}
+          {file ? file.name : "Choose a CSV or TSV file"}
         </span>
         <span className="text-xs text-gray-400">Only the schema is indexed — not every row</span>
         <input
           ref={inputRef}
           type="file"
-          accept=".csv,.tsv,.txt"
-          className="hidden"
+          accept=".csv,.tsv"
+          aria-label="Choose a CSV or TSV file"
+          className="sr-only"
           disabled={busy}
-          onChange={(e) => { setFile(e.target.files?.[0] ?? null); reset(); }}
+          onChange={(e) => { const chosen = e.target.files?.[0] ?? null, invalid = fileError(chosen, ["csv", "tsv"]); reset(); setFile(invalid ? null : chosen); setError(invalid); }}
         />
       </label>
 
@@ -113,7 +138,7 @@ function CsvUploadCard() {
           {status === "uploading" ? "Uploading…" : status === "indexing" ? "Indexing…" : "Upload"}
         </Button>
         {result && (
-          <Button variant="secondary" onClick={() => { setFile(null); reset(); if (inputRef.current) inputRef.current.value = ""; }}>
+          <Button variant="secondary" disabled={busy} onClick={() => { setFile(null); reset(); if (inputRef.current) inputRef.current.value = ""; }}>
             Clear
           </Button>
         )}
@@ -157,6 +182,8 @@ function DocumentUploadCard() {
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
+  const polling = useRef(null);
+  useEffect(() => () => polling.current?.abort(), []);
   const { notify } = useNotifications();
 
   const setField = (name) => (e) => setMetadata((m) => ({ ...m, [name]: e.target.value }));
@@ -164,39 +191,39 @@ function DocumentUploadCard() {
   const reset = () => { setStatus("idle"); setResult(null); setJob(null); setError(null); };
 
   const handleUpload = async () => {
-    if (!file) return;
-    if (!metadata.source_system_id || !metadata.source_entity || !metadata.business_key_name || !metadata.business_key_value) {
+    if (!file || polling.current) return;
+    const identity = Object.fromEntries(Object.entries(metadata).map(([name, value]) => [name, value.trim()]));
+    if (!identity.source_system_id || !identity.source_entity || !identity.business_key_name || !identity.business_key_value) {
       notify("Source system, entity, business key name, and related record value are required", "error");
       return;
     }
-    // business_key_name and business_key_value must travel together, or the API returns 422.
-    if (Boolean(metadata.business_key_name) !== Boolean(metadata.business_key_value)) {
-      notify("Business key name and value must both be set, or both left blank", "error");
-      return;
-    }
+    const controller = new AbortController(); polling.current = controller;
     setStatus("uploading"); setResult(null); setJob(null); setError(null);
     try {
-      const uploaded = await pipelineService.uploadDocument(file, metadata);
+      const uploaded = await pipelineService.uploadDocument(file, identity);
+      if (controller.signal.aborted) return;
       setResult(uploaded);
       notify(`${file.name} uploaded — ${uploaded.page_count ?? 0} page(s), ${uploaded.extraction_status}`, "success");
       if (uploaded.index_job_id) {
         setStatus("indexing");
-        const finalJob = await pipelineService.waitForJob(uploaded.index_job_id, { onTick: setJob });
+        const finalJob = await pipelineService.waitForJob(uploaded.index_job_id, { onTick: setJob, signal: controller.signal });
+        if (controller.signal.aborted) return;
         setJob(finalJob);
-        setStatus("done");
+        const failure = indexingError(finalJob); setError(failure); setStatus(failure ? "error" : "done");
       } else {
         setStatus("done");
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       const apiError = err?.error ?? { message: "Document upload failed" };
       setError(apiError);
       setStatus("error");
       notify(apiError.message || "Document upload failed", "error");
-    }
+    } finally { if (polling.current === controller) polling.current = null; }
   };
 
   const busy = status === "uploading" || status === "indexing";
-  const identityComplete = Boolean(metadata.source_system_id && metadata.source_entity && metadata.business_key_name && metadata.business_key_value);
+  const identityComplete = [metadata.source_system_id, metadata.source_entity, metadata.business_key_name, metadata.business_key_value].every(value => value.trim());
 
   return (
     <Card>
@@ -205,19 +232,20 @@ function DocumentUploadCard() {
         <h2 className="section-title">PDF / Image</h2>
       </div>
 
-      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-center transition hover:border-primary dark:border-gray-700">
+      <label className="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-center transition hover:border-primary focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30 dark:border-gray-700">
         <Icon icon="mdi:cloud-upload-outline" className="h-8 w-8 text-gray-400" />
         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-          {file ? file.name : "Choose a PDF, PNG, JPG, TIFF, or BMP file"}
+          {file ? file.name : "Choose a PDF, PNG, JPG, or TIFF file"}
         </span>
         <span className="text-xs text-gray-400">Scanned pages use OCR automatically</span>
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp"
-          className="hidden"
+          accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff"
+          aria-label="Choose a PDF or image file"
+          className="sr-only"
           disabled={busy}
-          onChange={(e) => { setFile(e.target.files?.[0] ?? null); reset(); }}
+          onChange={(e) => { const chosen = e.target.files?.[0] ?? null, invalid = fileError(chosen, ["pdf", "png", "jpg", "jpeg", "tif", "tiff"]); reset(); setFile(invalid ? null : chosen); setError(invalid); }}
         />
       </label>
 
@@ -248,7 +276,7 @@ function DocumentUploadCard() {
           {status === "uploading" ? "Uploading…" : status === "indexing" ? "Indexing…" : "Upload"}
         </Button>
         {result && (
-          <Button variant="secondary" onClick={() => { setFile(null); reset(); if (inputRef.current) inputRef.current.value = ""; }}>
+          <Button variant="secondary" disabled={busy} onClick={() => { setFile(null); reset(); if (inputRef.current) inputRef.current.value = ""; }}>
             Clear
           </Button>
         )}
@@ -308,7 +336,7 @@ function JobStatusRow({ job, pending, errorText }) {
  ******************************************************************************/
 function ApiErrorNotice({ error, className = "" }) {
   return (
-    <div className={`flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800/40 dark:bg-red-900/20 dark:text-red-400 ${className}`}>
+    <div role="alert" className={`flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800/40 dark:bg-red-900/20 dark:text-red-400 ${className}`}>
       <Icon icon="mdi:alert-circle" className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="min-w-0">
         <p className="font-semibold">{error.message || "Upload failed"}</p>
@@ -343,10 +371,12 @@ function SummaryRow({ label, value, mono = false, tone = null }) {
  * Performs the Text Field operation for the PipelineUploadPage module.
  ******************************************************************************/
 function TextField({ label, value, onChange, placeholder, disabled, required = false }) {
+  const id = useId();
   return (
-    <label className="block text-xs">
-      <span className="font-bold uppercase tracking-wide text-gray-500">{label}</span>
+    <div className="block text-xs">
+      <label htmlFor={id} className="font-bold uppercase tracking-wide text-gray-500">{label}</label>
       <input
+        id={id}
         type="text"
         value={value}
         onChange={onChange}
@@ -355,7 +385,7 @@ function TextField({ label, value, onChange, placeholder, disabled, required = f
         required={required}
         className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary disabled:opacity-50 dark:border-gray-700 dark:bg-darkBackground dark:text-white"
       />
-    </label>
+    </div>
   );
 }
 
@@ -377,10 +407,12 @@ function FlowStep({ number, title, detail }) {
  * Performs the Select Field operation for the PipelineUploadPage module.
  ******************************************************************************/
 function SelectField({ label, value, onChange, options, disabled }) {
+  const id = useId();
   return (
-    <label className="block text-xs">
-      <span className="font-bold uppercase tracking-wide text-gray-500">{label}</span>
+    <div className="block text-xs">
+      <label htmlFor={id} className="font-bold uppercase tracking-wide text-gray-500">{label}</label>
       <select
+        id={id}
         value={value}
         onChange={onChange}
         disabled={disabled}
@@ -388,7 +420,7 @@ function SelectField({ label, value, onChange, options, disabled }) {
       >
         {options.map((opt) => <option key={opt} value={opt}>{opt || "—"}</option>)}
       </select>
-    </label>
+    </div>
   );
 }
 

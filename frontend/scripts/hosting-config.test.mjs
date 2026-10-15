@@ -7,10 +7,28 @@ import presentationConfig from "../vite.presentation.config.js";
 
 const cloud = { LCWE_FIREBASE_PROJECT_ID: "example-approved-project", VITE_API_BASE_URL: "https://backend.example.test/api", VITE_WS_BASE_URL: "wss://backend.example.test/ws" };
 const local = { LCWE_HOSTING_EMULATOR: "1", VITE_API_BASE_URL: "http://127.0.0.1:8081/api", VITE_WS_BASE_URL: "ws://127.0.0.1:8081/ws" };
+test("explicit Functions HTTP polling needs no fictitious WebSocket service", async () => {
+  const env = { ...cloud, VITE_PROGRESS_TRANSPORT: "http-polling", VITE_WS_BASE_URL: undefined };
+  const bindings = hostingBindings(env);
+  assert.equal(bindings.config.wsBaseUrl, null);
+  assert.equal(bindings.publicEnv.VITE_WS_BASE_URL, undefined);
+  const base = JSON.parse(await readFile(new URL("../../firebase.json", import.meta.url), "utf8"));
+  const config = generateHostingConfig(base, bindings);
+  const csp = config.hosting.headers[0].headers.find(header => header.key === "Content-Security-Policy").value;
+  assert.match(csp, /https:\/\/backend\.example\.test/);
+  assert.doesNotMatch(csp, /wss?:/);
+  assert.throws(() => hostingBindings({ ...env, VITE_WS_BASE_URL: "wss://backend.example.test/ws" }));
+  assert.throws(() => hostingBindings({ ...env, VITE_PROGRESS_TRANSPORT: "unknown" }));
+  assert.throws(() => hostingBindings({ ...env, VITE_API_BASE_URL: "http://127.0.0.1:8081/api" }));
+});
+
 test("explicit cloud and demo bindings are different release classes", () => {
   assert.equal(hostingBindings(cloud).emulatorOnly, false);
   assert.equal(hostingBindings(local).projectId, "demo-lcwe-hosting");
-  assert.equal(hostingBindings(local).config.pipelineUploadEnabled, false);
+  // The upload page is visible by default in both release classes. This does
+  // not grant upload access: the backend still enforces pipeline permissions.
+  assert.equal(hostingBindings(local).config.pipelineUploadEnabled, true);
+  assert.equal(hostingBindings(cloud).config.pipelineUploadEnabled, true);
   assert.equal(hostingBindings({ ...cloud, VITE_SENTRY_DSN: "" }).publicEnv.VITE_SENTRY_DSN, undefined);
 });
 test("the reviewed public timeout reaches hosting configuration without permitting unlimited waits", () => {

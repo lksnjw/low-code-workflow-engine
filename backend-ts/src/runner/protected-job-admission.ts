@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { captureUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import type { Execution } from "../repository/store.js";
 import type { HandlerServices, CurrentUser } from "../http/handlers/common.js";
 import { HandlerFailure, appendAudit, validateWorkflow } from "../http/handlers/common.js";
@@ -89,6 +90,7 @@ export async function admitProtectedOperation(services: HandlerServices, workflo
       const ledger = new ProtectedInvocationLedger({ executionId: id, workflowId, actorId: user.id, roleId: user.roleId, admittedRole: user.role,
         sourceHash: plan.sourceHash, operationHash: plan.semanticHash, machineHash: plan.machine.semanticHash, inputHash: hash(input) }, plan.machine, machine);
       const run: Execution = { id, workflowId, workflowName: current.name, startedBy: { id: user.id, name: user.name }, status: "PENDING", startedAt: createdAt, completedAt: null, durationMs: 0,
+        ...(services.userMcpCredentials ? { erpCredentialSecret: captureUserMcpBinding(services, state, user.id)! } : {}),
         tokens: { input: 0, output: 0, total: 0 }, costUsd: 0, stepOutputs: {}, workflowSnapshot: { yaml: initial.yaml, version: initial.receipt.version,
           contentHash: plan.sourceHash, registryHash: initial.receipt.registryHash, input, executionProfile: "protected-operation-v1", protectedCompilation: initial.receipt },
         readProgress: newReadProgress(services.repository), protectedInvocationSecret: ledger.snapshot(),

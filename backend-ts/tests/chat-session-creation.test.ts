@@ -5,7 +5,7 @@ import { Repository, restoreState } from "../src/repository/store.js";
 import { splitFirestoreState, assembleFirestoreState } from "../src/storage/firestore-record-layout.js";
 import type { CurrentUser, HandlerServices } from "../src/http/handlers/common.js";
 
-const actor = { id: "owner", permissions: ["chat:use"] } as CurrentUser;
+const actor = { id: "owner", role: "Client", permissions: ["chat:use", "workflow:read_own", "workflow:run_own", "execution:read_own"] } as CurrentUser;
 function context(repository = new Repository(null)) {
   const services = { repository } as HandlerServices;
   const create = async (body: unknown, user = actor) => {
@@ -49,6 +49,7 @@ describe("durable chat creation identity", () => {
   });
   test("deleting a conversation does not let a delayed duplicate resurrect it", async () => {
     const fixture = context();
+    await fixture.repository.mutate(state => { state.users.owner = { id: "owner", roleId: "role_client", name: "Owner", email: "owner@example.test", status: "Active", permissionOverrides: [], initials: "O", departmentId: null, lastLoginAt: null, createdAt: new Date().toISOString() }; });
     const first = await fixture.create({ title: "Report", idempotencyKey: key });
     await deleteChat({ params: { id: first.body.data.id } } as unknown as FastifyRequest, { send: (value: unknown) => value } as FastifyReply, actor, fixture.services);
     await expect(fixture.create({ title: "Report", idempotencyKey: key })).rejects.toMatchObject({ status: 410 });

@@ -182,7 +182,7 @@ export async function admitOperationRecovery(services: import("../http/handlers/
         if (execution.operationSecret?.idempotencyScope !== scope || execution.operationSecret.requestFingerprint !== fingerprint) deny("This recovery plan was already admitted with a different key");
         return { sourceExecutionId, artifactId, workflowId: execution.workflowId, executionId: execution.id, status: execution.status, replayed: true, freshApprovalRequired: true as const, sourceRunUnchanged: true as const };
       }
-      assertOperationPublicationCurrent(prepared, services, state, yaml, role.name); runtimeApprovalPolicyHash(state);
+      assertOperationPublicationCurrent(prepared, services, state, yaml, role.name); runtimeApprovalPolicyHash(state, user.id);
       const workflowId = `recovery-workflow-${randomBytes(16).toString("hex")}`, executionId = `operation-${randomBytes(16).toString("hex")}`, now = new Date().toISOString();
       const workflow: Workflow = { id: workflowId, name: `Recovery · ${value.execution.workflowName}`, description: `Separate reviewed recovery linked to ${sourceExecutionId}.`, owner: { id: actor.id, name: actor.name },
         assignedUserIds: [], status: "Published", trigger: { type: "manual" }, steps: 1, successRate: 0, lastRunAt: null, publishedVersion: 1, draftVersion: 1,

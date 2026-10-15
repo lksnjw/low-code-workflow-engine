@@ -103,7 +103,7 @@ export function errorText(error: unknown): string { return error instanceof Erro
  ******************************************************************************/
 export function buildCapabilitiesResponse(tools: readonly ToolDefinition[]): string {
   if (tools.length === 0)
-    return "No ERP tools are currently available. Please check the ERP Bridge connection.";
+    return "No ERP tools are currently available for your role. An administrator can review the bridge connection and tool permissions.";
 
   const groups = new Map<string, string[]>();
   for (const tool of tools) {
@@ -122,6 +122,8 @@ export function buildCapabilitiesResponse(tools: readonly ToolDefinition[]): str
     names.sort().forEach((n) => lines.push(`- ${n}`));
     lines.push("");
   }
-  lines.push("Just ask me in plain language — for example: *\"Show me open purchase orders\"* or *\"Approve the pending request\"*.");
+  lines.push(tools.every(tool => tool.is_read_only)
+    ? "These reviewed tools are read-only. Ask for information supported by one of the listed tools. No ERP changes, approvals or email delivery are available through this tool set."
+    : "Ask for an outcome supported by the listed tools. Availability is not execution permission: current role checks, validation and any required human approval still apply.");
   return lines.join("\n");
 }

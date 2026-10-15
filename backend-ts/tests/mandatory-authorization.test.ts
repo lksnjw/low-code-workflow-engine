@@ -26,7 +26,7 @@ async function setup(enabled: boolean, providerRuntime?: ProviderRuntime, enviro
     }
     state.workflows.other = workflow("other", "admin");
   });
-  const registries = await RegistryService.load(resolve("tests/fixtures/tools.json"), resolve("tests/fixtures/rules.json"));
+  const registries = await RegistryService.load(resolve("tests/fixtures/chat-read-tools.json"), resolve("tests/fixtures/rules.json"));
   const validator = new RegistryValidator(registries, repository);
   const listTools = vi.fn(async () => []);
   const callToolDirect = vi.fn(async () => ({}));

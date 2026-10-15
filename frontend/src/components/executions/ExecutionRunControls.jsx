@@ -3,8 +3,9 @@ import { executionService } from "../../services/execution.service";
 import { executionEventLabel } from "../../utils/executionEvents";
 import ExecutionStatus from "./ExecutionStatus";
 import { iterationPositionLabel } from "../../utils/iterationEvidence";
+import ExecutionRetryAction from "./ExecutionRetryAction";
 
-export default function ExecutionRunControls({ execution, canControl = false, monitor, onChanged, onReviewApproval }) {
+export default function ExecutionRunControls({ execution, canControl = false, monitor, onChanged, onRetried, onReviewApproval }) {
   const [requesting, setRequesting] = useState(false), [acknowledged, setAcknowledged] = useState(false), [error, setError] = useState("");
   if (!execution) return monitor?.error ? <div role="alert" className="text-xs text-amber-700">{monitor.error}{monitor.reconnecting && " Reconnecting updates automatically."}<button className="ml-2 text-primary" onClick={monitor.refresh}>Refresh run</button></div> : null;
   const operation = execution.workflowSnapshot?.executionProfile === "sequential-operation-v1";
@@ -34,6 +35,7 @@ export default function ExecutionRunControls({ execution, canControl = false, mo
       {onReviewApproval ? <button type="button" className="mt-2 inline-flex min-h-8 items-center font-semibold text-primary dark:text-fuchsia-300" onClick={onReviewApproval}>Review approval here</button> : <a className="mt-2 inline-flex min-h-8 items-center font-semibold text-primary dark:text-fuchsia-300" href={`/executions/${encodeURIComponent(execution.id)}`}>View approval status</a>}
     </aside>}
     {recovery && <p role="status" className="text-amber-700 dark:text-amber-300">Recovery review required. Saved answers are retained; an unconfirmed call may have reached ERP. No automatic retry or replay was performed.</p>}
+    {canControl && <ExecutionRetryAction key={execution.id} execution={execution} denied={monitor?.denied} onRetried={onRetried} />}
     {operation && execution.hasOperationReconciliation === true && ["RECONCILIATION_REQUIRED", "RECONCILED"].includes(execution.status) && <a className="inline-block min-h-8 py-1 text-primary dark:text-violet-300" href={`/executions/${encodeURIComponent(execution.id)}?view=reconciliation`}>Review external outcome evidence</a>}
     {operation && execution.hasReportPageResolution === true && <a className="inline-block min-h-8 py-1 text-primary dark:text-violet-300" href={`/executions/${encodeURIComponent(execution.id)}?view=report-page`}>Review uncertain report page</a>}
     {execution.status === "RECONCILED" && <p role="status" className="text-gray-500">Closed by operator evidence, not completed successfully. No action or later node was resumed. The original SDK outcome remains unacknowledged.</p>}

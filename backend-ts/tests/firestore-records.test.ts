@@ -10,6 +10,7 @@ import { loadConfig } from "../src/config/config.js";
 import { openApplicationRepository } from "../src/storage/open-repository.js";
 import { AESGCMCodec } from "../src/storage/aes-gcm.js";
 import { FirestoreOwnershipFailure, FirestoreWriterOwnership } from "../src/storage/firestore-writer-ownership.js";
+import { splitFirestoreState } from "../src/storage/firestore-record-layout.js";
 
 const runtime = vi.hoisted(() => ({ db: null as any, clients: [] as any[] }));
 vi.mock("@google-cloud/firestore", () => ({ Firestore: class { constructor(settings: any) { const client = new FakeClient(runtime.db, settings); runtime.clients.push(client); return client; } } }));
@@ -64,6 +65,21 @@ test("an actual PersistenceBackend initializes and round-trips private domains w
   await repository.close(); const restored = await Repository.open(await open()); expect(await restored.snapshot()).toEqual(before);
   expect([...db.documents.values()].every(value => !value.payload.includes(Buffer.from("synthetic-private-token")))).toBe(true);
   expect(db.settings.every(value => value.projectId === namespace.projectId && value.databaseId === namespace.databaseId)).toBe(true);
+});
+
+test("an existing normalized database without personal credentials starts safely and upgrades on its next save", async () => {
+  const persistence = await open(), legacy = initialState();
+  legacy.settings.saved = { value: "retained" }; delete (legacy as Partial<typeof legacy>).userMcpCredentials;
+  await persistence.records.initializeStaged(splitFirestoreState(legacy), "pre-personal-token-snapshot");
+  const repository = await Repository.open(persistence);
+  expect((await repository.snapshot()).userMcpCredentials).toEqual({});
+  expect((await repository.snapshot()).settings.saved).toEqual({ value: "retained" });
+  await repository.mutate(state => { state.settings.current = { value: "new" }; });
+  await repository.close();
+  const reloaded = await Repository.open(await open()), state = await reloaded.snapshot();
+  expect(state.userMcpCredentials).toEqual({});
+  expect(state.settings).toMatchObject({ saved: { value: "retained" }, current: { value: "new" } });
+  await reloaded.close();
 });
 
 test("normal repository saves write bounded changed-record deltas even with more than 400 unchanged records", async () => {

@@ -3,7 +3,7 @@ import React from "react";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import "@testing-library/jest-dom/jest-globals";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import WorkflowSchedulePanel from "./WorkflowSchedulePanel";
+import WorkflowSchedulePanel, { suggestedScheduleForm } from "./WorkflowSchedulePanel";
 import { workflowScheduleService } from "../../services/workflow-schedule.service";
 import { workflowService } from "../../services/workflow.service";
 
@@ -24,6 +24,49 @@ const occurrence = { profile: "workflow-schedule-occurrence/v1", id: "occurrence
 beforeEach(() => { jest.spyOn(workflowScheduleService, "status").mockResolvedValue(empty); jest.spyOn(workflowScheduleService, "save").mockResolvedValue(saved);
   jest.spyOn(workflowService, "readiness").mockResolvedValue(readiness); });
 afterEach(() => { cleanup(); jest.restoreAllMocks(); });
+
+test("a plain-language schedule suggestion prefills only editable timing fields without activating anything", async () => {
+  const suggestion = { cadence: "weekly", dayOfWeek: 5, localTime: "18:00", timezone: "Asia/Colombo" };
+  render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" suggestion={suggestion} />);
+  await screen.findByText(/prefilled an unsaved schedule proposal/);
+  expect(screen.getByLabelText("Schedule cadence")).toHaveValue("weekly"); expect(screen.getByLabelText("Weekly local weekday")).toHaveValue("5");
+  expect(screen.getByLabelText("Schedule local time")).toHaveValue("18:00"); expect(screen.getByLabelText("Schedule timezone")).toHaveValue("Asia/Colombo");
+  expect(screen.getByLabelText("Reporting period")).toHaveValue("previous-calendar-week");
+  expect(screen.getByRole("button", { name: "Activate weekly schedule" })).toBeDisabled();
+  expect(workflowScheduleService.save).not.toHaveBeenCalled();
+});
+
+test("a suggested schedule cannot inject credentials, enablement, run-as identity, revisions or input values", () => {
+  const suggestion = { cadence: "monthly", dayOfMonth: 31, localTime: "25:00", timezone: "not/a-zone", enabled: true, servicePrincipalId: "another-person", baseRevision: 99,
+    input: { password: "never-accepted" }, reportWindowBinding: { startAtInput: "wrong" } };
+  const form = suggestedScheduleForm(saved, "owner", suggestion);
+  expect(form.enabled).toBe(true); // The prior saved status, not model enablement.
+  expect(form.servicePrincipalId).toBe("owner"); expect(form.input).toEqual(saved.input); expect(form.reportWindowBinding).toEqual(binding);
+  expect(form).not.toHaveProperty("baseRevision"); expect(form.dayOfMonth).toBe(1); expect(form.localTime).toBe("09:00"); expect(form.timezone).toBe("Asia/Colombo");
+  const initial = suggestedScheduleForm(null, "owner", suggestion); expect(initial.enabled).toBe(false); expect(initial.input).toEqual({});
+});
+
+test("a published read-only workflow explains schedule ineligibility instead of asking to publish again", async () => {
+  workflowService.readiness.mockResolvedValue({ ...readiness, executionProfile: "read-v1" });
+  render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" />);
+  await screen.findByText(/Automatic report runs are not available for this workflow/);
+  expect(screen.getByRole("button", { name: "Activate daily schedule" })).toBeDisabled();
+  expect(screen.queryByText(/Publish and review this workflow before/)).toBeNull();
+  expect(workflowScheduleService.save).not.toHaveBeenCalled();
+});
+
+test("an explicitly admitted read snapshot schedules without invented date fields", async () => {
+  workflowService.readiness.mockResolvedValue({ ...readiness, executionProfile: "structured-read-v1", read_snapshot_schedule_admission: "read-snapshot/v1",
+    authoring: { inputSchema: { type: "object", properties: {}, additionalProperties: false } } });
+  render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" />);
+  await screen.findByText(/This is a snapshot, not a complete previous-day report/);
+  expect(screen.queryByLabelText("Report start boundary input")).toBeNull();
+  expect(screen.getByLabelText("Reporting period")).toHaveValue("snapshot");
+  fireEvent.click(screen.getByRole("button", { name: "Activate daily schedule" }));
+  await screen.findByText(/Daily schedule active/);
+  expect(workflowScheduleService.save).toHaveBeenCalledWith("flow", expect.objectContaining({
+    profile: "workflow-snapshot-schedule-command/v1", reportingPeriod: "snapshot", reportWindowBinding: null, input: {}, enabled: true }));
+});
 const selectWindowBinding = () => {
   fireEvent.change(screen.getByLabelText("Report start boundary input"), { target: { value: "reportStartAt" } });
   fireEvent.change(screen.getByLabelText("Report end boundary input"), { target: { value: "reportEndAt" } });

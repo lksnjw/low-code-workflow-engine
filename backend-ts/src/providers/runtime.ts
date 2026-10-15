@@ -2,14 +2,14 @@ import { createHash, randomBytes } from "node:crypto";
 import type { AnalysisProvider, AnalysisResponse, ProviderInvocationContext } from "../analysisprovider/types.js";
 import type { Repository, StoredRecord } from "../repository/store.js";
 import type { Executor } from "../runner/executor.js";
-import { isGenerationFallbackEligible, isQueryFallbackEligible, OpenAICompatibleClient, OpenAICompatibleError } from "./openai-compatible.js";
+import { isGenerationFallbackEligible, isQueryFallbackEligible, interactiveQueryReasoningProfile, interactiveGenerationReasoningProfile, OpenAICompatibleClient, OpenAICompatibleError } from "./openai-compatible.js";
 import { latestContinuationModel } from "../analysisprovider/provider-continuation.js";
 import type { QueryMessage, QueryOptions, QueryToolDefinition, QueryTurnResult } from "../analysisprovider/query-types.js";
 import { generationPromptHash, toolQuerySystemInstructionsFor } from "../prompts/contracts.js";
 import { assertModelEgress, normalizeModelEgressPolicy, type ModelEgressPolicy } from "./egress-policy.js";
 
 export const ANALYSIS_PROMPT_VERSION = "prompt/analysis/v2";
-export const CANDIDATE_PROMPT_VERSION = "prompt/candidate/v20";
+export const CANDIDATE_PROMPT_VERSION = "prompt/candidate/v23";
 
 export type RuntimeProviderConfiguration = {
   id: string;
@@ -195,10 +195,12 @@ export class ProviderRuntime {
     const promptSha256 = `sha256:${createHash("sha256").update(JSON.stringify({ messages, tools })).digest("hex")}`;
     const record = async (model: string, started: number, status: "SUCCEEDED" | "FAILED", turn?: QueryTurnResult) => this.repository.mutate((state) => {
       const id = `inv_${randomBytes(8).toString("hex")}`;
+      const inferenceProfile = interactiveQueryReasoningProfile(configuration.baseURL, model, options);
       state.invocationProvenance[id] = { id, promptTemplateVersion: options.promptTemplateVersion ?? "prompt/query/v2", promptSha256,
         provider: configuration.type, providerId: configuration.id, configurationRevision: revision, model,
         inputTokens: turn?.inputTokens ?? 0, outputTokens: turn?.outputTokens ?? 0, measured: turn?.measured === true,
-        latencyMs: elapsed(started), temperature: configuration.temperature, fallbackUsed: model !== requestedModel, status, createdAt: new Date().toISOString(), ...options.context };
+        latencyMs: elapsed(started), temperature: configuration.temperature, fallbackUsed: model !== requestedModel, status, createdAt: new Date().toISOString(), ...options.context,
+        ...(inferenceProfile ? { inferenceProfile } : {}) };
     });
     for (const [index, model] of models.entries()) {
       const started = performance.now();
@@ -218,7 +220,7 @@ export class ProviderRuntime {
     throw new Error("No configured query model could be used");
   }
 
-  private assertEgress(declaration: ProviderInvocationContext["egress"]): void {
+  assertEgress(declaration: ProviderInvocationContext["egress"]): void {
     if (this.#configuration === null) throw new Error("LLM provider is not configured");
     if (declaration === undefined) throw new Error("Model egress declaration is required before provider entry");
     assertModelEgress(this.#configuration.egressPolicy!, this.#configuration.baseURL, declaration);
@@ -310,10 +312,15 @@ export class ProvenanceAnalysisProvider implements AnalysisProvider {
   private async record(prompt: string, promptTemplateVersion: string, provider: string, model: string, inputTokens: number, outputTokens: number, measured: boolean, latencyMs: number, fallbackUsed: boolean, status: "SUCCEEDED" | "FAILED", context?: ProviderInvocationContext): Promise<void> {
     await this.repository.mutate((state) => {
       const id = `inv_${randomBytes(8).toString("hex")}`;
+      const inferenceProfile = interactiveGenerationReasoningProfile(this.configuration.baseURL, model, context);
       state.invocationProvenance[id] = {
+        ...(inferenceProfile ? { inferenceProfile } : {}),
         id,
         promptTemplateVersion,
-        promptSha256: generationPromptHash(prompt, promptTemplateVersion),
+        promptSha256: context?.documentAttachment ? `sha256:${createHash("sha256").update(JSON.stringify({
+          text: generationPromptHash(prompt, promptTemplateVersion), source: context.documentAttachment.sha256,
+          mimeType: context.documentAttachment.mimeType, filename: context.documentAttachment.filename,
+        })).digest("hex")}` : generationPromptHash(prompt, promptTemplateVersion),
         provider,
         providerId: this.configuration.id,
         configurationRevision: this.revision,

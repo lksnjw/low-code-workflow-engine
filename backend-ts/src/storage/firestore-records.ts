@@ -13,7 +13,9 @@ import { assertFirestoreLegacyBackupHash, prepareFirestoreLegacyCutover } from "
 
 type Cached = { record: RuntimeRecord; json: string };
 type Options = Pick<Settings, "keyFilename" | "credentials"> & {
+  contentFormat?: "encrypted-records/v1" | "native-fields/v1";
   writerDuration?: number; clock?: FirestoreWriterClock; initializationTimeoutMs?: number; signal?: AbortSignal;
+  reuseVerifiedImages?: boolean;
 };
 class FirestoreLegacyMigrationRequired extends Error {}
 const cached = (record: RuntimeRecord): Cached => ({ record: structuredClone(record), json: canonicalJSONBytes(record).toString("utf8") });
@@ -21,7 +23,13 @@ export function checkedFirestoreState(payload: Uint8Array): RepositoryState {
   const decoded: unknown = JSON.parse(Buffer.from(payload).toString("utf8")), restored = restoreState(payload);
   // Normalized authority is not an implicit legacy migration or a catch-all
   // repair that silently replaces malformed authorization/domain records.
-  if (!canonicalJSONBytes(decoded).equals(canonicalJSONBytes(restored))) throw new Error("Firestore state requires explicit schema repair or migration");
+  // Pre-personal-token snapshots may omit this newly introduced empty map.
+  // Adding it grants no token or role. Present/malformed maps and every other
+  // normalization difference still require explicit repair; never overwrite
+  // existing records or adopt the shared catalog credential here.
+  const compatible = typeof decoded === "object" && decoded !== null && !Array.isArray(decoded) && !Object.hasOwn(decoded, "userMcpCredentials")
+    ? { ...decoded, userMcpCredentials: {} } : decoded;
+  if (!canonicalJSONBytes(compatible).equals(canonicalJSONBytes(restored))) throw new Error("Firestore state requires explicit schema repair or migration");
   return restored;
 }
 
@@ -51,7 +59,7 @@ export class FirestoreRecordPersistence implements PersistenceBackend {
   static async open(encryptionKey: string, namespace: FirestoreNamespace, options: Options = {}): Promise<FirestoreRecordPersistence> {
     const timeout = options.initializationTimeoutMs ?? 30_000;
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 120_000) throw new Error("Invalid Firestore initialization deadline");
-    const adapter = new FirestoreRecordPersistence(FirestoreRecordStore.create(encryptionKey, namespace, options), options.writerDuration ?? FIRESTORE_WRITER_BOUNDS.duration, encryptionKey, namespace);
+    const adapter = new FirestoreRecordPersistence(FirestoreRecordStore.create(encryptionKey, namespace, options, options.contentFormat, options.reuseVerifiedImages), options.writerDuration ?? FIRESTORE_WRITER_BOUNDS.duration, encryptionKey, namespace);
     let rejectCancelled!: (error: Error) => void;
     const cancelled = new Promise<never>((_, reject) => { rejectCancelled = reject; });
     const abort = () => {

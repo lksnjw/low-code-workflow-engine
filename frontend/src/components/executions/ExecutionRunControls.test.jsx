@@ -43,7 +43,8 @@ test("an operation approval wait is cancellable without promising remote rollbac
   const operation = { ...run, status: "AWAITING_APPROVAL", workflowSnapshot: { executionProfile: "sequential-operation-v1" } };
   jest.spyOn(executionService, "cancel").mockResolvedValue({ ...operation, status: "CANCELLED" });
   const refresh = jest.fn(); render(<ExecutionRunControls execution={operation} canControl monitor={{ refresh }} />);
-  expect(screen.getByText(/Waiting for an independent exact approval/)).toBeTruthy();
+  expect(screen.getByRole("alert", { name: "Approval required" }).textContent).toMatch(/Waiting for exact transaction approval/);
+  expect(screen.getByRole("alert", { name: "Approval required" }).textContent).toMatch(/current approval policy determines who can decide/);
   fireEvent.click(screen.getByRole("button", { name: "Request cancellation" }));
   await screen.findByRole("button", { name: "Cancellation requested" });
   expect(screen.getByRole("status").textContent).toMatch(/may already have taken effect/);

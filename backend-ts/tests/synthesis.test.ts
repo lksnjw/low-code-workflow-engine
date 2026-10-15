@@ -58,7 +58,7 @@ describe("single-candidate synthesis", () => {
     expect(result.canExecute).toBe(true);
     expect(result.candidates).toHaveLength(1);
     expect(result.validation.passed).toBe(true);
-    expect(result.candidate.generation_metadata).toMatchObject({ measured: true, inputTokens: 30, outputTokens: 20, promptTemplateVersion: "prompt/candidate/v20" });
+    expect(result.candidate.generation_metadata).toMatchObject({ measured: true, inputTokens: 30, outputTokens: 20, promptTemplateVersion: "prompt/candidate/v22" });
   });
 
   test("a self-approval candidate is rejected with the governing rule ID", async () => {

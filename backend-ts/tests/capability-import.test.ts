@@ -180,6 +180,77 @@ test.each(["missing version", "bad digest", "duplicate roles", "unsupported sche
   expect(result.unreviewedInventory[0]).toMatchObject({ importable: false, authorityGranted: false });
   expect((await s.repository.snapshot()).capabilityAdmissions).toEqual({}); expect(s.sdk.callTool).not.toHaveBeenCalled();
 });
+
+test("plain hosted MCP array contract is discoverable but cannot acquire a fabricated version or admission", async () => {
+  const remote: ErpbridgeMcpSdkTool = { name: "list_companies", inputSchema: { type: "object" },
+    outputSchema: { type: "array", items: { type: "object" } }, annotations: { readOnlyHint: true, destructiveHint: false },
+    _meta: { "io.erpbridge/examples": ["List companies"] } };
+  const s = await setup(null, "erpbridge-default", remote);
+  const discovery = await observeCapabilities({ ...s, user: s.admin });
+  expect(discovery.unreviewedInventory).toHaveLength(1);
+  expect(discovery.unreviewedInventory[0]).toMatchObject({ remoteName: "list_companies", importable: false, authorityGranted: false });
+  await expect(s.runImport()).rejects.toThrow(/versioned/);
+  expect((await s.repository.snapshot()).capabilityAdmissions).toEqual({});
+  expect(s.registries.snapshot().tools).toEqual([]);
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
+
+test("hosted digest-pinned read alias requires an explicit review and dispatches its original name with its digest", async () => {
+  const remote = { ...remoteTool("reports.lookup"), name: "reports.lookup" };
+  remote._meta!["toolplane.serving"] = true;
+  const s = await setup(null, "erpbridge-default", remote);
+  const preview = await observeCapabilities({ ...s, user: s.admin });
+  expect(preview.unreviewedInventory[0]).toMatchObject({ importable: true, authorityGranted: false,
+    definition: { is_read_only: false, allowed_roles: [], bridge_contract: { selector: "digest-pinned-alias" } } });
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+  const imported = await s.runImport();
+  expect(imported.admission.state).toBe("AVAILABLE");
+  const definition = s.registries.snapshot().tools[0]!;
+  s.sdk.callTool.mockImplementationOnce(async () => ({ content: [{ type: "text", text: '{"count":7}' }] }) as any);
+  const result = await dispatchReadTool(s.services, "admin", definition.name, { recordId: "one" });
+  expect(JSON.stringify(result)).toContain("7");
+  expect(s.sdk.callTool).toHaveBeenCalledWith("reports.lookup", { recordId: "one" }, { "toolplane.resourceDigest": "a".repeat(64) });
+});
+
+test.each(["missing-serving", "not-serving", "not-read-only", "destructive", "missing-output"])("alias %s remains non-importable", async scenario => {
+  const remote = { ...remoteTool("reports.lookup"), name: "reports.lookup" };
+  remote._meta!["toolplane.serving"] = true;
+  if (scenario === "missing-serving") delete remote._meta!["toolplane.serving"];
+  if (scenario === "not-serving") remote._meta!["toolplane.serving"] = false;
+  if (scenario === "not-read-only") remote.annotations = { readOnlyHint: false };
+  if (scenario === "destructive") remote.annotations = { readOnlyHint: true, destructiveHint: true };
+  if (scenario === "missing-output") delete remote.outputSchema;
+  const s = await setup(null, "erpbridge-default", remote);
+  expect((await observeCapabilities({ ...s, user: s.admin })).unreviewedInventory[0]).toMatchObject({ importable: false, authorityGranted: false });
+  await expect(s.runImport()).rejects.toThrow();
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
+
+test("read-alias compatibility cannot be promoted to a write or bypass a later disable", async () => {
+  const remote = { ...remoteTool("reports.lookup"), name: "reports.lookup" };
+  remote._meta!["toolplane.serving"] = true;
+  const s = await setup(null, "erpbridge-default", remote);
+  await expect(s.runImport({ effectClass: "write", sideEffects: ["Create an ERP record"], requireIndependentApproval: true,
+    operationContract: { profile: "operation-result/v1", effect_class: "write", retry_policy: "never", confirmation: { path: ["count"], expected: 7, meaning: "operation-accepted" } } })).rejects.toThrow(/read-only/);
+  expect((await s.repository.snapshot()).capabilityAdmissions).toEqual({});
+  const reviewed = await s.runImport(), tool = s.registries.snapshot().tools[0]!;
+  await disableCapability({ repository: s.repository, user: s.admin, capabilityId: reviewed.admission.capabilityId,
+    body: { revisionId: reviewed.revision.id, baseVersion: reviewed.admission.version, note: "Explicit local read revoke" } });
+  await expect(dispatchReadTool(s.services, "admin", tool.name, { recordId: "one" })).rejects.toThrow();
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
+
+test("read-alias digest drift blocks its saved review rather than silently rebinding it", async () => {
+  const remote = { ...remoteTool("reports.lookup"), name: "reports.lookup" };
+  remote._meta!["toolplane.serving"] = true;
+  const s = await setup(null, "erpbridge-default", remote);
+  const reviewed = await s.runImport();
+  s.change({ ...remote, _meta: { ...remote._meta, "toolplane.resourceDigest": "b".repeat(64) } });
+  await observeCapabilities({ ...s, user: s.admin });
+  expect((await s.repository.snapshot()).capabilityAdmissions[reviewed.admission.capabilityId]?.state).toBe("BLOCKED");
+  expect(await discoverTools(s.session, s.registries)).toEqual([]);
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
 test("authority revoked while metadata is fetched prevents review commit", async () => {
   const s = await setup(); s.sdk.listTools.mockImplementationOnce(async () => {
     await s.repository.mutate(state => { state.users.admin!.roleId = "role_builder"; }); return [s.remote()];

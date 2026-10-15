@@ -6,6 +6,7 @@ import Input from "../../components/shared/ui/Input";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import { useAuthContext } from "../../context/AuthContext";
 import { profileService } from "../../services/profile.service";
+import UserErpConnections from "../../components/settings/UserErpConnections";
 
 /*******************************************************************************
  * Function: initials
@@ -23,7 +24,7 @@ function initials(name = "") {
  ******************************************************************************/
 function ProfilePage() {
   const queryClient = useQueryClient();
-  const { refreshUser } = useAuthContext();
+  const { refreshUser, user } = useAuthContext();
   const profile = useQuery({ queryKey: ["profile"], queryFn: profileService.get });
 /*******************************************************************************
  * Function: update
@@ -53,7 +54,7 @@ function ProfilePage() {
   };
 
   return (
-    <form key={`${data.name}:${data.timezone}`} onSubmit={submit} className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+    <><form key={`${data.name}:${data.timezone}`} onSubmit={submit} className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
       <Card>
         <Avatar initials={initials(data.name)} className="h-16 w-16 text-lg" />
         <h1 className="mt-5 text-2xl font-bold text-gray-950 dark:text-white">{data.name}</h1>
@@ -73,7 +74,7 @@ function ProfilePage() {
           <label className="text-xs font-semibold text-gray-500">Role<Input value={data.role || ""} readOnly className="mt-2 opacity-70" /></label>
         </div>
       </Card>
-    </form>
+    </form><UserErpConnections key={user?.id || data.id} actorId={user?.id || data.id} /></>
   );
 }
 

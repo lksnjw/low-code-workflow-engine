@@ -13,6 +13,7 @@ import { canReadExecution } from "../execution-scope.js";
 import { requestTraceId } from "../../trace/request-trace.js";
 import { runWorkflowFor, resumeWorkflowApproval } from "./workflow-runtime.js";
 import { decideRuntimeApproval } from "../../runner/runtime-approvals.js";
+import { executionRetryView } from "../../runner/execution-retry.js";
 import { decideOwnedProtectedApproval } from "../../runner/protected-approval-review.js";
 import { assertCurrentRunController } from "../../runner/read-checkpoints.js";
 import { validateWorkspaceDraft } from "../../workflows/draft-validation.js";
@@ -354,15 +355,18 @@ async function retryExecution(
     user,
     services,
   );
-  if (["PENDING", "RUNNING", "AWAITING_APPROVAL", "RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED"].includes(prior.status)) throw new HandlerFailure(409, "A queued, running, waiting or uncertain execution cannot be replayed through Retry; inspect its recorded outcomes first");
-  if (prior.operationSecret && Object.keys(prior.operationSecret.intents).length) throw new HandlerFailure(409, "Retry cannot repeat recorded ERP operation intents, including operator-reconciled outcomes. Use a separately reviewed operation or qualified recovery artifact.");
-  if (prior.protectedJobSecret || prior.protectedInvocationSecret) throw new HandlerFailure(409, "Retry cannot replay an invocation-owned run or its approvals. Inspect exact item outcomes and use a separately qualified recovery path.");
+  // Preserve the existing no-replay conflict for unsafe historical runs,
+  // including callers of the old empty-body retry endpoint. Parsing a new
+  // command must not disguise an unresolved effect as a mere input error.
+  const admission = await services.repository.readAuthoritative(state => executionRetryView(state, user, state.executions[prior.id]!));
+  if (!admission.allowed) throw new HandlerFailure(409, admission.reason, { code: "EXECUTION_RETRY_BLOCKED" });
+  const body = runWorkflowRequestSchema.safeParse(request.body);
+  if (!body.success || body.data.retry?.sourceExecutionId !== prior.id)
+    throw new HandlerFailure(400, "Retry requires an explicit queued restart command and the exact original execution ID");
   const workflow = await services.repository.read(
     (state) => state.workflows[prior.workflowId] ?? null,
   );
   if (workflow === null) throw new HandlerFailure(404, "Workflow not found");
-  if (prior.workflowSnapshot && (prior.workflowSnapshot.version !== workflow.publishedVersion || prior.workflowSnapshot.yaml !== workflow.yaml))
-    throw new HandlerFailure(409, "The workflow publication changed. Retry cannot silently switch versions; start a separate reviewed run.");
   // Explicit Retry creates a new run through the same governed read path; it
   // does not resume/replay an uncertain attempt or grant transaction approval.
   return runWorkflowFor(workflow, request, reply, user, services);

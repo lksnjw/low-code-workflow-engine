@@ -23,4 +23,5 @@ export type ApplicationServices = {
   erpbridgeSession?: ErpbridgeMcpSession | undefined;
   mcpConnectionRuntime?: McpConnectionRuntime | McpConnectionManager;
   contextAvailable?: boolean;
+  userMcpCredentials?: import("../tools/user-mcp-credentials.js").UserMcpCredentials;
 };

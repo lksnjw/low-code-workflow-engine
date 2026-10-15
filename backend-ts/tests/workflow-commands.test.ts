@@ -579,6 +579,19 @@ test("unknown action is retained in a blocked draft, never renamed or auto-publi
   expect(response.json().data.yaml).toContain("missing-tool"); expect(response.json().data.canRun).toBe(false);
 });
 
+test.each(["empty draft", "missing mandatory input"])("%s stays editable but cannot be approved into a publication or execution", async scenario => {
+  const s = await setup();
+  await s.repository.mutate(state => { state.workflows.report!.publishedVersion = 0; state.workflows.report!.canRun = false; state.versions.report = []; });
+  const command = scenario === "empty draft" ? { type: "restoreDraft", yaml: stringify({ name: "Unfinished registration", trigger: { type: "manual" }, steps: [], metadata: { unresolved_requirements: ["Customer territory is required"] } }) } : { type: "updateNode", nodeId: "first", patch: { parameters: {} } };
+  const changed = await s.edit(command); expect(changed.statusCode, changed.body).toBe(200);
+  const draft = changed.json().data; expect(draft.validation.passed).toBe(false); expect(draft.canRun).toBe(false);
+  const publication = await s.app.inject({ method: "POST", url: "/api/workflows/report/publish", headers: s.headers(), payload: { baseVersion: draft.version, baseHash: draft.contentHash } });
+  expect(publication.statusCode, publication.body).toBeGreaterThanOrEqual(400);
+  const run = await s.app.inject({ method: "POST", url: "/api/workflows/report/run", headers: s.headers(), payload: { mode: "async-read", idempotencyKey: `mandatory-field-stop-${scenario.replaceAll(" ", "-")}`, input: {} } });
+  expect(run.statusCode, run.body).toBeGreaterThanOrEqual(400);
+  const state = await s.repository.snapshot(); expect(state.workflows.report!.publishedVersion).toBe(0); expect(Object.keys(state.executions)).toHaveLength(0);
+});
+
 test("client cannot edit, and unassigned read readiness is hidden", async () => {
   const s = await setup(); expect((await s.edit({ type: "removeNode", nodeId: "last" }, 1, workflowContentHash(yaml), "client")).statusCode).toBe(403);
   expect((await s.app.inject({ method: "GET", url: "/api/workflows/report/readiness", headers: s.headers("client") })).statusCode).toBe(404);

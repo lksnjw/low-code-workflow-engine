@@ -12,6 +12,7 @@ import { usesCheckpointedOperationWorkflow } from "./execution-shape.js";
 import { protectedErrorSourceIssues, protectedOperationProfile } from "./protected-operation-profile.js";
 import { assertReadErrorContract } from "../tools/read-business-error.js";
 import { readErrorContractSchema } from "../registry/read-error-schema.js";
+import { reviewedReadOutputKey } from "../tools/mcp-result.js";
 
 type Schema = Record<string, unknown>;
 type Source = { label: string; expression: string; binding: ReadReference; schema: Schema };
@@ -24,13 +25,19 @@ const safeID = (id: string) => /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id) && id !=
 export function readAuthoringContract(blueprint: WorkflowBlueprint, tools: readonly ToolDefinition[], role: string, registryHash: string,
   connections: readonly { id: string; primary: boolean; dispatchSupported: boolean }[] = []) {
   let schemaNodes = 0, sourceNodes = 0;
-  const project = (raw: unknown): Schema | undefined => {
+  const project = (raw: unknown, runInput = false): Schema | undefined => {
     if (validateToolSchemaProfile(raw).length) return undefined;
     const visit = (schema: Schema, inheritedSensitive = false): Schema => {
       if (++schemaNodes > 4096) throw new Error("Authoring schema budget exceeded");
       const result: Schema = { type: schema.type };
       const sensitive = inheritedSensitive || schema.writeOnly === true;
       if (sensitive) result.writeOnly = true;
+      // Run controls need the actual declared choices and bounds. Keep tool
+      // hints type-only and never expose defaults, examples or secret enums.
+      if (runInput && !sensitive) {
+        if (typeof schema.maxItems === "number") result.maxItems = schema.maxItems;
+        if (Array.isArray(schema.enum)) result.enum = structuredClone(schema.enum);
+      }
       if (schema.type === "object") {
         const entries = Object.entries(schema.properties as Record<string, Schema> ?? {});
         if (entries.some(([key]) => reserved.has(key))) throw new Error("Reserved schema field");
@@ -62,7 +69,7 @@ export function readAuthoringContract(blueprint: WorkflowBlueprint, tools: reado
     return result;
   };
   const declaredInput = blueprint.trigger.config?.inputSchema as Schema | undefined;
-  const inputSchema = declaredInput?.type === "object" ? project(declaredInput) : undefined;
+  const inputSchema = declaredInput?.type === "object" ? project(declaredInput, true) : undefined;
   const upstream = sources(inputSchema, { kind: "ref", source: "workflowInput", path: [] }, "Workflow input");
   const compiled = blueprint.metadata?.controlFlow === undefined ? undefined : inspectWorkflowDraft(blueprint, tools, role);
   const scopes = compiled && !compiled.issues.length ? compiled.scopeValidation?.scopes : undefined;
@@ -148,7 +155,7 @@ export function readAuthoringContract(blueprint: WorkflowBlueprint, tools: reado
       reason: schema ? "Local schema guidance only; live admission and runtime checks are separate" : "No supported role-granted local read schema; existing values are preserved" };
     prefix = validScope && granted && !!schema;
     if (prefix && tool?.bridge_contract?.output_schema) {
-      upstream.push(...sources(outputSchema, { kind: "ref", source: "nodeOutput", nodeId: step.id, path: ["structuredContent"] }, `Node ${step.id}`));
+      upstream.push(...sources(outputSchema, { kind: "ref", source: "nodeOutput", nodeId: step.id, path: [reviewedReadOutputKey(tool)] }, `Node ${step.id}`));
     }
     seen.add(step.id);
     return result;

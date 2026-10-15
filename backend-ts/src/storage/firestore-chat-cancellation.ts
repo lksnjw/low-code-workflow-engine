@@ -129,6 +129,6 @@ export function openFirestoreChatCancellation(config: AppConfig): ChatCancellati
   const records = FirestoreRecordStore.create(config.storageEncryptionKey, { projectId: config.firestoreProjectId!,
     databaseId: config.firestoreDatabaseId!, workspaceId: config.firestoreWorkspaceId! }, {
     ...(config.firestoreKeyFile ? { keyFilename: config.firestoreKeyFile } : {}), ...(config.firestoreKeyJson ? { credentials: config.firestoreKeyJson } : {}),
-  });
+  }, config.firestoreContentFormat);
   return new FirestoreChatCancellation(records, config, true);
 }

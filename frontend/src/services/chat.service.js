@@ -6,8 +6,8 @@ export const chatService = {
     const response = await apiClient.get("/chat/capabilities");
     return response.data.data;
   },
-  async models() {
-    const response = await apiClient.get("/chat/models");
+  async models(options = {}) {
+    const response = await apiClient.get("/chat/models", options);
     return response.data.data;
   },
   async operations(sessionId, options = {}) {
@@ -28,9 +28,10 @@ export const chatService = {
  *
  * Lists sessions for the chat service module.
  ******************************************************************************/
-  async listSessions(options = {}) {
+  async listSessions({ includePageMetadata = false, ...options } = {}) {
     const response = await apiClient.get("/chat/sessions", options);
-    return response.data.data ?? [];
+    const items = response.data.data ?? [];
+    return includePageMetadata ? { items, meta: response.data.meta } : items;
   },
 
 /*******************************************************************************
@@ -89,6 +90,8 @@ export const chatService = {
       if (options[key]) payload[key] = options[key];
     });
     if (options.workflowContext) payload.workflowContext = options.workflowContext;
+    if (options.documentContext) payload.documentContext = options.documentContext;
+    if (options.attachmentTicket) payload.attachmentTicket = options.attachmentTicket;
     if (options.nodeContext) payload.nodeContext = options.nodeContext;
     if (options.requestRevision) payload.requestRevision = options.requestRevision;
     if (options.emailDraftCommand) payload.emailDraftCommand = options.emailDraftCommand;

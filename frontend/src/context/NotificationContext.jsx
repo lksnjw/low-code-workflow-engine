@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 const NotificationContext = createContext(null);
 
@@ -9,26 +9,40 @@ const NotificationContext = createContext(null);
  ******************************************************************************/
 export function NotificationProvider({ children }) {
   const [notifications, setNotifications] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const timers = useRef(new Map());
+  useEffect(() => {
+    const pending = timers.current;
+    return () => { pending.forEach(timer => window.clearTimeout(timer)); pending.clear(); };
+  }, []);
+  const dismiss = useCallback(id => {
+    window.clearTimeout(timers.current.get(id)); timers.current.delete(id);
+    setNotifications(items => items.filter(item => item.id !== id));
+  }, []);
+  const markActivityRead = useCallback(id => setActivity(items => items.map(item => !id || item.id === id ? { ...item, read: true } : item)), []);
 
 /*******************************************************************************
  * Function: notify
  *
  * Performs the notify operation on the application for the NotificationContext module.
  ******************************************************************************/
-  const notify = (message, tone = "info", action = null) => {
+  const notify = useCallback((message, tone = "info", action = null) => {
     const id = crypto.randomUUID?.() ?? `${Date.now()}`;
-    setNotifications((items) => [...items, { id, message, tone, action }]);
-    window.setTimeout(() => {
-      setNotifications((items) => items.filter((item) => item.id !== id));
-    }, 3400);
-  };
+    const item = { id, message, tone, action, createdAt: new Date().toISOString(), read: false };
+    setNotifications(items => [...items.slice(-4), item]);
+    setActivity(items => [{ ...item, action: null }, ...items].slice(0, 50));
+    // An actionable notice must not disappear before its button can be used.
+    // This is supplementary feedback; transaction reviews remain in context.
+    if (!action) timers.current.set(id, window.setTimeout(() => dismiss(id), tone === "error" ? 10000 : 6000));
+    return id;
+  }, [dismiss]);
 
 /*******************************************************************************
  * Function: value
  *
  * Performs the value operation on the application for the NotificationContext module.
  ******************************************************************************/
-  const value = useMemo(() => ({ notifications, notify }), [notifications]);
+  const value = useMemo(() => ({ notifications, notify, activity, markActivityRead }), [notifications, notify, activity, markActivityRead]);
 
   return (
     <NotificationContext.Provider value={value}>
@@ -37,28 +51,34 @@ export function NotificationProvider({ children }) {
         {notifications.map((item) => (
           <div
             key={item.id}
-            className="animate-slide-up rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-800 shadow-panel dark:border-gray-800 dark:bg-darkBackground dark:text-gray-100"
+            role={item.tone === "error" ? "alert" : "status"}
+            aria-atomic="true"
+            className={`animate-slide-up rounded-xl border bg-white px-4 py-3 text-sm font-medium text-gray-800 shadow-panel dark:bg-darkBackground dark:text-gray-100 ${item.tone === "error" ? "border-red-300 dark:border-red-700" : item.tone === "success" ? "border-emerald-300 dark:border-emerald-700" : "border-gray-200 dark:border-gray-700"}`}
           >
             <div className="flex items-center justify-between gap-3">
-              <span>{item.message}</span>
-              {item.action ? (
-                <button
-                  type="button"
-                  className="shrink-0 rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white"
-                  onClick={() => {
-                    item.action.onClick?.();
-                    setNotifications((items) => items.filter((candidate) => candidate.id !== item.id));
-                  }}
-                >
-                  {item.action.label}
-                </button>
-              ) : null}
+              <div className="min-w-0 flex-1"><p className={`mb-1 text-xs font-bold ${item.tone === "error" ? "text-red-700 dark:text-red-300" : item.tone === "success" ? "text-emerald-700 dark:text-emerald-300" : "text-primary"}`}>{item.tone === "error" ? "Action needs attention" : item.tone === "success" ? "Completed" : "Workspace update"}</p><p className="break-words">{item.message}</p></div>
+              <button type="button" aria-label="Dismiss notification" onClick={() => dismiss(item.id)} className="self-start rounded border px-2 py-1 text-xs font-semibold text-gray-600 focus-visible:outline focus-visible:outline-primary dark:text-gray-300">OK</button>
+              {item.action && <NotificationAction action={item.action} onDone={() => { dismiss(item.id); markActivityRead(item.id); }} />}
             </div>
           </div>
         ))}
       </div>
     </NotificationContext.Provider>
   );
+}
+
+function NotificationAction({ action, onDone }) {
+  const pending = useRef(false), mounted = useRef(true);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const invoke = async () => {
+    if (pending.current) return;
+    pending.current = true; setBusy(true); setError("");
+    try { await action.onClick?.(); if (mounted.current) onDone(); }
+    catch { if (mounted.current) setError("Action was not confirmed. Check its current status before trying again."); }
+    finally { pending.current = false; if (mounted.current) setBusy(false); }
+  };
+  return <div className="max-w-40"><button type="button" disabled={busy} className="rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50" onClick={invoke}>{busy ? "Working…" : action.label}</button>{error && <p role="alert" className="mt-2 text-xs text-red-700 dark:text-red-300">{error}</p>}</div>;
 }
 
 /*******************************************************************************

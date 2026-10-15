@@ -14,6 +14,14 @@ const receipt = { approvalId: "review", executionId: "run", state: "APPROVED", v
 beforeEach(() => { Object.defineProperty(crypto, "randomUUID", { configurable: true, value: jest.fn(() => "decision-command-00000001") }); });
 afterEach(() => { cleanup(); jest.restoreAllMocks(); });
 const acknowledge = () => fireEvent.click(screen.getByRole("checkbox"));
+
+test("Super Admin self-confirmation is explicit and does not submit when the review opens", () => {
+  const save = jest.spyOn(executionService, "approve").mockResolvedValue(receipt);
+  render(<RuntimeApprovalReview execution={{ ...view, runtimeApproval: { ...view.runtimeApproval, selfApprovalAllowed: true } }} onReload={jest.fn()} />);
+  expect(screen.getByText(/As Super Admin, you may confirm your own exact transaction/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Record approval" }).disabled).toBe(true);
+  expect(save).not.toHaveBeenCalled();
+});
 test("business arguments are formatted and affirmative review sends exact binding, not an approval note alone", async () => {
   const save = jest.spyOn(executionService, "approve").mockResolvedValue(receipt), reload = jest.fn().mockResolvedValue(view);
   render(<RuntimeApprovalReview execution={view} onReload={reload} />);

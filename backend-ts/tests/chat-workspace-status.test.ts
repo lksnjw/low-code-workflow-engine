@@ -3,6 +3,7 @@ import { Repository, type Execution } from "../src/repository/store.js";
 import type { Workflow } from "../src/models/schemas.js";
 import type { CurrentUser } from "../src/http/handlers/common.js";
 import { chatWorkspaceStatus, workspaceStatusAnswer } from "../src/agent/chat-workspace-status.js";
+import { boundedReadFixture } from "./fixtures/bounded-read-task.js";
 
 const timestamp = "2026-10-12T08:00:00.000Z";
 async function fixture() {
@@ -95,4 +96,26 @@ test("unpublished/no-run state is explicit; no linked workflow adds no misleadin
   expect(workspaceStatusAnswer(state, user, "chat", "Read results.", {}).text).toContain("not published; no recorded run");
   state.workflows = {};
   expect(workspaceStatusAnswer(state, user, "chat", "Read results.", { intent: "QUERY" })).toEqual({ text: "Read results.", artifacts: { intent: "QUERY" } });
+});
+test("assistant receives bounded failure evidence and a review invitation, never inputs, receipts or dispatch authority", async () => {
+  const f = await boundedReadFixture();
+  try {
+    expect((await f.publish()).statusCode).toBe(200); const id = (await f.run()).json().data.id;
+    await f.repository.mutate(state => {
+      state.chats.chat = { id: "chat", ownerId: "owner", title: "Recovery explanation", messages: [], messageCount: 0, createdAt: timestamp, updatedAt: timestamp };
+      state.workflows.workflow!.chatSessionId = "chat";
+      state.executions[id]!.status = "FAILED";
+      state.executions[id]!.failure = { failureCategory: "READ_EXECUTION_FAILED", failedStepId: "first", reason: "private-provider-error" };
+      state.executions[id]!.stepOutputs = { private: "private-result" };
+    });
+    const actor = await f.repository.effectiveUser("owner");
+    if (!actor) throw new Error("Fixture actor is unavailable");
+    const status = await f.repository.readAuthoritative(state => chatWorkspaceStatus(state, actor, "chat"));
+    expect(status.workflows[0]!.latestRun).toMatchObject({ id, status: "FAILED", failure: { category: "READ_EXECUTION_FAILED", nodeId: "first" }, retryReview: { allowed: true } });
+    expect(JSON.stringify(status)).not.toMatch(/private-provider-error|private-result|workflowSnapshot|operationSecret|approvalId/);
+    const answer = await f.repository.readAuthoritative(state => workspaceStatusAnswer(state, actor, "chat", "The recorded read failed.", { intent: "AUDIT" }));
+    expect(answer.text).toContain("Nothing was restarted by this answer"); expect(f.sdk.callTool).not.toHaveBeenCalled();
+    await f.repository.mutate(state => { state.executions[id]!.status = "RECONCILIATION_REQUIRED"; });
+    expect((await f.repository.readAuthoritative(state => chatWorkspaceStatus(state, actor, "chat"))).workflows[0]!.latestRun).toMatchObject({ status: "RECONCILIATION_REQUIRED", retryReview: { allowed: false } });
+  } finally { await f.close(); }
 });

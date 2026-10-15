@@ -1,12 +1,14 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { setTimeout as pause } from "node:timers/promises";
-import { withFunctionResources, withFunctionRuntime, type FunctionComposition } from "./invocation.js";
+import { withFunctionResources, withFunctionRuntime as baseFunctionRuntime, type FunctionComposition } from "./invocation.js";
+import { withUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import { functionStatePhases } from "./state-phases.js";
 import { chatJobQueue, decodePrivateChatInput, appendChatOperationAudit as audit, appendChatOperationEvent as event,
   reconcileChatOperation, chatTaskReceipt, activeChatStatus } from "../agent/chat-jobs.js";
 import { chatTaskCommandSchema, assertChatTaskOutbox, chatTaskLeaseSchema, type ChatTaskCommand } from "../agent/chat-task-outbox.js";
 import { authorizeChatOperation } from "../agent/chat-progress.js";
 import { classifyIntent } from "../agent/intent-classifier.js";
+import { firebaseChatTaskDeadlineMs } from "./chat-task-deadline.js";
 import { queryChatHistory, queryChatPresentation } from "../agent/query-chat-presentation.js";
 import { runQueryLoop } from "../agent/query-loop.js";
 import { chatWorkspaceStatus, workspaceStatusAnswer } from "../agent/chat-workspace-status.js";
@@ -32,9 +34,10 @@ import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import { boundedOperation } from "../core/bounded-operation.js";
 import type { OwnedJSONRequest } from "../core/bounded-json-request.js";
 import { AESGCMCodec, decodeEncryptionKey } from "../storage/aes-gcm.js";
+import { storeChatModelContent } from "../storage/chat-model-content.js";
 import { openFirestoreChatCancellation } from "../storage/firestore-chat-cancellation.js";
 import { restoreImportedCapabilities } from "../registry/capability-import.js";
-import { assertChatAuthority } from "../http/handlers/model-selection.js";
+import { assertChatAuthority, withSelectedProvider } from "../http/handlers/model-selection.js";
 import { isRecord, stringValue, type HandlerServices } from "../http/handlers/common.js";
 import { processStoredChat } from "../http/handlers/chat.js";
 import { HandlerFailure } from "../http/handlers/common.js";
@@ -67,7 +70,7 @@ const policyStopReason = (receipt: Record<string, unknown>) => {
  * owned phases. Only detached input, pure loop state and pending transport
  * handles survive a close. Other intents retain their existing execution path. */
 export async function executeFunctionChatTask(composition: FunctionComposition, raw: ChatTaskCommand,
-  options: { timeoutMs: number; signal?: AbortSignal } = { timeoutMs: 60_000 }) {
+  options: { timeoutMs: number; signal?: AbortSignal } = { timeoutMs: firebaseChatTaskDeadlineMs(composition.config.functionsChatTaskTimeoutMs) }) {
   const command = chatTaskCommandSchema.parse(raw), phases = functionStatePhases(composition);
   if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 10 || options.timeoutMs > 240_000) throw new Error("Invalid bounded chat task deadline");
   const candidate = await phases.read(state => {
@@ -76,7 +79,7 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
     if (!activeChatStatus(op.status)) return { terminal: chatTaskReceipt(state, command) };
     if (op.status === "RUNNING") return { running: true };
     const input = decodePrivateChatInput(op, composition.config.storageEncryptionKey);
-    return { input, intent: classifyIntent(input.content) };
+    return { input, credentialBinding: op.erpCredentialSecret, intent: classifyIntent(input.content, { workflowContext: input.body.workflowContext !== undefined || input.body.nodeContext !== undefined, nodeContext: input.body.nodeContext !== undefined }) };
   });
   if ("terminal" in candidate) return candidate.terminal;
   if ("running" in candidate) return phases.mutate(state => {
@@ -86,7 +89,16 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
     reconcileChatOperation(state, op, "CHAT_TASK_INTERRUPTED"); return chatTaskReceipt(state, command);
   });
   const input = candidate.input!;
-  const nodeProposalRequest = input.body.nodeContext !== undefined;
+  const withFunctionRuntime: typeof baseFunctionRuntime = (c, action) => baseFunctionRuntime({ ...c, ...(c.config.pipelineAPIBaseURL && c.config.pipelineAPIKey ? { runtimePurpose: "document-services" as const } : {}) }, runtime =>
+    withUserMcpBinding(runtime.services, input.user.id, candidate.credentialBinding, () => action(runtime)));
+  // Agent-led routing must happen before any heuristic-specific branch. Use
+  // the existing bounded queued worker; legacy pattern mode retains phased
+  // query/synthesis dispatch. Do not silently bypass semantic routing here.
+  // Reviewed document resolution belongs to the shared owned worker. The
+  // legacy phased synthesis path has no document-source/version admission.
+  if (composition.config.chatIntentRouting === "agent" || composition.config.pipelineAPIBaseURL && composition.config.pipelineAPIKey || input.body.documentContext !== undefined || input.body.attachmentTicket !== undefined)
+    return withFunctionRuntime(composition, async ({ services }) => chatJobQueue(services).executeTask(command, options));
+  const nodeProposalRequest = input.body.nodeContext !== undefined && !["WORKFLOW_DISCUSSION", "CONVERSATION"].includes(candidate.intent!);
   const synthesisRequest = !nodeProposalRequest && candidate.intent === "ACTION" && recurringDeliveryRequest(input.content) === null;
   if (!(["QUERY", "AUDIT"].includes(candidate.intent!) || nodeProposalRequest || synthesisRequest) || !input.provider)
     return withFunctionRuntime(composition, async ({ services }) => chatJobQueue(services).executeTask(command, options));
@@ -169,7 +181,7 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
     const validatePolicyRuntime = async (services: HandlerServices, expectedBinding?: string) => {
       await synchronize();
       await services.repository.readAuthoritative(state => current(state));
-      if (fingerprint({ binding: services.erpbridgeSession?.admissionBinding ?? null, roles: services.config.erpbridgeRoleMap }) !== admitted!.connectionFingerprint ||
+      if (fingerprint({ binding: services.mcpConnectionRuntime?.admissionConfigurationBinding ?? services.erpbridgeSession?.admissionBinding ?? null, roles: services.config.erpbridgeRoleMap }) !== admitted!.connectionFingerprint ||
           fingerprint(services.registries.snapshot().tools) !== admitted!.contractFingerprint) throw new Error("Original chat connection or contracts changed");
       const configuration = services.providerRuntime?.snapshot(input.provider!.model).configuration;
       if (!configuration || fingerprint(configuration) !== fingerprint(input.provider)) throw new Error("Original provider configuration changed");
@@ -257,10 +269,8 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
               op.modelAttemptsSecret?.some(item => item.id !== original.id && ["DISPATCH_INTENT", "UNKNOWN"].includes(item.status)))
             throw new Error("Original policy result intention changed");
           const bytes = response ? Buffer.from(JSON.stringify(response)) : undefined;
-          if (bytes && (bytes.length > 256_000 || (op.modelAttemptsSecret ?? []).reduce((sum, item) => sum + (item.resultCiphertext?.length ?? 0), 0) + bytes.length * 2 > 1_000_000))
-            throw new Error("Bounded policy receipt budget exceeded");
+          storeChatModelContent(op.modelAttemptsSecret??[],original,bytes,composition.config.firestoreContentFormat==="native-fields/v1",codec);
           original.status = response ? "DONE" : uncertain ? "UNKNOWN" : "FAILED"; original.completedAt = now();
-          if (bytes) original.resultCiphertext = codec.encode(bytes).toString("base64");
           state.invocationProvenance[original.provenanceId] = { id: original.provenanceId,
             promptSha256: generationPromptHash(preflight.selected.plan.prompt, original.promptTemplateVersion), provider: input.provider!.type, providerId: input.provider!.id,
             configurationRevision: original.configurationRevision, model: original.model, inputTokens: response?.inputTokens ?? 0, outputTokens: response?.outputTokens ?? 0,
@@ -355,7 +365,7 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
               const message = { id: nextID(state, "msg"), role: "assistant", operationId: op.id, ...(queryPresentation ? { modelBinding: binding } : {}),
                 ...(queryPresentation ? workspaceStatusAnswer(state, input.user, op.sessionId, text, enriched) : { text, artifacts: enriched }), createdAt: now(), traceId: op.traceId };
               chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
-              op.assistantMessageId = message.id; op.status = "ANSWERED"; op.stage = "ANSWERED"; op.finishedAt = now(); delete op.inputCiphertext; delete op.taskLeaseSecret;
+              op.assistantMessageId = message.id; op.status = "ANSWERED"; op.stage = "ANSWERED"; op.finishedAt = now(); delete op.inputCiphertext; delete op.inputFields; delete op.taskLeaseSecret;
               event(state, op, "answer.saved"); audit(state, op, "chat.answer.saved");
               publicationPrepared = true;
             });
@@ -464,10 +474,8 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
               if (!original || original.status !== "DISPATCH_INTENT" || original.requestHash !== requestHash || original.workerId !== workerId || original.epoch !== op.epoch)
                 throw new Error("Original generation result intention changed");
               const bytes = generated ? Buffer.from(JSON.stringify(generated)) : undefined;
-              if (bytes && (bytes.length > 256_000 || (op.modelAttemptsSecret ?? []).reduce((sum, a) => sum + (a.resultCiphertext?.length ?? 0), 0) + bytes.length * 2 > 1_000_000))
-                throw new Error("Bounded model receipt budget exceeded");
+              storeChatModelContent(op.modelAttemptsSecret??[],original,bytes,composition.config.firestoreContentFormat==="native-fields/v1",codec);
               original.status = generated ? "DONE" : uncertain ? "UNKNOWN" : "FAILED"; original.completedAt = now();
-              if (bytes) original.resultCiphertext = codec.encode(bytes).toString("base64");
               state.invocationProvenance[attempt.provenanceId] = { id: attempt.provenanceId, promptTemplateVersion: version,
                 promptSha256: generationPromptHash(prompt, version), provider: configuration.type, providerId: configuration.id,
                 configurationRevision: attempt.configurationRevision, model, inputTokens: generated?.inputTokens ?? 0, outputTokens: generated?.outputTokens ?? 0,
@@ -536,9 +544,8 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
               const op = assertFresh(state), original = op.modelAttemptsSecret?.find(a => a.id === id);
               if (!original || original.status !== "DISPATCH_INTENT" || original.requestHash !== requestHash || original.workerId !== workerId || original.epoch !== op.epoch) throw new Error("Original model result intention changed");
               const bytes = turn ? Buffer.from(JSON.stringify(turn)) : undefined;
-              if (bytes && (bytes.length > 256_000 || (op.modelAttemptsSecret ?? []).reduce((sum, a) => sum + (a.resultCiphertext?.length ?? 0), 0) + bytes.length * 2 > 1_000_000)) throw new Error("Bounded model receipt budget exceeded");
+              storeChatModelContent(op.modelAttemptsSecret??[],original,bytes,composition.config.firestoreContentFormat==="native-fields/v1",codec);
               original.status = turn ? "DONE" : uncertain ? "UNKNOWN" : "FAILED"; original.completedAt = now();
-              if (bytes) original.resultCiphertext = codec.encode(bytes).toString("base64");
               state.invocationProvenance[attempt.provenanceId] = { id: attempt.provenanceId, promptTemplateVersion: attempt.promptTemplateVersion,
                 promptSha256: `sha256:${createHash("sha256").update(JSON.stringify({ messages, tools })).digest("hex")}`, provider: configuration.type, providerId: configuration.id,
                 configurationRevision: attempt.configurationRevision, model, inputTokens: turn?.inputTokens ?? 0, outputTokens: turn?.outputTokens ?? 0, measured: turn?.measured === true,
@@ -592,7 +599,7 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
           if (fingerprint(liveTools) !== synthesis.toolsHash) throw new Error("Original generation tools changed during model wait");
           if (!services.providerRuntime?.restoreCaptured) throw new Error("Original generation provider is unavailable");
           const providerRuntime = services.providerRuntime.restoreCaptured(input.provider!, admitted!.modelBinding!.configurationRevision);
-          const freshServices = { ...services, providerRuntime };
+          const freshServices = withSelectedProvider(services, providerRuntime);
           const hooks = chatJobQueue(freshServices).phaseHooks(admitted!, input.user, signal, synchronizePolicy);
           return processStoredChat({ body: input.body, content: input.content, sessionId: admitted!.sessionId, traceId: admitted!.traceId,
             stored: input.stored, user: input.user, services: freshServices, signal, hooks,
@@ -626,7 +633,7 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
                  const request = { prompt: `Read ERP data using ${tool.display_name ?? tool.name}`, action: tool.mcp_tool_name,
                    context: { actions: [tool.name, tool.mcp_tool_name], arguments: structuredClone(args), readOnly: true, domain: tool.module },
                    signal, traceId: admitted!.traceId, sessionId: admitted!.sessionId };
-                 const selected = await prepareOptionalPolicy({ ...services, providerRuntime: services.providerRuntime!.restoreCaptured(input.provider!, admitted!.modelBinding!.configurationRevision) }, actor, request);
+                 const selected = await prepareOptionalPolicy(withSelectedProvider(services, services.providerRuntime!.restoreCaptured(input.provider!, admitted!.modelBinding!.configurationRevision)), actor, request);
                  if (selected.kind === "decision") {
                    await validatePolicyRuntime(services, prepared.binding);
                    const localPolicyHash = selected.decision.source === "local_model" ? selected.decision.policyHash : undefined;
@@ -693,10 +700,8 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
                          op.modelAttemptsSecret?.some(item => item.id !== original.id && ["DISPATCH_INTENT", "UNKNOWN"].includes(item.status)))
                        throw new Error("Original per-read policy result intention changed");
                      const bytes = response ? Buffer.from(JSON.stringify(response)) : undefined;
-                     if (bytes && (bytes.length > 256_000 || (op.modelAttemptsSecret ?? []).reduce((sum, item) => sum + (item.resultCiphertext?.length ?? 0), 0) + bytes.length * 2 > 1_000_000))
-                       throw new Error("Bounded per-read policy receipt budget exceeded");
+                     storeChatModelContent(op.modelAttemptsSecret??[],original,bytes,composition.config.firestoreContentFormat==="native-fields/v1",codec);
                      original.status = response ? "DONE" : uncertain ? "UNKNOWN" : "FAILED"; original.completedAt = now();
-                     if (bytes) original.resultCiphertext = codec.encode(bytes).toString("base64");
                      state.invocationProvenance[original.provenanceId] = { id: original.provenanceId,
                        promptSha256: generationPromptHash(staged.selected.plan.prompt, original.promptTemplateVersion), provider: input.provider!.type, providerId: input.provider!.id,
                        configurationRevision: original.configurationRevision, model: original.model, inputTokens: response?.inputTokens ?? 0, outputTokens: response?.outputTokens ?? 0,
@@ -730,7 +735,7 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
             assertRuntimeBinding();
             if (!services.providerRuntime?.restoreCaptured) throw new Error("Original tool-policy provider is unavailable");
             const providerRuntime = services.providerRuntime.restoreCaptured(input.provider!, admitted!.modelBinding!.configurationRevision);
-            const scopedServices = { ...services, providerRuntime };
+            const scopedServices = withSelectedProvider(services, providerRuntime);
              const previous = await services.repository.readAuthoritative(state => assertFresh(state).attempts.map(attempt => attempt.id));
             const hooks = chatJobQueue(services).phaseHooks(admitted!, input.user, signal, synchronizePolicy);
             let preparing: ChatAttempt | undefined;
@@ -813,13 +818,13 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
         for (const attempt of op.modelAttemptsSecret ?? []) if (attempt.status === "DISPATCH_INTENT") {
           attempt.status = "UNKNOWN"; attempt.completedAt = now(); event(state, op, "model.interrupted", attempt.id);
         }
-        op.status = "CANCELLED"; op.stage = "CANCELLED"; op.finishedAt = now(); op.reason = "PROCESSING_STOPPED"; delete op.inputCiphertext; delete op.taskLeaseSecret;
+        op.status = "CANCELLED"; op.stage = "CANCELLED"; op.finishedAt = now(); op.reason = "PROCESSING_STOPPED"; delete op.inputCiphertext; delete op.inputFields; delete op.taskLeaseSecret;
         event(state, op, "operation.stopped"); audit(state, op, "chat.operation.stopped"); }
       else if (unresolvedTool || unresolvedModel || reconciliationRequired || Date.now() >= deadlineAt || cleanPolicyStop && !policyStopFresh) reconcileChatOperation(state, op, "CHAT_PHASE_OUTCOME_UNCONFIRMED");
       else { op.status = "FAILED"; op.stage = op.status; op.finishedAt = now();
         const code = error instanceof HandlerFailure && isRecord(error.meta) && typeof error.meta.code === "string" ? error.meta.code : null;
         op.reason = policyStopFresh ? cleanPolicyStop!.reason : code === "DRAFT_REVISION_CONFLICT" || code === "NODE_PROPOSAL_INVALID" ? code : "PROCESSING_STOPPED";
-        delete op.inputCiphertext; delete op.taskLeaseSecret;
+        delete op.inputCiphertext; delete op.inputFields; delete op.taskLeaseSecret;
         event(state, op, "operation.stopped"); audit(state, op, "chat.operation.stopped"); }
     }); } catch (terminalError) {
       if (!cleanPolicyStop) throw terminalError;

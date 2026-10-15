@@ -131,6 +131,7 @@ export const runWorkflowRequestSchema = z.object({
   simulation: z.unknown().optional(),
   idempotencyKey: z.string().default(""),
   expectedActorId: z.string().min(1).max(256).optional(),
+  retry: z.object({ sourceExecutionId: z.string().min(1).max(256), acknowledgeUnconfirmed: z.boolean().default(false) }).strict().optional(),
 }).strict();
 
 export const loginRequestSchema = z.object({

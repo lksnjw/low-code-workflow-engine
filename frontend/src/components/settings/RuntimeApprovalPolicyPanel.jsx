@@ -52,7 +52,7 @@ function PolicyWorkspace({ actorId, locallyManageable }) {
   }
   return <section aria-label="Runtime approval policy" className="space-y-4 border-y border-gray-200 py-5 text-gray-900 dark:border-gray-800 dark:text-gray-100">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="section-title">Runtime approvals</h2>
-      <p className="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">Configure who may review an exact operation and how long its approval remains valid. The requester cannot approve their own action.</p></div>
+      <p className="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">Configure independent reviewers and approval validity. Other roles require a separate reviewer. Where the backend permits Super Admin self-approval, the exact transaction still needs explicit confirmation.</p></div>
       <Button variant="secondary" disabled={busy || query.isFetching} onClick={reload}>Reload saved policy</Button></div>
     {query.isFetching ? <p role="status" className="text-sm">Checking current approval settings…</p> : null}
     {query.error ? <p role="alert" className="text-sm text-red-700 dark:text-red-300">{query.error?.response?.data?.message || query.error.message || "Approval settings unavailable. No policy is editable."}</p> : null}
@@ -60,7 +60,8 @@ function PolicyWorkspace({ actorId, locallyManageable }) {
     {error ? <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p> : null}
     {message ? <p role="status" className="text-sm text-gray-600 dark:text-gray-300">{message}</p> : null}
     {data ? <>
-      <p className="text-sm font-medium">{data.policy ? `Saved revision ${data.revision} · ${data.policy.enabled ? "Enabled" : "Disabled—governed effects blocked"}` : "Not configured—governed effects blocked"}</p>
+      <p className="text-sm font-medium">{data.policy ? `Saved revision ${data.revision} · ${data.policy.enabled ? "Independent approvals enabled" : "Disabled—governed effects blocked"}` : "Independent reviewer policy not configured"}</p>
+      {!data.policy ? <p className="text-xs text-gray-500 dark:text-gray-400">Other roles cannot start governed changes without a configured reviewer policy. The server checks any Super Admin exception at run admission and again on the exact transaction; this settings page does not grant it.</p> : null}
       {data.memoryOnly ? <p className="text-xs text-gray-500 dark:text-gray-400">Memory-only settings do not survive a backend restart.</p> : null}
       {!data.canManage || !locallyManageable ? <p className="text-sm">Read only. Current Platform Admin authority is required to change this policy.</p> : null}
       <PolicyEditor key={JSON.stringify([editorEpoch, data.policy, data.roles, data.canManage])} data={data}
@@ -78,7 +79,7 @@ function PolicyEditor({ data, locked, onSave }) {
   return <form onSubmit={event => { event.preventDefault(); if (reviewed && valid && changed && !locked) void onSave(command); }} className="space-y-4">
     <fieldset disabled={locked} className="space-y-4">
       <label className="flex min-h-10 items-start gap-3 text-sm"><input type="checkbox" checked={enabled} onChange={event => change(() => setEnabled(event.target.checked))} className="mt-1" />Enable independent runtime approvals</label>
-      <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">Disabled or unconfigured approval policy blocks governed effects; it never permits writes without approval. Changing policy can invalidate existing pending or approved waits.</p>
+      <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">An explicitly disabled policy blocks governed effects. Without a configured policy, only a server-authorized Super Admin exception may apply; no write is approved automatically. Changing policy can invalidate existing pending or approved waits.</p>
       <label className="grid max-w-xs gap-1 text-sm font-medium">Approval validity in seconds<input type="number" min="60" max="86400" step="1" required value={ttl} onChange={event => change(() => setTtl(event.target.value))}
         className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900" /><span className="text-xs font-normal text-gray-500 dark:text-gray-400">60–86,400 seconds. Saved expiry is checked again before dispatch.</span></label>
       <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">For overnight schedules, choose a validity that covers the intended morning review, up to 24 hours. Expired requests remain inspectable but cannot be approved. Set this before starting the run; changing the policy can invalidate existing reviews.</p>
@@ -87,7 +88,7 @@ function PolicyEditor({ data, locked, onSave }) {
           <input type="checkbox" checked={selected.includes(role.id)} disabled={!role.eligible && !selected.includes(role.id)} onChange={event => change(() => setSelected(event.target.checked ? [...selected, role.id] : selected.filter(id => id !== role.id)))} className="mt-1" />
           <span className="min-w-0 break-words">{role.name}{!role.eligible ? <span className="block text-xs text-amber-700 dark:text-amber-300">No longer eligible. Remove it before saving; no permission is granted here.</span> : null}</span></label>)}
       </fieldset>
-      <p className="text-sm">Separation of duties is mandatory. At least one, and at most 20, distinct eligible roles must be selected.</p>
+      <p className="text-sm">Independent approvals require separation of duties. Select between one and 20 distinct eligible reviewer roles. This does not change any server-owned Super Admin exception.</p>
       {!valid ? <p className="text-sm text-amber-700 dark:text-amber-300">Select eligible reviewer roles and a whole-number validity between 60 and 86,400 seconds.</p> : null}
       {reviewed ? <div role="group" aria-label="Review approval policy change" className="space-y-3 border-l-2 border-primary pl-4">
         <h3 className="text-sm font-semibold">Review policy revision {data.revision} → {data.revision + 1}</h3>

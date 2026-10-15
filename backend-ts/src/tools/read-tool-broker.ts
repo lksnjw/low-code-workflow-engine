@@ -1,4 +1,5 @@
 import { stringify } from "yaml";
+import { LIBRARY_READ_TOOLS, bindLibraryReadDelegation } from "../documents/library-client.js";
 import type { HandlerServices } from "../http/handlers/common.js";
 import { validateWorkflow } from "../http/handlers/common.js";
 import { discoverTools } from "../agent/tool-discovery.js";
@@ -11,7 +12,7 @@ import { hasReservedBridgeRole } from "./erpbridge-contract.js";
 import type { ReadAdmissionPin, CompiledReadPlan } from "../workflows/compiled-read.js";
 import { selectedPrerequisiteYAML } from "../workflows/selected-prerequisite-view.js";
 import { capabilityContractHash, captureReadAdmissionPin } from "../registry/capability-admission.js";
-import { parseReadControlFlow } from "../workflows/read-control-flow.js";
+import { parseReadControlFlow, loopNodes } from "../workflows/read-control-flow.js";
 import { ReadIterationCheckpoints, type ReadSelectedEvidence } from "../runner/read-iteration-checkpoints.js";
 import type { ReadVisit } from "../workflows/read-interpreter.js";
 import { selectedReadEvidenceYAML } from "../workflows/read-completion-evidence.js";
@@ -23,6 +24,11 @@ import { assertReadErrorContract, type ReviewedReadBusinessFailure } from "./rea
 import { protectedReadPrerequisiteYAML, type ProtectedReadDispatch } from "../runner/protected-read-dispatch.js";
 import { ProtectedJobCheckpoints } from "../runner/protected-job-checkpoints.js";
 import { assertLocalPolicyCurrent, assertLocalPolicyCurrentSync, evaluateOptionalPolicy, policySwitches, type PolicyDecision } from "../governance/optional-policy.js";
+
+/** Raised only before SDK entry when no exact admitted read contract exists. */
+export class ReadAdmissionUnavailableError extends Error {
+  constructor() { super("Tool dispatch denied: tool has no unique admitted live contract"); this.name = "ReadAdmissionUnavailableError"; }
+}
 
 const acknowledgedFailures = new WeakMap<object, { result: Record<string, unknown>; businessFailure?: ReviewedReadBusinessFailure }>();
 type ReadPolicyFailureContext = { repository: HandlerServices["repository"]; actorId: string; toolName: string; args: Record<string, unknown> };
@@ -115,6 +121,7 @@ export async function dispatchReadTool(
   };
   await assertAgentPath();
   const connectionId = exactPlan?.admissionPin?.connectionId ?? selectedMcpConnectionId(services);
+  await services.mcpConnectionRuntime?.ensureSession(connectionId);
   const bound = boundMcpConnection(services, connectionId), session = bound.session;
   const registryHash = services.registries.hash(), generation = session.discoveryGeneration ?? 0;
   const roleMap = canonicalJSONBytes(bound.roleMap);
@@ -133,7 +140,7 @@ export async function dispatchReadTool(
   };
   const tools = await discoverTools(session, services.registries);
   const matches = tools.filter((tool) => tool.name === toolName || tool.mcp_tool_name === toolName);
-  if (matches.length !== 1) throw new Error("Tool dispatch denied: tool has no unique admitted live contract");
+  if (matches.length !== 1) throw new ReadAdmissionUnavailableError();
   const tool = structuredClone(matches[0]!);
   assertReadErrorContract(tool);
   // Capture the exact reviewed identity before SDK entry. Later changes cannot
@@ -151,6 +158,18 @@ export async function dispatchReadTool(
   await session.assertAdmission?.(tool, dispatchPin, context.signal);
   if (!tool.is_read_only) throw new Error("Live ERP writes are blocked until transaction approval, idempotency and recovery are enforced");
   if (!tool.allowed_roles.includes(actor.role)) throw new Error("Tool dispatch denied: current role has no grant for this tool");
+  let libraryDelegation: object | undefined;
+  if (LIBRARY_READ_TOOLS.has(tool.name) || LIBRARY_READ_TOOLS.has(tool.mcp_tool_name)) {
+    if (Object.hasOwn(args, "access_token")) throw new Error("Document scope is server-owned; supplied access tokens are not accepted");
+    // Runtime argument pins cannot contain expiring authority. Until a reviewed
+    // transport-level delegation profile exists, private-library reads are
+    // interactive only; never silently bypass a compiled invocation binding.
+    if (context.plan || context.dynamicPlan || context.executionId || context.iteration || context.protectedInvocation || context.protectedOperation)
+      throw new Error("Private document retrieval currently requires an interactive chat read, not a saved execution");
+    if (session.dispatchBoundary !== "sdk-entry/v1" || session.requiresReviewedRevision !== true)
+      throw new Error("Private document reads require a reviewed ERPBridge SDK-entry session");
+    libraryDelegation = bindLibraryReadDelegation(services.config, actor, tool, args);
+  }
   if (hasReservedBridgeRole(tool) && Object.hasOwn(args, "role")) throw new Error("Tool dispatch denied: model-provided role is not allowed");
   const parameters = structuredClone(args);
   if (validateToolInput(tool.input_schema, parameters).length > 0) throw new Error("Tool dispatch denied: unsupported schema or invalid arguments");
@@ -185,7 +204,7 @@ export async function dispatchReadTool(
     checkSelectedPath(selected);
   }
   if (blueprint.metadata?.controlFlow !== undefined) {
-    const collectionSource = parseReadControlFlow(blueprint.metadata.controlFlow).schemaVersion === "read-control-flow/v3";
+    const collectionSource = loopNodes(parseReadControlFlow(blueprint.metadata.controlFlow).root).length > 0;
     if (collectionSource && !iteration && !protectedJournal)
       throw new Error("Collection reads require governed iteration dispatch; flat completed-node evidence is not accepted");
     if (iteration && !collectionSource) throw new Error("Iteration journal requires the collection source profile");
@@ -198,6 +217,13 @@ export async function dispatchReadTool(
       const completed = await services.repository.readAuthoritative(state => {
         const execution = state.executions[context.executionId!];
         if (execution?.status !== "RUNNING" || execution.workflowSnapshot?.yaml !== yaml || !execution.readProgress) throw new Error("Conditional execution is not current");
+        // A v3 document may contain only decisions/returns. It still needs
+        // the exact current preparing checkpoint, not a forged flat DONE list.
+        if (!context.protectedOperation) {
+          const attempt = execution.readProgress.attempts[authored.id];
+          if (!context.beforeDispatch || execution.readProgress.nextStepIndex !== index || attempt?.stepIndex !== index || attempt.status !== "PREPARING")
+            throw new Error("Conditional read lacks its exact preparing dispatch checkpoint");
+        }
         return new Set(Object.values(execution.readProgress.attempts).filter(attempt => attempt.status === "DONE").map(attempt => attempt.nodeId));
       });
       // Original frozen verification still validates ALL declarations and mints
@@ -230,7 +256,7 @@ export async function dispatchReadTool(
     const error = new Error("Tool dispatch stopped by optional policy; safe diagnostic receipt available");
     const result: Record<string, unknown> = {};
     if (["deny", "review", "unavailable"].includes(policy.decision)) result.decision = policy.decision;
-    if (["erpbridge", "local_model", "skipped"].includes(policy.source)) result.source = policy.source;
+    if (["erpbridge", "rag", "local_model", "skipped"].includes(policy.source)) result.source = policy.source;
     if (["LOCAL_POLICY_CONFIG_INVALID", "LOCAL_POLICY_PROVIDER_FAILED", "LOCAL_POLICY_RESPONSE_INVALID", "POLICY_CHECK_CANCELLED"].includes(policy.failureCode ?? "")) result.failureCode = policy.failureCode;
     policyFailures.set(error, { repository: services.repository, actorId, toolName, arguments: canonicalJSONBytes(parameters), result });
     throw error;
@@ -282,7 +308,7 @@ export async function dispatchReadTool(
   const readErrorBinding = Object.freeze({});
   try {
     const output = await session.clientFor(tool, dispatchPin).execute(authored.action!, resolved.capability, parameters, identity, context.signal,
-      session.dispatchBoundary === "sdk-entry/v1" ? finalDispatch : undefined, assertContext, undefined, readErrorBinding);
+      session.dispatchBoundary === "sdk-entry/v1" ? finalDispatch : undefined, assertContext, undefined, readErrorBinding, libraryDelegation);
     if (protectedJournal && context.plan?.admissionPin && context.executionId && context.workflowId && session.dispatchBoundary === "sdk-entry/v1") acknowledgedProtectedReads.set(output, {
       checkpoints: protectedJournal, toolId: tool.tool_id, contractHash: capabilityContractHash(tool), args: canonicalJSONBytes(parameters),
       binding: canonicalJSONBytes({ actorId, executionId: context.executionId, workflowId: context.workflowId, admissionPin: context.plan.admissionPin }), output: structuredClone(output) });

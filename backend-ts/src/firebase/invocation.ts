@@ -17,13 +17,14 @@ import { FirestoreChatCancellation } from "../storage/firestore-chat-cancellatio
 import { configureChatCancellation } from "../agent/chat-cancellation.js";
 
 export type FunctionComposition = { config: AppConfig; root: string; transport: ReadTaskTransport; chatTransport?: ChatTaskTransport;
-  readbackTransport?: ReadbackTaskTransport; operationTransport?: OperationTaskTransport; workflowLifecycle?: "workflow-lifecycle/v1"; signal?: AbortSignal | undefined };
+  readbackTransport?: ReadbackTaskTransport; operationTransport?: OperationTaskTransport; workflowLifecycle?: "workflow-lifecycle/v1"; signal?: AbortSignal | undefined;
+  runtimePurpose?: "chat-admission" | "document-services" };
 
 /** Admission-only contention wait, never a retry wrapper around business work.
  * Storage reports WRITER_HELD/WRITER_HANDOFF only before any lease transition and after the
  * losing client has drained. Unknown ownership/ACK/cleanup errors stay fatal. */
 function openInvocationResources(input: FunctionComposition): Promise<ApplicationResources> {
-  const open = () => openApplicationResources({ config: input.config, root: input.root, registryPreparation: "existing-only" });
+  const open = () => openApplicationResources({ config: input.config, root: input.root, registryPreparation: "existing-only", reuseVerifiedFirestoreImages: true });
   if (input.config.storageDriver !== "firestore-records") return open();
   const timeoutMs = input.config.functionsWriterAdmissionTimeoutMs ?? 30_000;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60_000)
@@ -79,7 +80,7 @@ export async function withFunctionResources<T>(input: FunctionComposition, work:
  * The buffered HTTP response is sent only after this scope fully closes. */
 export function withFunctionRuntime<T>(input: FunctionComposition, work: (context: { services: ApplicationServices; app: FastifyInstance }) => Promise<T>): Promise<T> {
   return withFunctionResources(input, async resources => {
-    const runtime = await constructApplicationRuntime(resources);
+    const runtime = await constructApplicationRuntime(resources,{deferMcpConnection:input.runtimePurpose==="chat-admission" || input.runtimePurpose==="document-services"});
     const app = await buildApp(runtime.services, { executionHost: "bounded-invocation" });
     try { return await work({ services: runtime.services, app }); }
     finally { await app.close(); }

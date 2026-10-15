@@ -157,6 +157,20 @@ test("canvas requests can open the floating chat and focus the same composer wit
   expect(document.activeElement).toBe(composer);
 });
 
+test("completion from canvas tools closes the inspector and reveals the preserved floating composer", () => {
+  let nextFrame;
+  jest.spyOn(window, "requestAnimationFrame").mockImplementation(callback => { nextFrame = callback; return 0; });
+  function Complete() { const workspace = useChatWorkspace(); return <button onClick={workspace.focusChat}>Complete in chat</button>; }
+  mount({ canvas: <Complete /> });
+  const composer = screen.getByRole("textbox", { name: "Message to workflow assistant" });
+  fireEvent.change(composer, { target: { value: "Keep my missing-field answer" } });
+  mode("Canvas only");
+  fireEvent.click(screen.getByRole("button", { name: "Complete in chat" })); act(() => nextFrame());
+  expect(screen.queryByRole("complementary", { name: "Workspace tools", exact: true })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Floating chat" })).toBeTruthy(); expect(document.activeElement).toBe(composer);
+  expect(composer.value).toBe("Keep my missing-field answer"); expect(screen.getByTestId("chat-workspace-layout").dataset.view).toBe("canvas");
+});
+
 test("floating chat opens, minimizes, reopens and expands without remounting its composer", () => {
   mount();
   const composer = screen.getByRole("textbox", { name: "Message to workflow assistant" });

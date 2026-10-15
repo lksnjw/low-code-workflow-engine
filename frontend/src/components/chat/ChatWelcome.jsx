@@ -23,7 +23,7 @@ function ChatWelcome({ onPrompt = () => {}, prompts = [], variant = "workflow" }
         </div>
         <h2 className="text-xl font-bold text-gray-950 dark:text-white">{indexed ? "Find stored document details" : "What would you like to do?"}</h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">
-          {indexed ? "Use a person name or exact ID with the source system and entity from upload. The agent retrieves indexed text through ERPBridge." : "Describe the result you need. Follow each step as your request is checked, prepared and completed."}
+          {indexed ? "Ask for a person, customer or document in your own words. The assistant searches your permitted saved documents through the backend." : "Describe the result you need. Follow each step as your request is checked, prepared and completed."}
         </p>
       </div>
 

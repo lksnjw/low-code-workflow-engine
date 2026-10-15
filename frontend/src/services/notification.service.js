@@ -16,7 +16,7 @@ export const notificationService = {
  * Performs the mark Read operation on read for the notification service module.
  ******************************************************************************/
   async markRead(id) {
-    return unwrap(await apiClient.patch(`/notifications/${id}/read`));
+    return unwrap(await apiClient.patch(`/notifications/${encodeURIComponent(id)}/read`));
   },
 /*******************************************************************************
  * Function: markAllRead

@@ -4,6 +4,7 @@ import { useChatSessions } from "../../hooks/useChatSessions";
 import { useAuthContext } from "../../context/AuthContext";
 import { authorityScope, captureAuthority, isAuthorityCurrent } from "../../utils/authAuthority";
 import { useMemo } from "react";
+import { clearWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
 
 /*******************************************************************************
  * Function: ChatHistoryPage
@@ -26,6 +27,7 @@ function ChatHistoryPage() {
  ******************************************************************************/
   const createSession = async () => {
     if (!isAuthorityCurrent(authority)) return;
+    clearWorkflowForChatEdit();
     let session;
     try { session = await sessions.createSession("Workflow conversation"); }
     catch (error) { if (!isAuthorityCurrent(authority)) return; throw error; }
@@ -49,7 +51,7 @@ function ChatHistoryPage() {
       <div>
         <h1 className="page-heading text-gray-950 dark:text-white">Chat History</h1>
         <p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">
-          Open, rename, or remove persisted workflow synthesis conversations.
+          Find earlier conversations, reopen saved answers, or rename a chat.
         </p>
       </div>
       <ChatHistory
@@ -62,6 +64,7 @@ function ChatHistoryPage() {
         loading={sessions.loading}
         error={sessions.error}
         onRetry={sessions.reload}
+        hasMore={sessions.hasMoreSessions} loadingMore={sessions.loadingMoreSessions} loadMoreError={sessions.loadMoreSessionsError} onLoadMore={sessions.loadMoreSessions} total={sessions.totalSessions}
       />
     </div>
   );

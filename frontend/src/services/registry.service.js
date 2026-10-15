@@ -2,6 +2,16 @@ import { apiClient } from "../config/axios";
 import { unwrap } from "./api";
 
 export const registryService = {
+  async liveTools({ offset = 0, limit = 20, search = "", connectionId, toolName } = {}) {
+    const data = unwrap(await apiClient.get("/registry/tools", { params: { source: "erpbridge", offset, limit, search,
+      ...(connectionId ? { connectionId } : {}), ...(toolName ? { toolName } : {}) } }), null);
+    if (data?.source !== "erpbridge" || (toolName ? data.tool?.name !== toolName : !Array.isArray(data.tools)))
+      throw new Error("The live ERPBridge catalog could not be verified. Refresh after the backend is updated.");
+    return data;
+  },
+  async rules() {
+    return { rules: unwrap(await apiClient.get("/registry/rules"), []) };
+  },
 /*******************************************************************************
  * Function: load
  *

@@ -22,14 +22,18 @@ export function buildWorkflowYamlFromSteps(steps: ToolStep[], userPrompt: string
     const parameters = Object.keys(step.arguments).length ? "\n    parameters:\n" + Object.entries(step.arguments).map(([key, value]) => `      ${key}: ${JSON.stringify(value)}`).join("\n") : "";
     return `  - id: step_${index + 1}\n    action: ${step.toolName}\n    description: "${description}"${parameters}`;
   }).join("\n");
-  return `name: "${name}"\ndescription: "Saved from chat session"\nsteps:\n${yaml}`;
+  return `name: "${name}"\ndescription: "Saved from chat session"\ntrigger:\n  type: manual\nsteps:\n${yaml}`;
 }
 
 export function queryChatPresentation(intent: string, content: string, binding: ChatOperation["modelBinding"], result: QueryLoopResult) {
-  const workflowDraft = result.readOutcome === "READS_COMPLETED" && !result.narrativeRejected ? buildWorkflowYamlFromSteps(result.toolSteps, content) : undefined;
+  // Retrieval/analysis is a conversation, not implicit authoring. The explicit
+  // workflow-generation route owns drafts and canvas updates.
+  const workflowDraft: string | undefined = undefined;
   const artifacts = { intent, sources: result.toolCallLog, toolSteps: result.toolSteps, boundHit: result.boundHit, iterationsUsed: result.iterationsUsed,
     latencyMs: result.latencyMs, readOutcome: result.readOutcome, narrativeRejected: result.narrativeRejected,
     ...(result.clarification ? { clarification: result.clarification } : {}),
+    ...(result.recoveryGuidance ? { recoveryGuidance: result.recoveryGuidance } : {}),
+    ...(result.proposalCorrections?.length ? { proposalCorrections: result.proposalCorrections } : {}),
     ...(result.modelRouting ? { modelRouting: result.modelRouting } : {}), ...(result.visualisation ? { visualisation: result.visualisation } : {}),
     ...(workflowDraft ? { workflowDraft } : {}) };
   const answerBinding = binding ? { ...binding, ...(result.modelRouting ? { model: result.modelRouting.model,

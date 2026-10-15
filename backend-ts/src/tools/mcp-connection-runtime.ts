@@ -31,7 +31,7 @@ type Operation = z.infer<typeof operationSchema>;
 type ConnectionRecord = z.infer<typeof recordSchema>;
 type RuntimeState = "UNCONFIGURED" | "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "DEGRADED" | "STORAGE_UNSUPPORTED" | "STORAGE_UNCERTAIN" | "STOPPED";
 type SessionFactory = typeof createErpbridgeMcpSession;
-type RuntimeOptions = { repository: Repository; registries: RegistryService; validator: RegistryValidator; config: AppConfig; connection?: ErpbridgeConnectionConfig; factory?: SessionFactory };
+type RuntimeOptions = { repository: Repository; registries: RegistryService; validator: RegistryValidator; config: AppConfig; connection?: ErpbridgeConnectionConfig; factory?: SessionFactory; userMcpCredentials?: import("./user-mcp-credentials.js").UserMcpCredentials; deferConnection?: boolean };
 
 /** One backend-owned environment-backed modern connection. This is not a
  * generic URL registry: browser/model supplied endpoints and credentials are
@@ -45,6 +45,7 @@ export class McpConnectionRuntime {
   #stopped = false;
   #revision = 0;
   #probeBusy = false;
+  #deferredRestore: Promise<void> | undefined;
   #probeController: AbortController | undefined;
   readonly #disposals = new Set<Promise<void>>();
   readonly #configurationHash: string;
@@ -66,7 +67,13 @@ export class McpConnectionRuntime {
     const runtime = new McpConnectionRuntime(options);
     const residentStartup = bindExecutionHost(options.repository) === "resident-server";
     if (!runtime.supportedStorage()) { runtime.#state = "STORAGE_UNSUPPORTED"; return runtime; }
-    const record = await options.repository.mutate(state => {
+    const unchanged = !residentStartup ? await options.repository.readAuthoritative(state => {
+      const raw=state.mcpConnections[runtime.connection.id];
+      if(!raw)return undefined;
+      const record=recordSchema.parse(raw);
+      return record.configurationHash===runtime.#configurationHash?record:undefined;
+    }) : undefined;
+    const record = unchanged ?? await options.repository.mutate(state => {
       const old = state.mcpConnections[runtime.connection.id];
       let value: ConnectionRecord = old ? recordSchema.parse(old) : { id: runtime.connection.id, revision: 1, desiredEnabled: false, configurationHash: runtime.#configurationHash, updatedAt: now() };
       // No stored live socket is trusted after a process restart. Interrupted
@@ -87,17 +94,39 @@ export class McpConnectionRuntime {
     // Persisted enabled intent may restore only the same configured revision.
     // This is initialize/discovery, never replay of a business operation.
     const blocked = await options.repository.readAuthoritative(state => runtime.running(state, record).some(operation => operation.action !== "test"));
-    if (runtime.#configured && record.desiredEnabled && !blocked) await runtime.restore(record);
+    if (runtime.#configured && record.desiredEnabled && !blocked && !options.deferConnection) await runtime.restore(record);
     return runtime;
   }
   get session(): ErpbridgeMcpSession | undefined {
     if (this.#state !== "CONNECTED" || this.#stopped || this.#session?.available === false) return undefined;
     return this.#session;
   }
+  /** Configuration identity only, NEVER evidence of a connected session or
+   * permission to call tools. Deferred admissions and live workers bind to
+   * the same endpoint/token/revision without doing network I/O at admission. */
+  get admissionConfigurationBinding(): string | undefined {
+    return this.#configured && this.#revision>0 ? createHash("sha256").update(JSON.stringify([this.connection.baseURL.trim(),this.connection.mcpToken,`${this.connection.id}:${this.#revision}`])).digest("hex") : undefined;
+  }
   get primaryConnectionId() { return this.connection.id; }
   hasConnection(id: string) { return id === this.connection.id; }
   connectionCatalog() { return [{ id: this.connection.id, primary: this.connection.primary, dispatchSupported: true }]; }
   sessionFor(id: string) { return id === this.connection.id ? this.session : undefined; }
+  /** Lazy startup restoration only. Never enables a disabled connection,
+   * retries a degraded session or changes its reviewed configuration. */
+  async ensureSession(id = this.connection.id): Promise<void> {
+    if (id !== this.connection.id || this.session || this.#stopped || !this.#configured || this.#state !== "DISCONNECTED") return;
+    if (this.#deferredRestore) return this.#deferredRestore;
+    this.#deferredRestore = (async () => {
+      const record = await this.options.repository.readAuthoritative(state => {
+        const raw = state.mcpConnections[this.connection.id];
+        if (!raw) return undefined;
+        const value = recordSchema.parse(raw);
+        return value.desiredEnabled && value.revision === this.#revision && value.configurationHash === this.#configurationHash && !this.running(state, value).length ? value : undefined;
+      });
+      if (record && !this.#stopped && this.#state === "DISCONNECTED") await this.restore(record);
+    })();
+    return this.#deferredRestore;
+  }
   roleMapFor(id: string) { return id === this.connection.id ? this.connection.roleMap : undefined; }
   private supportedStorage() { return this.options.repository.persistence === null || this.options.repository.persistence.readQueueDurability === "encrypted-single-writer"; }
   private running(state: Readonly<RepositoryState>, record: ConnectionRecord) {
@@ -136,7 +165,9 @@ export class McpConnectionRuntime {
     const authorizer = admissionAuthorizer(repository, registries, this.connection.id);
     return boundedOperation(async () => {
       candidate = await (this.options.factory ?? createErpbridgeMcpSession)({ baseURL: this.connection.baseURL, token: this.connection.mcpToken,
+        ...(this.options.userMcpCredentials ? { userMcpCredentials: this.options.userMcpCredentials } : {}),
         timeoutMs: config.mcpTimeoutMs, validator, signal: controller.signal, connectionId: this.connection.id, connectionRevision: `${this.connection.id}:${revision}`,
+        administratorChatActions:config.erpbridgeAdminChatActions===true,
         admissionAuthorizer: async (definition, binding, pin) => { await this.assertRevision(revision, epoch); await authorizer(definition, binding, pin); await this.assertRevision(revision, epoch); } });
       if (controller.signal.aborted || epoch !== this.#epoch || this.#stopped) { await this.dispose(candidate); throw new Error("MCP initialization superseded"); }
       if (candidate.available === false || candidate.requiresReviewedRevision !== true || !/^[a-f0-9]{64}$/.test(candidate.admissionBinding ?? "")) throw new Error("Unsupported initialized MCP profile");
@@ -266,10 +297,12 @@ export class McpConnectionManager {
     } catch (error) { await Promise.allSettled([...opened.values()].map(runtime => runtime.stop())); throw error; }
   }
   get session() { return this.runtimes.get(this.primaryConnectionId)?.session; }
+  get admissionConfigurationBinding() { return this.runtimes.get(this.primaryConnectionId)?.admissionConfigurationBinding; }
   hasConnection(id: string) { return this.runtimes.has(id); }
   connectionCatalog() { return [...this.runtimes.values()].map(runtime => ({ id: runtime.connection.id, primary: runtime.connection.primary,
     dispatchSupported: true })).sort((a, b) => Number(b.primary) - Number(a.primary) || a.id.localeCompare(b.id)); }
   sessionFor(id = this.primaryConnectionId) { return this.runtimes.get(id)?.session; }
+  async ensureSession(id = this.primaryConnectionId) { await this.runtimes.get(id)?.ensureSession(id); }
   roleMapFor(id = this.primaryConnectionId) { return this.runtimes.get(id)?.roleMapFor(id); }
   async status(user: CurrentUser) {
     const parts = await Promise.all([...this.runtimes.values()].map(runtime => runtime.status(user)));

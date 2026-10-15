@@ -1,9 +1,9 @@
 import { expect, test, vi } from "vitest";
 import { createBridgeProtocolAdapter } from "../src/tools/erpbridge-protocol-adapter.js";
 
-function fixture(options: { failure?: number; notification?: boolean; loop?: boolean; exhaust?: boolean; wrongProtocol?: boolean; get?: () => Response } = {}) {
+function fixture(options: { failure?: number; notification?: boolean; loop?: boolean; exhaust?: boolean; wrongProtocol?: boolean; get?: () => Response; descriptorPatch?: Record<string, unknown> } = {}) {
   const descriptor = { name: "read.rev_MS4wLjA", inputSchema: { type: "object" }, outputSchema: { type: "object" },
-    annotations: { readOnlyHint: true }, _meta: { "toolplane.resourceVersion": "1.0.0", "toolplane.resourceDigest": "a".repeat(64), "io.erpbridge/allowedRoles": [] } };
+    annotations: { readOnlyHint: true }, _meta: { "toolplane.resourceVersion": "1.0.0", "toolplane.resourceDigest": "a".repeat(64), "io.erpbridge/allowedRoles": [] }, ...options.descriptorPatch };
   const calls: { url: string; method: string; headers: Headers; body?: Record<string, any> }[] = [];
   const fetchImplementation = vi.fn<typeof fetch>(async (url, init) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -40,6 +40,25 @@ test("official client uses canonical Streamable HTTP, authenticated session and 
     expect(f.calls.at(-1)?.body?.params).toEqual({ name: "read.rev_MS4wLjA", arguments: { id: "one" }, _meta: { "toolplane.resourceDigest": "a".repeat(64) } });
     expect(f.calls.some(c => c.body?.method === "server/discover")).toBe(false);
   } finally { await f.adapter.close(); }
+});
+
+test("array-root output schemas and unknown metadata survive discovery exactly without granting execution", async () => {
+  const outputSchema = { type: "array", items: { type: "object", properties: { name: { type: "string" } } } };
+  const f = fixture({ descriptorPatch: { outputSchema, _meta: { "io.erpbridge/examples": ["List companies"] }, extension: { original: true } } });
+  try {
+    await f.adapter.connect();
+    const tools = await f.adapter.listTools();
+    expect(tools).toEqual([f.descriptor, { ...f.descriptor, name: "alias" }]);
+    expect(tools[0]!.outputSchema).toEqual(outputSchema);
+    expect(tools[0]!._meta).not.toHaveProperty("toolplane.resourceDigest");
+    expect(f.calls.filter(call => call.body?.method === "tools/call")).toHaveLength(0);
+  } finally { await f.adapter.close(); }
+});
+
+test.each([{ inputSchema: [] }, { inputSchema: { type: "array" } }, { outputSchema: [] }, { annotations: "invalid" }, { name: "" }, { name: " padded " }])("malformed discovery stays rejected: %j", async descriptorPatch => {
+  const f = fixture({ descriptorPatch });
+  try { await f.adapter.connect(); await expect(f.adapter.listTools()).rejects.toThrow(); }
+  finally { await f.adapter.close(); }
 });
 test.each([401, 403, 503])("tool HTTP %s is surfaced once with no replay or OAuth fallback", async status => {
   const f = fixture({ failure: status });

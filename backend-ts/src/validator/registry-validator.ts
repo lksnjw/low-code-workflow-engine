@@ -14,6 +14,7 @@ import type {
   WorkflowBlueprint,
 } from "../models/schemas.js";
 import { effectiveStepKind } from "../models/schemas.js";
+import { isErpnextWriteContract } from "../tools/erpnext-document-write.js";
 import type { Repository } from "../repository/store.js";
 import type { DispatchIdentity } from "../tools/registry.js";
 import { definedTraceAuditMetadata, type TraceAuditMetadata } from "../trace/audit-trace.js";
@@ -606,8 +607,18 @@ export class RegistryValidator {
             (riskRank[normalize(tool.risk_level)] ?? 0) >= 3)
         );
       });
+      // Engine-owned ERPNext operations cannot enter the SDK without a
+      // one-use consumed-approval permit. Its producer acknowledges the
+      // immutable dispatch intent and audit in the same repository checkpoint;
+      // results are journaled as well. Do not require an invented remote audit
+      // tool for that exact profile, or generalize this to arbitrary writes.
+      const effectTools = workflow.steps.map(step => this.registries.findTool(step.action ?? ""))
+        .filter((tool): tool is ToolDefinition => Boolean(tool && (!tool.is_read_only || (riskRank[normalize(tool.risk_level)] ?? 0) >= 3)));
+      const engineJournal = effectTools.length > 0 && effectTools.every(tool => !tool.is_read_only && normalize(tool.risk_level) === "medium" && isErpnextWriteContract(tool));
+      if (engineJournal) result.metadata.auditMechanism = "operation-job/v1:consumed-approval-and-dispatch-journal";
       if (
         hasWriteOrRisk &&
+        !engineJournal &&
         !actions.some((item) => normalize(item) === "audit.write_audit_log")
       ) {
         result.policy_ok = false;

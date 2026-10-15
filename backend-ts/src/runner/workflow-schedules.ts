@@ -14,6 +14,8 @@ import type { ToolDefinition } from "../registry/schemas.js";
 import { scheduledReportPaths } from "./scheduled-report-paths.js";
 import { bindExecutionHost, residentExecutionAllowed, requireResidentExecution } from "./execution-host.js";
 import { assertWorkflowLifecycleScope, requireWorkflowLifecycleAdmission, type WorkflowLifecycleScope } from "./workflow-lifecycle-host.js";
+import { prepareReadSnapshot, admitReadSnapshot } from "./snapshot-schedule.js";
+import { requireReadTaskAdmission } from "./read-task-outbox.js";
 
 const digest = (value: unknown) => `sha256:${createHash("sha256").update(canonicalJSONBytes(value)).digest("hex")}`;
 const hash = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -62,12 +64,21 @@ export const calendarScheduleCommandSchema = z.object({
   if (value.cadence === "monthly" && value.dayOfMonth == null) context.addIssue({ code: "custom", path: ["dayOfMonth"], message: "Monthly schedules require a day from 1 through 28" });
   if (value.cadence !== "monthly" && value.dayOfMonth != null) context.addIssue({ code: "custom", path: ["dayOfMonth"], message: "Only monthly schedules may set a day of month" });
 });
-export const scheduleCommandSchema = z.union([dailyScheduleCommandSchema, calendarScheduleCommandSchema]);
+export const snapshotScheduleCommandSchema = z.object({
+  profile: z.literal("workflow-snapshot-schedule-command/v1"), ...commonScheduleCommand,
+  cadence: z.enum(["daily", "weekly", "monthly"]), dayOfWeek: z.number().int().min(1).max(7).optional(),
+  dayOfMonth: z.number().int().min(1).max(28).optional(), reportingPeriod: z.literal("snapshot"),
+  reportWindowBinding: z.null().optional(),
+}).strict().superRefine((value, context) => {
+  if ((value.cadence === "weekly") !== (value.dayOfWeek !== undefined)) context.addIssue({ code: "custom", path: ["dayOfWeek"], message: "Only weekly snapshots require an ISO weekday" });
+  if ((value.cadence === "monthly") !== (value.dayOfMonth !== undefined)) context.addIssue({ code: "custom", path: ["dayOfMonth"], message: "Only monthly snapshots require a day of month" });
+});
+export const scheduleCommandSchema = z.union([dailyScheduleCommandSchema, calendarScheduleCommandSchema, snapshotScheduleCommandSchema]);
 export type DailyScheduleCommand = z.infer<typeof dailyScheduleCommandSchema>;
 export type CalendarScheduleCommand = z.infer<typeof calendarScheduleCommandSchema>;
 type ScheduleCommand = z.infer<typeof scheduleCommandSchema>;
 type ScheduleCadence = "daily" | "weekly" | "monthly";
-type ReportingPeriod = WorkflowSchedule["reportingPeriod"];
+type ReportingPeriod = ReportWindow["reportingPeriod"];
 
 const formatter = (timezone: string) => {
   try { return new Intl.DateTimeFormat("en-CA-u-nu-latn", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); }
@@ -149,9 +160,9 @@ export function nextCalendarOccurrence(schedule: { timezone: string; localTime: 
 }
 function recurrence(schedule: Pick<WorkflowSchedule, "profile" | "timezone" | "localTime" | "cadence" | "dayOfWeek" | "dayOfMonth">) {
   const cadence = schedule.profile === "workflow-daily-schedule/v1" ? "daily" as const : schedule.cadence;
-  if (!cadence || schedule.profile === "workflow-calendar-schedule/v2" &&
+  if (!cadence || schedule.profile !== "workflow-daily-schedule/v1" &&
       (cadence === "weekly" ? !Number.isInteger(schedule.dayOfWeek) || schedule.dayOfWeek! < 1 || schedule.dayOfWeek! > 7 || schedule.dayOfMonth !== undefined : schedule.dayOfWeek !== undefined) ||
-      schedule.profile === "workflow-calendar-schedule/v2" &&
+      schedule.profile !== "workflow-daily-schedule/v1" &&
       (cadence === "monthly" ? !Number.isInteger(schedule.dayOfMonth) || schedule.dayOfMonth! < 1 || schedule.dayOfMonth! > 28 || schedule.dayOfWeek !== undefined : schedule.dayOfMonth !== undefined))
     throw new HandlerFailure(422, "Stored calendar recurrence is invalid", { code: "SCHEDULE_TIME_UNRESOLVED" });
   return { timezone: schedule.timezone, localTime: schedule.localTime, cadence,
@@ -227,22 +238,28 @@ export function workflowScheduleView(state: Readonly<RepositoryState>, workflowI
       "No active schedule is confirmed. Saving workflow trigger text alone does not activate recurring execution." };
 }
 
-export async function saveWorkflowSchedule(services: HandlerServices, workflowId: string, actor: CurrentUser, raw: unknown) {
+export async function saveWorkflowSchedule(services: HandlerServices, workflowId: string, actor: CurrentUser, raw: unknown,
+  commit?: { assertCurrent(state: RepositoryState): void; saved(state: RepositoryState, schedule: WorkflowSchedule): void }) {
   if (!supportsOperationJobs(services)) throw new HandlerFailure(503, "Schedules require qualified encrypted operation persistence", { code: "SCHEDULE_STORAGE_UNSUPPORTED" });
   const parsed = scheduleCommandSchema.safeParse(raw);
   if (!parsed.success) throw new HandlerFailure(422, "Invalid calendar schedule command", { code: "SCHEDULE_COMMAND_INVALID" });
   const command = parsed.data;
   if (command.enabled) requireWorkflowLifecycleAdmission(services.repository);
+  if (command.enabled && command.profile === "workflow-snapshot-schedule-command/v1") requireReadTaskAdmission(services.repository);
   formatter(command.timezone);
   if (canonicalJSONBytes(command.input).length > 64_000) throw new HandlerFailure(422, "Schedule input exceeds supported bounds");
   if (containsSecretField(command.input)) throw new HandlerFailure(422, "Schedule inputs cannot contain credentials or secret fields; use the admitted connection configuration");
   const scheduleId = `schedule-${workflowId}`, now = new Date().toISOString();
   const saved = await services.repository.mutate(state => {
+    commit?.assertCurrent(state);
     const workflow = state.workflows[workflowId], previous = state.schedules[scheduleId];
     if (!workflow || workflow.archived) throw new HandlerFailure(404, "Workflow not found");
     if (workflow.emailDeliverySource || workflow.recoverySource) throw new HandlerFailure(409, "One-time linked operation publications cannot be scheduled", { code: "LINKED_OPERATION_SCHEDULE_DENIED" });
     const currentActor = effectiveStateUser(state, actor.id);
     if (!currentActor?.permissions.includes("workflow:write")) throw new HandlerFailure(403, "Current workflow write authority is required");
+    if (!canViewWorkflow(workflow, currentActor)) throw new HandlerFailure(403, "Current workflow access is required");
+    if (command.servicePrincipalId !== currentActor.id && currentActor.role !== "Platform Admin")
+      throw new HandlerFailure(403, "Only a Platform Admin may select another execution account");
     if ((previous?.revision ?? 0) !== command.baseRevision) throw new HandlerFailure(409, "Schedule changed; reload before saving", { code: "SCHEDULE_REVISION_CONFLICT" });
     if (!command.enabled) {
       if (!previous) throw new HandlerFailure(409, "There is no saved schedule to pause", { code: "SCHEDULE_NOT_FOUND" });
@@ -253,6 +270,7 @@ export async function saveWorkflowSchedule(services: HandlerServices, workflowId
         after: { workflowId, revision: schedule.revision, state: schedule.state, workflowVersion: schedule.workflowVersion, timezone: schedule.timezone,
           localTime: schedule.localTime, cadence: schedule.cadence ?? "daily", dayOfWeek: schedule.dayOfWeek ?? null, dayOfMonth: schedule.dayOfMonth ?? null,
           servicePrincipalId: schedule.servicePrincipalId, nextRunAt: schedule.nextRunAt }, createdAt: now });
+      commit?.saved(state, structuredClone(schedule));
       return structuredClone(schedule);
     }
     const principal = effectiveStateUser(state, command.servicePrincipalId);
@@ -261,24 +279,29 @@ export async function saveWorkflowSchedule(services: HandlerServices, workflowId
       throw new HandlerFailure(409, "Schedule must bind the exact current published workflow", { code: "SCHEDULE_PUBLICATION_CHANGED" });
     if (!canRun(state, workflowId, principal)) throw new HandlerFailure(403, "The named service principal cannot run this workflow");
     const publication = (state.versions[workflowId] ?? []).findLast(value => value.artifactState === "PUBLISHED" && value.version === command.workflowVersion && value.yaml === workflow.yaml);
-    if (!publication?.compiledOperation) throw new HandlerFailure(422, "Calendar scheduling requires a reviewed sequential operation publication");
-    const compiled = prepareOperationExecution(state, services, publication, workflow.yaml, principal.role);
-    const reportWindowBinding = command.reportWindowBinding!;
+    const snapshotMode = command.profile === "workflow-snapshot-schedule-command/v1";
+    if (!publication || (snapshotMode ? !publication.compiledRead : !publication.compiledOperation))
+      throw new HandlerFailure(422, "Scheduling requires an exact reviewed publication for the selected profile");
+    if (snapshotMode) prepareReadSnapshot(state, services, publication, workflow, principal.role, command.input);
+    const compiled = snapshotMode ? null : prepareOperationExecution(state, services, publication, workflow.yaml, principal.role);
+    const reportWindowBinding = command.reportWindowBinding ?? null;
     const recurrenceRule = commandRecurrence(command);
     const scheduleHash = digest({ profile: command.profile, workflowId, workflowVersion: command.workflowVersion, workflowHash: command.workflowHash,
       timezone: command.timezone, localTime: command.localTime, ...recurrenceRule, reportingPeriod: command.reportingPeriod, misfirePolicy: command.misfirePolicy,
       misfireGraceSeconds: command.misfireGraceSeconds, servicePrincipalId: command.servicePrincipalId, input: command.input, reportWindowBinding });
     const unchanged = previous?.scheduleHash === scheduleHash && previous.state === "ACTIVE" && previous.nextRunAt && Date.parse(previous.nextRunAt) > Date.now();
     const nextRunAt = unchanged ? previous.nextRunAt! : nextCalendarOccurrence({ timezone: command.timezone, localTime: command.localTime, ...recurrenceRule }, Date.now());
-    const nextReportWindow = reportWindowFor(command.timezone, nextRunAt, command.reportingPeriod);
-    bindReportWindowInput(compiled.plan, command.input, reportWindowBinding, nextReportWindow, services.registries.snapshot().tools);
-    const schedule: WorkflowSchedule = { profile: command.profile === "workflow-daily-schedule-command/v1" ? "workflow-daily-schedule/v1" : "workflow-calendar-schedule/v2",
+    if (command.reportingPeriod !== "snapshot") {
+      const nextReportWindow = reportWindowFor(command.timezone, nextRunAt, command.reportingPeriod);
+      bindReportWindowInput(compiled!.plan, command.input, reportWindowBinding!, nextReportWindow, services.registries.snapshot().tools);
+    }
+    const schedule: WorkflowSchedule = { profile: snapshotMode ? "workflow-snapshot-schedule/v1" : command.profile === "workflow-daily-schedule-command/v1" ? "workflow-daily-schedule/v1" : "workflow-calendar-schedule/v2",
       id: scheduleId, workflowId, workflowVersion: command.workflowVersion,
       workflowHash: command.workflowHash, state: command.enabled ? "ACTIVE" : "PAUSED", revision: (previous?.revision ?? 0) + 1,
       timezone: command.timezone, localTime: command.localTime, ...(command.profile === "workflow-daily-schedule-command/v1" ? {} : recurrenceRule),
       reportingPeriod: command.reportingPeriod, misfirePolicy: command.misfirePolicy,
       misfireGraceSeconds: command.misfireGraceSeconds, servicePrincipalId: command.servicePrincipalId, input: structuredClone(command.input),
-      reportWindowBinding: structuredClone(reportWindowBinding),
+      ...(!snapshotMode ? { reportWindowBinding: structuredClone(reportWindowBinding!) } : {}),
       nextRunAt: command.enabled ? nextRunAt : null,
       ...(previous?.lastOccurrenceAt ? { lastOccurrenceAt: previous.lastOccurrenceAt } : {}), createdBy: previous?.createdBy ?? { id: currentActor.id, name: currentActor.name },
       createdAt: previous?.createdAt ?? now, updatedAt: now, scheduleHash };
@@ -288,6 +311,7 @@ export async function saveWorkflowSchedule(services: HandlerServices, workflowId
       after: { workflowId, revision: schedule.revision, state: schedule.state, workflowVersion: schedule.workflowVersion, timezone: schedule.timezone,
         localTime: schedule.localTime, cadence: schedule.cadence ?? "daily", dayOfWeek: schedule.dayOfWeek ?? null, dayOfMonth: schedule.dayOfMonth ?? null,
         servicePrincipalId: schedule.servicePrincipalId, nextRunAt: schedule.nextRunAt }, createdAt: now });
+    commit?.saved(state, structuredClone(schedule));
     return structuredClone(schedule);
   });
   workflowScheduleRunner(services).kick();
@@ -397,8 +421,16 @@ export class WorkflowScheduleRunner {
       const workflow = state.workflows[schedule.workflowId], publication = (state.versions[schedule.workflowId] ?? []).findLast(value => value.artifactState === "PUBLISHED" && value.version === schedule.workflowVersion);
       const scheduledFor = schedule.nextRunAt, occurrenceId = `occurrence-${digest([schedule.id, schedule.revision, scheduledFor]).slice(7, 39)}`;
       const existing = state.scheduleOccurrences[occurrenceId]; if (existing) return { schedule: structuredClone(schedule), occurrence: structuredClone(existing) };
-      let reportWindow: ReportWindow;
-      try { recurrence(schedule); reportWindow = reportWindowFor(schedule.timezone, scheduledFor, schedule.reportingPeriod); }
+      let reportWindow: ReportWindow | undefined;
+      try {
+        recurrence(schedule);
+        if (schedule.profile === "workflow-snapshot-schedule/v1") {
+          if (schedule.reportingPeriod !== "snapshot" || schedule.reportWindowBinding) throw new Error("Invalid snapshot schedule semantics");
+        } else {
+          if (schedule.reportingPeriod === "snapshot") throw new Error("Invalid report schedule semantics");
+          reportWindow = reportWindowFor(schedule.timezone, scheduledFor, schedule.reportingPeriod);
+        }
+      }
       catch {
         const reason = "Reporting-period semantics are unsupported or the local report day cannot be resolved; save a new schedule revision";
         const occurrence: ScheduleOccurrence = { profile: "workflow-schedule-occurrence/v1", id: occurrenceId, scheduleId: schedule.id,
@@ -413,7 +445,7 @@ export class WorkflowScheduleRunner {
         const reason = "Pinned workflow publication changed or is unavailable";
         const occurrence: ScheduleOccurrence = { profile: "workflow-schedule-occurrence/v1", id: occurrenceId, scheduleId: schedule.id,
           scheduleRevision: schedule.revision, workflowId: schedule.workflowId, workflowVersion: schedule.workflowVersion, workflowHash: schedule.workflowHash,
-          scheduledFor, localDate: localParts(schedule.timezone, Date.parse(scheduledFor)).date, timezone: schedule.timezone, reportWindow,
+          scheduledFor, localDate: localParts(schedule.timezone, Date.parse(scheduledFor)).date, timezone: schedule.timezone, ...(reportWindow ? { reportWindow } : {}),
           servicePrincipalId: schedule.servicePrincipalId, state: "BLOCKED", idempotencyKey: `sched_${digest([schedule.id, schedule.revision, scheduledFor]).slice(7, 55)}`,
           reason, createdAt: new Date(nowMs).toISOString() };
         state.scheduleOccurrences[occurrenceId] = occurrence;
@@ -423,7 +455,7 @@ export class WorkflowScheduleRunner {
       const lateMs = nowMs - Date.parse(scheduledFor), skipped = schedule.misfirePolicy === "SKIP" && lateMs > schedule.misfireGraceSeconds * 1000;
       const occurrence: ScheduleOccurrence = { profile: "workflow-schedule-occurrence/v1", id: occurrenceId, scheduleId: schedule.id, scheduleRevision: schedule.revision,
         workflowId: schedule.workflowId, workflowVersion: schedule.workflowVersion, workflowHash: schedule.workflowHash, scheduledFor,
-        localDate: localParts(schedule.timezone, Date.parse(scheduledFor)).date, timezone: schedule.timezone, reportWindow, servicePrincipalId: schedule.servicePrincipalId,
+        localDate: localParts(schedule.timezone, Date.parse(scheduledFor)).date, timezone: schedule.timezone, ...(reportWindow ? { reportWindow } : {}), servicePrincipalId: schedule.servicePrincipalId,
         state: skipped ? "SKIPPED" : "ADMITTING", idempotencyKey: `sched_${digest([schedule.id, schedule.revision, scheduledFor]).slice(7, 55)}`,
         createdAt: new Date(nowMs).toISOString(), ...(skipped ? { reason: "Occurrence exceeded the configured misfire grace window; no execution was admitted" } : {}) };
       state.scheduleOccurrences[occurrenceId] = occurrence;
@@ -433,10 +465,11 @@ export class WorkflowScheduleRunner {
   }
   private async admit(claim: Claim, nowMs: number, assertReady: () => void, lifecycleScope?: WorkflowLifecycleScope): Promise<"ADMITTED" | "BLOCKED" | null> {
     assertReady();
-    if (!claim.occurrence.reportWindow) return this.block(claim, "Occurrence has no immutable report window; save a new schedule revision", assertReady);
+    const snapshotMode = claim.schedule.profile === "workflow-snapshot-schedule/v1";
+    if (!snapshotMode && !claim.occurrence.reportWindow) return this.block(claim, "Occurrence has no immutable report window; save a new schedule revision", assertReady);
     if (claim.occurrence.scheduleRevision !== claim.schedule.revision)
       return this.block(claim, "Occurrence belongs to an older schedule revision and cannot use newer inputs", assertReady);
-    if (!claim.schedule.reportWindowBinding)
+    if (!snapshotMode && !claim.schedule.reportWindowBinding)
       return this.block(claim, "Schedule has no reviewed report-window input binding; save a new schedule revision", assertReady);
     const principal = await this.services.repository.effectiveUser(claim.schedule.servicePrincipalId);
     assertReady();
@@ -446,17 +479,23 @@ export class WorkflowScheduleRunner {
         const workflow = state.workflows[claim.schedule.workflowId], publication = (state.versions[claim.schedule.workflowId] ?? [])
           .findLast(value => value.artifactState === "PUBLISHED" && value.version === claim.schedule.workflowVersion && value.yaml === workflow?.yaml);
         if (!workflow || !publication) throw new HandlerFailure(409, "Pinned workflow publication is unavailable");
+        if (snapshotMode) {
+          prepareReadSnapshot(state, this.services, publication, workflow, principal.role, claim.schedule.input);
+          return { workflow: structuredClone(workflow), input: structuredClone(claim.schedule.input) };
+        }
         const compiled = prepareOperationExecution(state, this.services, publication, workflow.yaml, principal.role);
         const input = bindReportWindowInput(compiled.plan, claim.schedule.input, claim.schedule.reportWindowBinding!, claim.occurrence.reportWindow!, this.services.registries.snapshot().tools);
         return { workflow: structuredClone(workflow), input };
       });
-      const source = { profile: "workflow-schedule-source/v1" as const, scheduleId: claim.schedule.id, scheduleRevision: claim.schedule.revision,
+      const identity = { scheduleId: claim.schedule.id, scheduleRevision: claim.schedule.revision,
         occurrenceId: claim.occurrence.id, scheduledFor: claim.occurrence.scheduledFor, scheduleHash: claim.schedule.scheduleHash,
-        reportWindow: structuredClone(claim.occurrence.reportWindow),
-        reportWindowBinding: structuredClone(claim.schedule.reportWindowBinding), inputHash: digest(prepared.input) };
+        inputHash: digest(prepared.input) };
       assertReady();
-      const result = await operationJobQueue(this.services).admit(prepared.workflow, prepared.input, principal, claim.occurrence.idempotencyKey,
-        `schedule:${claim.schedule.id}:${claim.occurrence.id}`, source, lifecycleScope);
+      const result = snapshotMode ? await admitReadSnapshot(this.services, prepared.workflow, prepared.input, principal, claim.occurrence.idempotencyKey,
+        { profile: "workflow-snapshot-schedule-source/v1", ...identity }, lifecycleScope) :
+        await operationJobQueue(this.services).admit(prepared.workflow, prepared.input, principal, claim.occurrence.idempotencyKey,
+          `schedule:${claim.schedule.id}:${claim.occurrence.id}`, { profile: "workflow-schedule-source/v1", ...identity,
+            reportWindow: structuredClone(claim.occurrence.reportWindow!), reportWindowBinding: structuredClone(claim.schedule.reportWindowBinding!) }, lifecycleScope);
       assertReady();
       await this.mutate(assertReady, state => {
         const occurrence = state.scheduleOccurrences[claim.occurrence.id], schedule = state.schedules[claim.schedule.id];

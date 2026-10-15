@@ -1,4 +1,5 @@
 import type { HandlerServices } from "../http/handlers/common.js";
+import { assertErpnextWriteReceipt } from "../tools/erpnext-document-write.js";
 import { validateWorkflow } from "../http/handlers/common.js";
 import type { RepositoryState } from "../repository/store.js";
 import type { ValidationToken } from "../validator/registry-validator.js";
@@ -58,6 +59,7 @@ export async function executeOwnedProtectedEffect(services: HandlerServices, exe
     const evidence = consumeAcknowledgedProtectedEffectResult(result, permit, prepared.definition, prepared.args, prepared.identity);
     if (!evidence || result.isError === true || validateToolInput(prepared.definition.bridge_contract!.output_schema, evidence.result.structuredContent).length)
       throw new Error("Protected effect has no genuine contract-valid governed SDK completion");
+    assertErpnextWriteReceipt(prepared.definition, prepared.args, evidence.result.structuredContent);
     let confirmation: unknown = evidence.result.structuredContent;
     for (const part of prepared.definition.operation_contract!.confirmation.path)
       confirmation = confirmation && typeof confirmation === "object" && !Array.isArray(confirmation) && Object.hasOwn(confirmation, part)

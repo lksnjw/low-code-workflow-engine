@@ -37,6 +37,12 @@ function ChatArtifactPanel({ artifact }) {
     return <QueryResultPanel artifact={artifact} />;
   }
 
+  if (artifact.intent === "WORKFLOW_PATCH_PROPOSAL") {
+    return <section className="space-y-2 text-xs"><h3 className="font-semibold">Workflow change proposal</h3><p>{artifact.proposal?.summary}</p><p>{artifact.proposal?.status ?? "Unknown status"}</p><p className="text-gray-500">Review and apply this change in the saved workflow's canvas controls. Nothing is published or run by this proposal.</p></section>;
+  }
+  if (artifact.intent === "WORKFLOW_CONTROL") {
+    return <p className="text-xs text-gray-500">Review the saved workflow controls in chat. No workflow command has been executed by this message.</p>;
+  }
   if (artifact.intent === "NODE_PATCH_PROPOSAL") {
     return <section className="space-y-2 text-xs"><h3 className="font-semibold">Node proposal · {artifact.proposal?.nodeId}</h3><p>{artifact.proposal?.status ?? "Unknown status"}</p><p className="text-gray-500">Review this change in the workflow workspace. Applying saves a draft; it does not publish or execute.</p>{artifact.proposal?.command?.type === "updateProtected" && artifact.proposal.command.patch?.output && !artifact.proposal.command.patch.onError ? <ProtectedPatchPreview proposal={artifact.proposal} /> : <ReadableValue value={artifact.proposal?.after} />}</section>;
   }

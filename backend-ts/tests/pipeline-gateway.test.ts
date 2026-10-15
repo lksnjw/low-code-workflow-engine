@@ -16,7 +16,7 @@ function currentUser(): CurrentUser {
     email: "ada@example.test",
     roleId: "role_admin",
     permissionOverrides: [],
-    permissions: ["pipeline:upload"],
+    permissions: ["pipeline:upload", "registry:write"],
     role: "Platform Admin",
     status: "active",
     initials: "AA",
@@ -60,8 +60,17 @@ function replyRecorder() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("pipeline gateway", () => {
+  test("non-administrators cannot bypass private review through legacy document ingestion", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const user = currentUser(); user.permissions = ["pipeline:upload"];
+    await expect(handlePipelineGatewayRoute(documentRoute, uploadRequest(), replyRecorder().reply, user,
+      { config: loadConfig({ APP_ENV: "test", PIPELINE_API_BASE_URL: "http://pipeline.test", PIPELINE_API_KEY: "pipeline-service-secret" }), repository: new Repository() } as HandlerServices,
+    )).rejects.toMatchObject({ status: 403, meta: { code: "LEGACY_INGESTION_ADMIN_REQUIRED" } });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("protects every upload and status route with the dedicated permission", () => {
-    for (const route of routeTable.filter(item => item.path.startsWith("/api/pipeline/")))
+    for (const route of routeTable.filter(item => item.path.startsWith("/api/pipeline/") && !item.path.endsWith("/delegation")))
       expect(routePolicy(route)).toEqual({ required: ["pipeline:upload"], any: false });
   });
 
@@ -115,6 +124,14 @@ describe("pipeline gateway", () => {
 });
 
 describe("pipeline permission migration", () => {
+  test("an explicitly revoked pipeline permission remains revoked after repeated reloads", () => {
+    const current = initialState();
+    current.roles.role_admin!.permissions = [];
+    const restored = restoreState(Buffer.from(JSON.stringify(current)));
+    expect(restored.roles.role_admin!.permissions).toEqual([]);
+    expect(restoreState(Buffer.from(JSON.stringify(restored))).roles.role_admin!.permissions).toEqual([]);
+  });
+
   test("adds the permission and grants it to an existing platform administrator", () => {
     const legacy = initialState();
     legacy.permissions = legacy.permissions.filter(item => item.key !== "pipeline:upload");

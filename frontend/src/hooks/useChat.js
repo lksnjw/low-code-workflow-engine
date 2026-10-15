@@ -24,7 +24,9 @@ export function useChat(sessionId) {
   const operations = useQuery({
     queryKey: operationsKey,
     enabled: Boolean(sessionId && user && scope),
-    refetchInterval: 15000,
+    // Active progress has its own cursor monitor. Do not keep rereading the
+    // operation list while that monitor is running or after a saved answer.
+    refetchInterval: false,
     queryFn: async ({ signal }) => {
       if (!isAuthorityCurrent(capture)) throw staleAuthorityError();
       const data = await chatService.operations(sessionId, { signal });
@@ -53,9 +55,13 @@ export function useChat(sessionId) {
     enabled: Boolean(sessionId && user && scope),
     queryFn: async ({ signal }) => {
       if (!isAuthorityCurrent(capture)) throw staleAuthorityError();
-      const data = await chatService.getSession(sessionId, { signal });
+      const data = await chatService.getSession(sessionId, { limit: 20, signal });
       if (!isAuthorityCurrent(capture)) throw staleAuthorityError();
-      return data;
+      const saved = queryClient.getQueryData(sessionKey);
+      if (!saved?.messages?.length) return data;
+      const first = saved.messages.findIndex(message => message.id === data.messages?.[0]?.id);
+      const prefix = first >= 0 ? saved.messages.slice(0, first) : saved.messages;
+      return { ...data, messages: [...new Map([...prefix, ...(data.messages || [])].map(message => [message.id, message])).values()], hasMoreMessages: saved.hasMoreMessages === false ? false : Boolean(data.hasMoreMessages) };
     },
   });
   const readDenied = deniedStatus(operations.error) || deniedStatus(session.error);
@@ -140,31 +146,34 @@ export function useChat(sessionId) {
   const resetSend = sendMutation.reset;
   useEffect(() => { resetSend(); }, [sessionId, resetSend]);
 
-  const [pagination, setPagination] = useState({ scope: "", loading: false });
-  const loadingMore = pagination.scope === scope && pagination.loading;
+  const [pagination, setPagination] = useState({ scope: "", sessionId: "", loading: false, error: "" });
+  const paginationCurrent = pagination.scope === scope && pagination.sessionId === sessionId;
+  const loadingMore = paginationCurrent && pagination.loading;
   const paginationController = useRef(null);
   useEffect(() => () => paginationController.current?.abort(), [scope, sessionId]);
   const loadMore = useCallback(async () => {
-    if (!isAuthorityCurrent(capture)) return;
+    if (!isAuthorityCurrent(capture) || paginationController.current && !paginationController.current.signal.aborted) return;
     const current = queryClient.getQueryData(sessionKey);
     const oldest = current?.messages?.[0];
     if (!sessionId || !oldest || !current?.hasMoreMessages || loadingMore) return;
     const controller = new AbortController();
     paginationController.current = controller;
-    setPagination({ scope, loading: true });
+    setPagination({ scope, sessionId, loading: true, error: "" });
     try {
-      const older = await chatService.getSession(sessionId, { before: oldest.id, signal: controller.signal });
-      if (!isAuthorityCurrent(capture)) return;
+      const older = await chatService.getSession(sessionId, { limit: 20, before: oldest.id, signal: controller.signal });
+      if (!isAuthorityCurrent(capture) || controller.signal.aborted) return;
+      if (older.id !== sessionId) throw new Error("Earlier message identity could not be verified. Reload this conversation.");
       await queryClient.cancelQueries({ queryKey: sessionKey });
-      if (!isAuthorityCurrent(capture)) return;
+      if (!isAuthorityCurrent(capture) || controller.signal.aborted) return;
       queryClient.setQueryData(sessionKey, (curr = {}) => ({
         ...curr,
-        messages: [...(older.messages || []), ...(curr.messages || [])],
+        messages: [...new Map([...(older.messages || []), ...(curr.messages || [])].map(message => [message.id, message])).values()],
         hasMoreMessages: Boolean(older.hasMoreMessages),
       }));
+    } catch (error) {
+      if (isAuthorityCurrent(capture) && !controller.signal.aborted) setPagination({ scope, sessionId, loading: false, error: error?.response?.data?.message || "Earlier messages could not be loaded. Try again; your conversation is kept." });
     } finally {
-      if (paginationController.current === controller) paginationController.current = null;
-      if (isAuthorityCurrent(capture)) setPagination({ scope, loading: false });
+      if (paginationController.current === controller) { paginationController.current = null; if (isAuthorityCurrent(capture)) setPagination(value => ({ ...value, loading: false })); }
     }
   }, [capture, loadingMore, queryClient, scope, sessionId, sessionKey]);
 
@@ -212,10 +221,16 @@ export function useChat(sessionId) {
   const error = sendError || sessionError || (denied ? operations.error : null);
 
   return {
+    accessDenied: denied,
+    readOnly: !denied && session.data?.access?.reviewOnly === true,
     selectedModel: denied ? "" : session.data?.selectedModel || "",
     messages,
+    workflowCatalog: denied || !Array.isArray(session.data?.workflowCatalog) ? [] : session.data.workflowCatalog,
     artifact,
     loading: (sendMutation.isPending && sendMutation.variables?.scope === scope) || Boolean(operation && isActiveChatOperation(operation.status)),
+    sessionLoading: Boolean(sessionId && !accessDenied && session.isPending),
+    sessionRefreshing: Boolean(sessionId && !accessDenied && session.isFetching && !session.isPending),
+    reloadConversation: () => { if (isAuthorityCurrent(capture)) { void session.refetch(); void operations.refetch(); } },
     error: (identityFailure?.scope === scope && identityFailure?.target === sessionId ? identityFailure.message : "") || error?.response?.data?.message || (error ? "Chat could not complete the request. Your draft is kept." : ""),
     operation,
     operationEvents: monitor.events,
@@ -228,6 +243,8 @@ export function useChat(sessionId) {
     hasMoreMessages: denied ? false : Boolean(session.data?.hasMoreMessages),
     loadingMore,
     loadMore,
+    loadMoreError: paginationCurrent ? pagination.error : "",
+    totalMessages: session.data?.totalMessageCount,
   };
 }
 

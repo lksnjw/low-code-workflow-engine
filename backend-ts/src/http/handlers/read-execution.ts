@@ -19,9 +19,10 @@ import { completeCheckpointedCollectionRead } from "../../runner/checkpointed-co
 import { boundMcpConnection, selectedMcpConnectionId } from "../../tools/mcp-dispatch-context.js";
 import { residentExecutionAllowed, requireResidentExecution } from "../../runner/execution-host.js";
 import { dispatchReadTaskOutbox } from "../../runner/read-task-outbox.js";
+import { assertExecutionRetry, type ExecutionRetryRequest } from "../../runner/execution-retry.js";
 
 export async function runVerifiedRead(workflow: Workflow, input: Record<string, unknown>, token: ValidationToken | null, traceId: string,
-  request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
+  request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices, retry?: ExecutionRetryRequest): Promise<unknown> {
   const blueprint = parseWorkflowYAMLStrict(workflow.yaml);
   const allowCollections = supportsCollectionReads(services);
   const localIssues = inspectReadWorkflow(blueprint, services.registries.snapshot().tools, user.role, allowCollections);
@@ -55,7 +56,7 @@ export async function runVerifiedRead(workflow: Workflow, input: Record<string, 
   if (compilation.plan.ir.inputSchema && validateToolInput(compilation.plan.ir.inputSchema, input).length)
     return reply.status(422).send(fail("Workflow input does not meet its declared schema; no run was admitted", { code: "WORKFLOW_INPUT_INVALID", traceId }));
   const queue = queued ? readJobQueue(services) : null;
-  const admission = queued ? queue!.prepare(workflow, input, user, String((request.body as { idempotencyKey?: string }).idempotencyKey)) : null;
+  const admission = queued ? queue!.prepare(workflow, input, user, String((request.body as { idempotencyKey?: string }).idempotencyKey), retry) : null;
   const startedAt = new Date().toISOString(), executionId = `run-${randomBytes(8).toString("hex")}`;
   const bindingKey = collection ? readIterationBindingKey(services) : undefined;
   let iterationProgress: ReturnType<typeof newReadIterationLedger> | undefined;
@@ -70,11 +71,13 @@ export async function runVerifiedRead(workflow: Workflow, input: Record<string, 
       queue!.assertCapacity(state);
     }
     const current = state.workflows[workflow.id];
+    const retrySource = retry ? assertExecutionRetry(state, workflow, user, retry, input).link : undefined;
     if (!current || current.archived || current.yaml !== workflow.yaml || current.publishedVersion !== workflow.publishedVersion)
       throw new HandlerFailure(409, "Workflow changed during execution preflight", { code: "WORKFLOW_CHANGED" });
     const item = state.executions[executionId] = { id: executionId, workflowId: workflow.id, workflowName: workflow.name, status: queued ? "PENDING" : "RUNNING", startedAt, completedAt: null,
       durationMs: 0, tokens: { input: 0, output: 0, total: 0 }, costUsd: 0, startedBy: { id: user.id, name: user.name }, traceId,
       readProgress: newReadProgress(services.repository), stepOutputs: {},
+      ...(retrySource ? { retrySource } : {}),
       ...(iterationProgress ? { iterationProgress } : {}),
       ...(workflow.chatSessionId === undefined ? {} : { chatSessionId: workflow.chatSessionId }),
       workflowSnapshot: { version: workflow.publishedVersion, contentHash: workflowContentHash(workflow.yaml), registryHash,
@@ -87,6 +90,7 @@ export async function runVerifiedRead(workflow: Workflow, input: Record<string, 
     state.timelines[executionId] = []; state.executionLogs[executionId] = [];
     if (admission) queue!.store(state, item, admission);
     appendExecutionEvent(state, item, queued ? "run.queued" : "run.started", { profile, version: workflow.publishedVersion, persistence: item.readProgress.persistence });
+    if (retrySource) appendExecutionEvent(state, item, "run.retry_queued", { sourceExecutionId: retrySource.sourceExecutionId });
     state.auditLogs.push({ id: `audit-${randomBytes(8).toString("hex")}`, actor: { id: user.id, name: user.name },
       action: queued ? "execution.queued" : "execution.started", resource: { type: "execution", id: executionId },
       ipAddress: request.ip, userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : "",

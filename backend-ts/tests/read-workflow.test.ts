@@ -421,6 +421,17 @@ test("structure-aware authoring creates a publishable branch workflow that runs 
   expect(s.callTool.mock.calls.map(call => call[1].id)).toEqual(["no", "after"]); expect(s.queryWithTools).not.toHaveBeenCalled();
 });
 
+test.each([true, false])("v3 format without loops uses normal conditional checkpoints through SDK entry, enabled=%s", async enabled => {
+  const s = await setup({ provider: true }), source = parseWorkflowYAMLStrict(conditionalYAML());
+  (source.metadata!.controlFlow as { schemaVersion: string }).schemaVersion = "read-control-flow/v3";
+  await s.seed(stringify(source));
+  const response = await s.run({ input: { enabled } }); expect(response.statusCode, response.body).toBe(200);
+  expect(response.json().data).toMatchObject({ status: "DONE", workflowSnapshot: { executionProfile: "structured-read-v1", compilation: { schemaVersion: "workflow-read-ir/v3" } },
+    readProgress: { decisions: { gate: { status: "DONE", selected: enabled ? "then" : "else" } } } });
+  expect(s.callTool.mock.calls.map(call => call[1].id)).toEqual([enabled ? "yes" : "no", "after"]);
+  expect(s.queryWithTools).not.toHaveBeenCalled();
+});
+
 test.each([true, false])("conditional read chooses exactly one path with enabled=%s, preserves source indexes and records the other path as skipped", async enabled => {
   const s = await setup({ provider: true }); await s.seed(conditionalYAML());
   const response = await s.run({ input: { enabled } }); expect(response.statusCode, response.body).toBe(200);
@@ -699,6 +710,17 @@ function barrier() {
 
 class QueuePersistence extends ReadPersistence { readonly readQueueDurability = "encrypted-single-writer" as const; }
 const queuedInput = (key = "read-job-fixture-001", input = { invoiceId: "queued-invoice", api_key: "private-queue-secret" }) => ({ mode: "async-read", idempotencyKey: key, input });
+
+test("native read-job inputs stay in business fields, never enter the public execution and are erased on completion",async()=>{
+ const s=await setup();s.services.config.firestoreContentFormat="native-fields/v1";await s.seed();
+ const queue=readJobQueue(s.services),kick=vi.spyOn(queue,"kick").mockImplementation(()=>{});
+ const response=await s.run(queuedInput());expect(response.statusCode,response.body).toBe(202);const id=response.json().data.id;
+ const job=(await s.repository.snapshot()).readJobs[id]!;
+ expect(job.inputCiphertext).toBeUndefined();expect(job.inputFields).toMatchObject({version:1,executionId:id,input:{invoiceId:"queued-invoice",api_key:"private-queue-secret"}});
+ expect(response.body).not.toMatch(/inputFields|private-queue-secret/);
+ kick.mockRestore();queue.kick();expect((await waitForTerminal(s.repository,id)).status).toBe("DONE");
+ const saved=(await s.repository.snapshot()).readJobs[id]!;expect(saved.inputFields).toBeUndefined();expect(saved.inputCiphertext).toBeUndefined();expect(s.callTool).toHaveBeenCalledTimes(2);
+});
 
 test("read admission lookup recovers identity after draft changes without dispatch, replay or private fields", async () => {
   const s = await setup(); await s.seed(); vi.spyOn(readJobQueue(s.services), "kick").mockImplementation(() => {});

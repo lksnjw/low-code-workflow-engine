@@ -2,11 +2,132 @@
 import React from "react";
 import { test, expect, afterEach, jest } from "@jest/globals";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { ChatWorkspaceContext } from "./ChatWorkspaceContext";
 jest.unstable_mockModule("@xyflow/react", () => ({ MarkerType: { ArrowClosed: "arrow-closed" } }));
 const { default: ChatMessage } = await import("./ChatMessage");
-afterEach(cleanup);
+
+test("a saved workflow opens in the current workspace canvas without navigating to workflow details", () => {
+  const openWorkflow = jest.fn();
+  render(<MemoryRouter><ChatWorkspaceContext.Provider value={{ openWorkflow }}><ChatMessage message={{ role: "assistant", text: "Draft saved", artifacts: { intent: "WORKFLOW", workflowId: "saved", yaml: "name: Saved\nsteps: []" } }} /></ChatWorkspaceContext.Provider></MemoryRouter>);
+  fireEvent.click(screen.getByRole("button", { name: "Open in canvas" })); expect(openWorkflow).toHaveBeenCalledWith("saved");
+});
+afterEach(() => { cleanup(); localStorage.clear(); });
+
+test("an incomplete saved workflow offers clear in-place completion and requirements controls, never an OK approval", () => {
+  const openWorkflow = jest.fn(), openCanvasTools = jest.fn(), focusChat = jest.fn();
+  render(<MemoryRouter><ChatWorkspaceContext.Provider value={{ openWorkflow, openCanvasTools, focusChat }}><ChatMessage message={{ role: "assistant", text: "Draft saved", artifacts: {
+    intent: "WORKFLOW", workflowId: "unfinished", yaml: "name: Unfinished\nsteps: []\nmetadata:\n  unresolved_requirements:\n    - Confirm the reporting timezone\n", validation: { passed: false },
+  } }} /></ChatWorkspaceContext.Provider></MemoryRouter>);
+  expect(screen.getByRole("region", { name: "Complete workflow draft" }).textContent).toContain("no approval to confirm");
+  fireEvent.click(screen.getByRole("button", { name: "Complete in chat" }));
+  expect(openWorkflow).toHaveBeenCalledWith("unfinished"); expect(focusChat).toHaveBeenCalledTimes(1); expect(openCanvasTools).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Review draft requirements" })); expect(openCanvasTools).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("button", { name: /^(OK|Approve|Confirm and execute)$/ })).toBeNull();
+});
+
+test("busy or read-only incomplete workflow guidance cannot change selection or focus", () => {
+  const openWorkflow = jest.fn(), focusChat = jest.fn();
+  render(<MemoryRouter><ChatWorkspaceContext.Provider value={{ openWorkflow, focusChat }}><ChatMessage busy message={{ role: "assistant", text: "Saved", artifacts: { intent: "WORKFLOW", workflowId: "unfinished", yaml: "name: Empty\nsteps: []" } }} /></ChatWorkspaceContext.Provider></MemoryRouter>);
+  const button = screen.getByRole("button", { name: "Complete in chat" }); expect(button.disabled).toBe(true); fireEvent.click(button);
+  expect(openWorkflow).not.toHaveBeenCalled(); expect(focusChat).not.toHaveBeenCalled();
+});
+
+test("a valid nonempty workflow does not show incomplete-draft guidance", () => {
+  render(<MemoryRouter><ChatMessage message={{ role: "assistant", text: "Saved", artifacts: { intent: "WORKFLOW", workflowId: "saved", yaml: "name: Saved\nsteps:\n  - {id: read, action: get_company}\n", validation: { passed: true } } }} /></MemoryRouter>);
+  expect(screen.queryByRole("region", { name: "Complete workflow draft" })).toBeNull();
+});
+
+test("whole-workflow proposal opens the existing canvas review controls without importing or executing a duplicate", () => {
+  const openWorkflow = jest.fn(), openCanvasTools = jest.fn();
+  render(<MemoryRouter><ChatWorkspaceContext.Provider value={{ openWorkflow, openCanvasTools }}><ChatMessage message={{ role: "assistant", text: "I've prepared the requested change.", artifacts: {
+    intent: "WORKFLOW_PATCH_PROPOSAL", workflowId: "saved", proposal: { id: "proposal", scope: "workflow", workflowId: "saved", status: "PROPOSED", summary: "Show the directory here.", before: { name: "Directory" }, after: { name: "Directory" }, validation: { passed: true } },
+  } }} /></ChatWorkspaceContext.Provider></MemoryRouter>);
+  expect(screen.getByRole("region", { name: "Workflow change review" })).toBeTruthy();
+  expect(screen.getByText("Proposed · saved draft unchanged")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Review and apply in canvas" }));
+  expect(openWorkflow).toHaveBeenCalledWith("saved"); expect(openCanvasTools).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Generated YAML")).toBeNull(); expect(screen.queryByText("Pass to Canvas")).toBeNull();
+});
+
+test.each(["APPLIED", "DISCARDED"])("a resolved whole-workflow %s proposal never offers Apply again", status => {
+  render(<MemoryRouter><ChatMessage message={{ role: "assistant", text: "Recorded change review", artifacts: { intent: "WORKFLOW_PATCH_PROPOSAL", proposal: {
+    scope: "workflow", workflowId: "saved", status, appliedVersion: 2, summary: "Requested change", validation: { passed: true },
+  } } }} /></MemoryRouter>);
+  expect(screen.queryByRole("button", { name: "Review and apply in canvas" })).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain(status === "APPLIED" ? "not published or run" : "unchanged");
+});
+
+test("saved-workflow run handoff opens review controls and does not claim execution", () => {
+  const openWorkflow = jest.fn(), openCanvasTools = jest.fn();
+  render(<MemoryRouter><ChatWorkspaceContext.Provider value={{ openWorkflow, openCanvasTools }}><ChatMessage message={{ role: "assistant", text: "Review the saved workflow before starting.", artifacts: {
+    intent: "WORKFLOW_CONTROL", workflowControl: { profile: "workflow-control-handoff/v1", action: "run", workflowId: "saved", name: "Directory" },
+  } }} /></ChatWorkspaceContext.Provider></MemoryRouter>);
+  expect(screen.getByRole("status").textContent).toContain("no command executed");
+  fireEvent.click(screen.getByRole("button", { name: "Review run in canvas" }));
+  expect(openWorkflow).toHaveBeenCalledWith("saved"); expect(openCanvasTools).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Generated YAML")).toBeNull();
+});
+
+test.each([true, false])("missing ERP reads shows truthful recovery based on current review permission (%s)", canManageErpAccess => {
+  render(<MemoryRouter><ChatMessage canManageErpAccess={canManageErpAccess} message={{ role: "assistant", text: "No read tool is available.", artifacts: {
+    code: "NO_APPROVED_READ_TOOLS", toolsDispatched: false,
+    accessRecovery: { profile: "erp-read-access-recovery/v1", canReview: true, automaticGrant: false },
+  } }} /></MemoryRouter>);
+  expect(screen.getByRole("note", { name: "ERP tool access" }).textContent).toContain("ERP request not run");
+  expect(Boolean(screen.queryByRole("button", { name: "Review ERP tool access" }))).toBe(canManageErpAccess);
+  expect(screen.queryByText("Generated YAML")).toBeNull();
+});
+
+test("administrator ERP access recovery opens the existing review page, not an automatic approval", () => {
+  render(<MemoryRouter><Routes><Route path="/" element={<ChatMessage canManageErpAccess message={{ role: "assistant", text: "Review required", artifacts: { code: "NO_APPROVED_READ_TOOLS" } }} />} />
+    <Route path="/registry/tools" element={<p>Current ERP tool review page</p>} /></Routes></MemoryRouter>);
+  fireEvent.click(screen.getByRole("button", { name: "Review ERP tool access" }));
+  expect(screen.getByText("Current ERP tool review page")).toBeTruthy();
+});
+
+test.each([true, false])("a stored-document retrieval blocker offers contract review only to an administrator (%s)", canManageErpAccess => {
+  render(<MemoryRouter><ChatMessage canManageErpAccess={canManageErpAccess} message={{ role: "assistant", text: "Document retrieval needs review.", artifacts: { intent: "WORKFLOW_ERROR", code: "DOCUMENT_BRIDGE_REVIEW_REQUIRED", can_execute: false } }} /></MemoryRouter>);
+  expect(screen.getByRole("note", { name: "Document retrieval access" }).textContent).toContain("Document stored");
+  expect(Boolean(screen.queryByRole("button", { name: "Review ERP document access" }))).toBe(canManageErpAccess);
+  expect(screen.queryByRole("button", { name: /^(OK|Approve|Confirm and execute)$/ })).toBeNull(); expect(screen.queryByText("Generated YAML")).toBeNull();
+});
+
+test("same-chat recall is labelled as historical context, not a fresh ERP result or workflow change", () => {
+  render(<MemoryRouter><ChatMessage message={{ role: "assistant", text: "Your earlier question was about invoices.", artifacts: {
+    intent: "CONVERSATION", conversationRecall: { profile: "chat-history-recall/v1", messageIds: ["earlier"] }, toolsDispatched: false,
+  } }} /></MemoryRouter>);
+  expect(screen.getByText(/Earlier messages recalled from this conversation/)).toBeTruthy();
+  expect(screen.queryByText(/Saved tool responses/)).toBeNull(); expect(screen.queryByText("Generated YAML")).toBeNull();
+});
+
+test("conversation and workflow explanations have a normal assistant presentation without fake read results or workflow mutations", () => {
+  render(<MemoryRouter><ChatMessage message={{ role: "assistant", text: "This workflow checks the company directory and pages through units of measure.", artifacts: {
+    intent: "WORKFLOW_DISCUSSION", discussion: { profile: "workflow-discussion/v1", draftVersion: 1 }, toolsDispatched: false,
+  } }} /></MemoryRouter>);
+  expect(screen.getByRole("status").textContent).toBe("Workflow explanation · draft v1 · Explanation only");
+  expect(screen.queryByText(/No confirmed ERP data/)).toBeNull();
+  expect(screen.queryByText(/Saved tool responses/)).toBeNull(); expect(screen.queryByRole("button", { name: "Open Workflow" })).toBeNull();
+});
+
+test.each([true, false])("input correction feedback is distinct from ERP execution (requested=%s)", correctionRequested => {
+  const { container } = render(<MemoryRouter><ChatMessage message={{ role: "assistant", text: "Read result.", artifacts: { intent: "QUERY",
+    proposalCorrections: [{ toolName: "directory_lookup", reason: "ARGUMENT_SCHEMA", status: "NOT_DISPATCHED", correctionRequested }],
+    toolSteps: [{ toolName: "directory_lookup", arguments: { recipients: ["a@example.test"] }, status: "SUCCEEDED", result: [{ email: "a@example.test" }] }],
+  } }} /></MemoryRouter>);
+  expect(screen.getByRole("region", { name: "Tool input checks" }).textContent).toContain("These proposals were not sent to ERPBridge");
+  expect(screen.getByText(correctionRequested ? "Tool input correction requested" : "Tool input correction stopped")).toBeTruthy();
+  expect(screen.getByText(/Confirmed read response/)).toBeTruthy();
+  expect(container.textContent).not.toMatch(/\bpi\b/i);
+  expect(container.textContent).not.toContain("[object Object]");
+});
+
+test.each(["saved-report", undefined])("historical YAML %s cannot offer an unscoped save from another workflow's cached handoff", workflowId => {
+  localStorage.setItem("workflow.pendingChatEdit", JSON.stringify({ workflowId: "unrelated", workflowName: "Other workflow" }));
+  render(<MemoryRouter><ChatMessage message={{ role: "assistant", text: "Saved historical answer", artifacts: { intent: "WORKFLOW", ...(workflowId ? { workflowId } : {}), yaml: "name: Historical\nsteps: []", validation: { passed: true } } }} /></MemoryRouter>);
+  expect(screen.queryByRole("button", { name: "Save Changes", exact: true })).toBeNull();
+  if (workflowId) expect(screen.getByRole("button", { name: "Open Workflow", exact: true })).toBeTruthy();
+});
 
 test.each([
   ["deny", "LOCAL_POLICY_RESPONSE_INVALID", "Check failed"], ["deny", "LOCAL_POLICY_PROVIDER_FAILED", "Check failed"],
@@ -108,10 +229,4 @@ test("historical chat exposes saved structured/attachment/failure receipts even 
   expect(screen.getByText("Saved tool responses · 2")).toBeTruthy(); expect(screen.getByText("Invoice id")).toBeTruthy(); expect(screen.getByText("INV-7")).toBeTruthy();
   expect(screen.getByText("details · Failure response")).toBeTruthy(); expect(screen.getByText("Rate limit reached")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Show image attachment" })).toBeTruthy(); expect(container.querySelector("img,pre")).toBeNull();
-});
-
-test("a saved workflow opens in the current workspace canvas without navigating to workflow details", () => {
-  const openWorkflow = jest.fn();
-  render(<MemoryRouter><ChatWorkspaceContext.Provider value={{ openWorkflow }}><ChatMessage message={{ role: "assistant", text: "Draft saved", artifacts: { intent: "WORKFLOW", workflowId: "saved", yaml: "name: Saved\nsteps: []" } }} /></ChatWorkspaceContext.Provider></MemoryRouter>);
-  fireEvent.click(screen.getByRole("button", { name: "Open in canvas" })); expect(openWorkflow).toHaveBeenCalledWith("saved");
 });

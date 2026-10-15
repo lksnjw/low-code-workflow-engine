@@ -23,7 +23,7 @@ const yaml = 'name: Report\ndescription: Read report\ntrigger:\n  type: manual\n
 const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())); });
 
-async function setup(timeoutMs = 30_000) {
+async function setup(timeoutMs = 30_000, deferredBridge = false) {
   const config = { ...loadConfig({ APP_ENV: "test", JWT_SECRET: "model-selection-secret-at-least-32-bytes", STORAGE_DRIVER: "memory", MCP_MODE: "mock" }), generationTimeoutMs: timeoutMs, erpbridgeRoleMap: { "Platform Admin": "admin" } };
   const repository = new Repository(), timestamp = new Date().toISOString();
   await repository.mutate((state) => {
@@ -41,7 +41,7 @@ async function setup(timeoutMs = 30_000) {
     let content = "Confirmed fixture read.", tool_calls;
     if (system.includes("WORKFLOW DRAFT SYNTHESIS")) content = yaml;
     else if (system.includes("ONE SELECTED NODE PATCH")) content = '{"description":"Reviewed"}';
-    else if (system.includes("WORKFLOW MODIFICATION PROPOSAL")) content = yaml.replace("name: Report", "name: Changed");
+    else if (system.includes("NATURAL SAVED-WORKFLOW EDIT")) content = JSON.stringify({ kind: "proposal", yaml: yaml.replace("name: Report", "name: Changed"), summary: "Renamed the saved workflow." });
     else if (!body.messages.some((message: { role: string }) => message.role === "tool")) {
       content = ""; tool_calls = [{ id: "read-one", type: "function", function: { name: "demo.echo", arguments: '{"value":"fixture"}' } }];
     }
@@ -51,17 +51,39 @@ async function setup(timeoutMs = 30_000) {
   const callTool = vi.fn(async () => ({ content: [], structuredContent: { value: "fixture" } }));
   const bridge = await createErpbridgeMcpSession({ baseURL: "https://bridge.example.invalid", token: "fixture", timeoutMs: 1000, validator,
     sdkClient: { connect: async () => {}, close: async () => {}, listTools: async () => registries.snapshot().tools.map((tool) => ({ name: tool.mcp_tool_name, inputSchema: tool.input_schema })), callTool } });
-  const app = await buildApp({ config, repository, registries, validator, executor, providerRuntime: runtime, synthesis: new SynthesisService(runtime, registries, validator), erpbridgeSession: bridge }); apps.push(app);
+  let connected = !deferredBridge;
+  const ensureSession = vi.fn(async () => { connected = true; });
+  const app = await buildApp({ config, repository, registries, validator, executor, providerRuntime: runtime, synthesis: new SynthesisService(runtime, registries, validator),
+    get erpbridgeSession() { return connected ? bridge : undefined; },
+    ...(deferredBridge ? { mcpConnectionRuntime: { ensureSession, admissionConfigurationBinding: bridge.admissionBinding,
+      primaryConnectionId: "erpbridge-default", hasConnection: (id: string) => id === "erpbridge-default",
+      sessionFor: () => connected ? bridge : undefined, roleMapFor: () => config.erpbridgeRoleMap } as any } : {}) }); apps.push(app);
   const headers = (id = "admin") => ({ authorization: `Bearer ${jwt.sign({}, config.jwtSecret, { algorithm: "HS256", subject: id, expiresIn: 3600 })}` });
   const chat = await app.inject({ method: "POST", url: "/api/chat/sessions", headers: headers(), payload: { title: "Model check" } });
   const sessionId = chat.json().data.id;
   const send = (content: string, extra: Record<string, unknown> = {}) => app.inject({ method: "POST", url: `/api/chat/sessions/${sessionId}/messages`, headers: headers(), payload: { content, ...extra } });
-  return { app, repository, registries, runtime, fetchImplementation, callTool, headers, sessionId, send };
+  return { app, repository, registries, runtime, fetchImplementation, callTool, headers, sessionId, send, ensureSession };
 }
+
+test.each([false, true])("selected model preserves deferred ERP discovery for synchronous/queued authoring (queued=%s)", async queued => {
+  const s = await setup(30000, true);
+  const r = await s.send("Create a workflow to read invoices", { model: "model-b", ...(queued ? { delivery: "async-chat", idempotencyKey: "deferred-erp-workflow-regression-001" } : {}) });
+  expect(r.statusCode, r.body).toBe(queued ? 202 : 200);
+  if (queued) await vi.waitFor(async () => {
+    const operations = Object.values((await s.repository.snapshot()).chatOperations);
+    expect(operations).toHaveLength(1); expect(operations[0]?.status).toBe("ANSWERED");
+  }, { timeout: 3500 });
+  expect(s.ensureSession).toHaveBeenCalled();
+  const synthesis = s.fetchImplementation.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))
+    .find(wire => wire.messages[0].content.includes("WORKFLOW DRAFT SYNTHESIS"));
+  expect(synthesis).toBeDefined();
+  expect(JSON.parse(synthesis.messages[1].content).TOOL_REGISTRY_JSON.map((tool: { name: string }) => tool.name)).toContain("demo.echo");
+  expect(s.callTool).not.toHaveBeenCalled();
+});
 
 test.each(["Show me invoices", "Execute the read operation", "Get invoice details and email them to manager@example.test", "Create a workflow to read invoices", "Modify the workflow name"])("selected model reaches the correct chat path: %s", async (content) => {
   const s = await setup();
-  const result = await s.send(content, { model: "model-b", workflowContext: { name: "Report", yaml } });
+  const result = await s.send(content, { model: "model-b", workflowContext: { workflowId: "report", baseVersion: 1, baseHash: workflowContentHash(yaml) } });
   expect(result.statusCode, result.body).toBe(200);
   expect(s.fetchImplementation.mock.calls.length).toBeGreaterThan(0);
   expect(s.fetchImplementation.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).model)).toEqual(s.fetchImplementation.mock.calls.map(() => "model-b"));
@@ -81,6 +103,14 @@ test("selected-node proposal uses and persists the same session selection withou
   expect(JSON.parse(String(s.fetchImplementation.mock.calls[0]?.[1]?.body)).model).toBe("model-b");
   expect((await s.repository.snapshot()).workflows.report?.yaml).toBe(yaml);
   expect((await s.repository.snapshot()).chats[s.sessionId]?.selectedModel).toBe("model-b");
+});
+
+test("legacy client YAML is not an authoritative saved-workflow selector or permission to create an unrelated draft", async () => {
+  const s = await setup(), before = await s.repository.snapshot();
+  const result = await s.send("Modify the workflow name", { model: "model-b", workflowContext: { name: "Report", yaml } });
+  expect(result.statusCode).toBe(200); expect(result.json().data.assistantMessage.artifacts).toMatchObject({ intent: "CONVERSATION", needsClarification: true, toolsDispatched: false });
+  expect(s.fetchImplementation).not.toHaveBeenCalled(); expect(s.callTool).not.toHaveBeenCalled();
+  expect((await s.repository.snapshot()).workflows).toEqual(before.workflows);
 });
 
 test("direct synthesis respects selection and invalid model fails before a provider call", async () => {
@@ -149,7 +179,7 @@ test.each(["Show me invoices", "Execute the read operation", "Create a workflow 
     if (body.messages.some((message: { role: string }) => message.role === "tool") || !body.tools) await s.repository.mutate((state) => { state.users.admin!.status = "Disabled"; });
     return response;
   });
-  const result = await s.send(content, { model: "model-b", workflowContext: { name: "Report", yaml } });
+  const result = await s.send(content, { model: "model-b", workflowContext: { workflowId: "report", baseVersion: 1, baseHash: workflowContentHash(yaml) } });
   expect(result.statusCode, result.body).toBe(403);
   expect((await s.repository.snapshot()).chats[s.sessionId]?.messages).toHaveLength(1);
   expect(Object.keys((await s.repository.snapshot()).workflows)).toEqual(["report"]);

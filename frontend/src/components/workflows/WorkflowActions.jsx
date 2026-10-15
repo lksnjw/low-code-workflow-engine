@@ -16,7 +16,7 @@ import GateRejectionAlert from "./GateRejectionAlert";
  *
  * Performs the Workflow Actions operation on actions for the WorkflowActions module.
  ******************************************************************************/
-function WorkflowActions({ workflow, onChanged }) {
+function WorkflowActions({ workflow, onChanged, showRun = true }) {
   const { notify } = useNotifications();
   const { navigateTo } = useRoute();
   const { has, hasAny } = usePermissions();
@@ -64,8 +64,12 @@ function WorkflowActions({ workflow, onChanged }) {
     try {
       const execution = await executionService.run(workflow.id, input);
       setRunDialogOpen(false);
-      notify(`Execution ${execution.id} finished with status ${execution.status}.`, execution.status === "DONE" ? "success" : "warning");
-      await onChanged?.();
+      const terminal = ["DONE", "FAILED", "CANCELLED"].includes(execution.status);
+      notify(terminal ? `Execution ${execution.id} finished with status ${execution.status}.`
+        : `Execution ${execution.id} accepted with status ${execution.status}. Open Execution History to follow its progress.`, execution.status === "DONE" ? "success" : terminal ? "warning" : "info");
+      // A list refresh cannot invalidate a known admission or imply a retry.
+      try { await onChanged?.(); }
+      catch { notify(`Execution ${execution.id} was recorded, but this list could not refresh. Open Execution History to review it.`, "warning"); }
     } catch (error) {
       const details = apiErrorDetails(error, "Workflow run failed.");
       setRunError(details);
@@ -116,7 +120,7 @@ function WorkflowActions({ workflow, onChanged }) {
   return (
     <>
       <WorkflowActionControls
-        canRun={hasAny(["workflow:run", "workflow:run_own"])}
+        canRun={showRun && hasAny(["workflow:run", "workflow:run_own"])}
         canExport={has("workflow:write")}
         canDelete={has("workflow:write")}
         running={running}

@@ -34,6 +34,17 @@ test("open contract role property remains business data; unsupported schema and 
   expect(() => bridgeTransportSchema({ ...tool, input_schema: open.input_schema })).toThrow(/reserve/);
   expect(matchesBridgeContract({ ...tool, input_schema: { type: "object", allOf: [] } }, remote)).toBe(false);
 });
+
+test("reviewed read aliases retain the exact digest and schema without inventing a versioned name", () => {
+  const alias = toolSchema.parse({ ...tool, bridge_contract: { ...tool.bridge_contract!, selector: "digest-pinned-alias" } });
+  const descriptor = { ...remote, name: "erp.read", _meta: { ...remote._meta, "toolplane.serving": true } };
+  expect(exactBridgeName(alias)).toBe("erp.read");
+  expect(matchesBridgeContract(alias, descriptor)).toBe(true);
+  expect(matchesBridgeContract(alias, { ...descriptor, _meta: { ...descriptor._meta, "toolplane.serving": false } })).toBe(false);
+  expect(matchesBridgeContract(alias, { ...descriptor, annotations: { readOnlyHint: false } })).toBe(false);
+  expect(matchesBridgeContract(alias, { ...descriptor, _meta: { ...descriptor._meta, "toolplane.resourceDigest": "b".repeat(64) } })).toBe(false);
+  expect(matchesBridgeContract(alias, { ...descriptor, outputSchema: { type: "array" } })).toBe(false);
+});
 test("list change generation invalidates the session cache; an in-flight changed inventory is not admitted", async () => {
   let generation = 0, tools = [remote], calls = 0, changeDuringList = false;
   const session = { requiresReviewedRevision: true, get discoveryGeneration() { return generation; }, listTools: async () => { calls++; if (changeDuringList) generation++; return tools; } } as unknown as ErpbridgeMcpSession;

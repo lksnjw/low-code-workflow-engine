@@ -30,7 +30,7 @@ test("blocked or failed attempts are not successful outputs", () => {
   expect(outcome.result.logs[0]?.level).toBe("error");
 });
 
-test.each(["unknown", "missing", "wrong-type", "array-coercion"])("%s proposal never reaches governance or dispatch", async (scenario) => {
+test.each(["unknown", "missing", "wrong-type", "array-coercion"])("%s repeated invalid proposal stops after one bounded correction and never reaches governance or dispatch", async (scenario) => {
   const queryWithTools = vi.fn(async () => ({ text: "I will do it", toolCalls: [{ id: "call1", name: scenario === "unknown" ? "unknown" : "finance.read",
     arguments: scenario === "missing" ? {} : { id: scenario === "wrong-type" ? 1 : scenario === "array-coercion" ? ["x"] : "x" } }], stopReason: "tool_calls", inputTokens: 1, outputTokens: 1 }));
   const dispatch = vi.fn(), policy = vi.fn();
@@ -39,7 +39,8 @@ test.each(["unknown", "missing", "wrong-type", "array-coercion"])("%s proposal n
   expect(output.blocked).toBe(true);
   expect(dispatch).not.toHaveBeenCalled();
   expect(policy).not.toHaveBeenCalled();
-  expect(queryWithTools).toHaveBeenCalledTimes(1);
+  expect(queryWithTools).toHaveBeenCalledTimes(2);
+  expect(JSON.stringify(queryWithTools.mock.calls)).toContain("NOT_DISPATCHED");
 });
 
 test("callback failure halts automatic model retry and following calls", async () => {

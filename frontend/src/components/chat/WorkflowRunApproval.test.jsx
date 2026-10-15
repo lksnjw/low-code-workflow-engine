@@ -27,7 +27,8 @@ test("chat and canvas share one lazy exact review without navigating or running 
   expect(executionService.getApproval).not.toHaveBeenCalled();
   expect(screen.getAllByRole("button", { name: "Review transaction" })).toHaveLength(2);
   await open();
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getAllByRole("region", { name: "Workflow transaction approval" })).toHaveLength(1);
   expect(executionService.getApproval).toHaveBeenCalledWith("run", undefined, { signal: expect.any(AbortSignal) });
   expect(screen.getByRole("button", { name: "Record approval" }).disabled).toBe(true);
   expect(screen.getByText("LOCAL test customer")).toBeTruthy();
@@ -64,12 +65,23 @@ test("rejection remains a separate confirmed decision in the same workspace", as
   await waitFor(() => expect(reject).toHaveBeenCalledTimes(1));
 });
 
-test("the dialog remains available when its canvas is hidden in Chat only", async () => {
+test("the inline review remains available when its canvas is hidden in Chat only", async () => {
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Workspace tools", exact: true }));
   fireEvent.click(screen.getByRole("button", { name: "Chat only", exact: true }));
   expect(screen.getByTestId("workspace-canvas-pane").hidden).toBe(true);
-  await open("chat"); expect(screen.getByRole("dialog", { name: "Workflow transaction approval" })).toBeTruthy();
+  await open("chat"); expect(screen.getByRole("region", { name: "Workflow transaction approval" })).toBeTruthy();
+});
+
+test("switching panes keeps one visible inline review and requires fresh consent", async () => {
+  mount(); await open("chat"); fireEvent.click(screen.getByRole("checkbox", { name: /I reviewed these exact details/ }));
+  expect(screen.getByRole("button", { name: "Record approval" }).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Workspace tools", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Canvas only", exact: true }));
+  expect(screen.getAllByRole("region", { name: "Workflow transaction approval" })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Record approval" }).disabled).toBe(true);
+  expect(executionService.getApproval).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog", { name: "Workflow transaction approval" })).toBeNull();
 });
 
 test("permission failure never leaves old arguments or an enabled decision behind", async () => {
@@ -102,9 +114,25 @@ test("the next checkpoint in the same run cannot reuse the earlier approved revi
   executionService.getApproval.mockResolvedValue({ ...exact, runtimeApproval: { ...exact.runtimeApproval, state: "APPROVED", canDecide: false } });
   const view = render(<WorkflowRunApproval execution={previous} />);
   fireEvent.click(screen.getByRole("button", { name: "Review transaction" }));
-  await screen.findByText("Human review · approved");
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Workflow human approval — canvas" })).toBeNull());
   view.rerender(<WorkflowRunApproval execution={{ ...run, pendingApproval: { stepId: "update", requestedAt: "2026-10-17T11:00:00Z" } }} />);
   expect(screen.queryByRole("dialog")).toBeNull(); expect(screen.queryByText("Human review · approved")).toBeNull();
   expect(screen.getByText("Human approval needed")).toBeTruthy();
   expect(executionService.getApproval).toHaveBeenCalledTimes(1);
+});
+
+test("completed runs do not retain consumed review banners in either pane", () => {
+  mount({ execution: { ...run, status: "DONE" } });
+  expect(screen.queryByRole("region", { name: "Workflow human approval — chat" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Workflow human approval — canvas" })).toBeNull();
+  expect(executionService.getApproval).not.toHaveBeenCalled();
+});
+
+test("acknowledged decisions close the inline review before background execution finishes", async () => {
+  jest.spyOn(executionService, "approve").mockResolvedValue(receipt);
+  mount(); await open();
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Record approval" }));
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Workflow transaction approval" })).toBeNull());
+  expect(screen.queryByRole("button", { name: "Review transaction" })).toBeNull();
 });

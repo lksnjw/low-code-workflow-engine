@@ -76,6 +76,8 @@ import { isMcpConfigured } from "../config/config.js";
 import { EXECUTION_QUERY_UNHANDLED, handleExecutionQueryRoute } from "./handlers/execution-queries.js";
 import { handleNotificationRoute, NOTIFICATION_UNHANDLED } from "./handlers/notifications.js";
 import { handlePipelineGatewayRoute, PIPELINE_GATEWAY_UNHANDLED } from "./handlers/pipeline-gateway.js";
+import { handleChatDocumentRoute, CHAT_DOCUMENTS_UNHANDLED } from "./handlers/chat-documents.js";
+import { handleRagPolicyRoute, RAG_POLICY_UNHANDLED } from "./handlers/rag-policy.js";
 import { bindExecutionHost, type ExecutionHostMode } from "../runner/execution-host.js";
 
 const publicRoutes = new Set([
@@ -278,14 +280,19 @@ export async function buildApp(
           return handleRoute(route, request, reply, services);
         const params = request.params as Record<string, unknown>;
         const family = route.path.split("/")[2] ?? route.path;
-        const key = `${family}:${String(params?.id ?? params?.userId ?? "collection")}`;
+        // Attachment storage/OCR and model previews are independent of chat.
+        // Keep same-document mutations serialized without holding the chat
+        // lane for an upstream upload or a slow inference.
+        const key = route.path.includes("/attachments")
+          ? `chat-document:${String(params?.id)}:${String(params?.uploadId ?? (route.path.endsWith("/preview") ? "preview" : "uploads"))}`
+          : `${family}:${String(params?.id ?? params?.userId ?? "collection")}`;
         return resourceMutations.run(key, () => handleRoute(route, request, reply, services));
       },
     });
   }
-  if (routeTable.length !== 209)
+  if (routeTable.length !== 233)
     throw new Error(
-      `route table has ${routeTable.length} routes, expected 209`,
+      `route table has ${routeTable.length} routes, expected 233`,
     );
   return app;
 }
@@ -401,6 +408,20 @@ async function handleRoute(
     }
   }
 
+  return services.userMcpCredentials && current
+    ? services.userMcpCredentials.requestScope(current.id, authorizedRoute)
+    : authorizedRoute();
+  async function authorizedRoute(): Promise<unknown> {
+  if (route.path.startsWith(`${services.config.apiBasePath}/profile/erp-connections`)) {
+    const credentials = services.userMcpCredentials;
+    if (!credentials) return reply.status(503).send(fail("Per-user ERP connections are unavailable on this backend", { code: "ERP_CREDENTIAL_UNAVAILABLE" }));
+    const id = String((request.params as Record<string, unknown>).id ?? "");
+    const value = route.method === "GET" ? await credentials.list(current!.id)
+      : route.method === "PUT" ? await credentials.save(current!.id, id, request.body)
+      : route.method === "DELETE" ? await credentials.remove(current!.id, id, request.body)
+      : await credentials.test(current!.id, id, request.body);
+    return reply.send(ok(value, "Your ERP connection settings were loaded or updated", null));
+  }
   if (route.path === `${services.config.apiBasePath}/auth/logout`)
     return logout(request, reply, services);
   if (route.path === `${services.config.apiBasePath}/auth/me`)
@@ -433,16 +454,8 @@ async function handleRoute(
     return validateWorkflowRoute(request, reply, current!, services);
   if (route.path === `${services.config.apiBasePath}/workflows/:id/run`)
     return runWorkflow(request, reply, current!, services);
-  if (
-    route.path === `${services.config.apiBasePath}/registry/tools` &&
-    route.method === "GET"
-  )
-    return reply.send(
-      ok(services.registries.snapshot().tools, "Tool registry loaded", {
-        count: services.registries.snapshot().tools.length,
-        registryHash: services.registries.hash(),
-      }),
-    );
+  if (route.path === `${services.config.apiBasePath}/registry/tools` && route.method === "GET")
+    return handleRegistryRoute(route, request, reply, current!, services);
   if (
     route.path === `${services.config.apiBasePath}/registry/rules` &&
     route.method === "GET"
@@ -461,6 +474,10 @@ async function handleRoute(
   if (workflowSchedule !== WORKFLOW_SCHEDULE_UNHANDLED) return workflowSchedule;
   const notification = await handleNotificationRoute(route, request, reply, current!, services);
   if (notification !== NOTIFICATION_UNHANDLED) return notification;
+  const chatDocument = await handleChatDocumentRoute(route, request, reply, current!, services);
+  if (chatDocument !== CHAT_DOCUMENTS_UNHANDLED) return chatDocument;
+  const ragPolicy = await handleRagPolicyRoute(route, request, reply, current!, services);
+  if (ragPolicy !== RAG_POLICY_UNHANDLED) return ragPolicy;
   const pipelineGateway = await handlePipelineGatewayRoute(route, request, reply, current!, services);
   if (pipelineGateway !== PIPELINE_GATEWAY_UNHANDLED) return pipelineGateway;
   if (
@@ -544,6 +561,7 @@ async function handleRoute(
     return uploadExecutionResult;
 
   return genericRoute(route, request, reply, current, services);
+  }
 }
 
 /*******************************************************************************

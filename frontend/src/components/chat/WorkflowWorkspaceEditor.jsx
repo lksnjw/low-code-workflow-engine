@@ -40,6 +40,10 @@ import PublishedWorkflowRunForm from "./PublishedWorkflowRunForm";
 import WorkflowRunApproval from "./WorkflowRunApproval";
 import ProtectedGroupInspector, { ProtectedWrapForm } from "./ProtectedGroupInspector";
 import { flowProtectedGroups, isOperationProfile, protectedChatUnavailable, protectedGroupPatchVersion } from "./protectedFlow";
+import WorkflowRunDialog from "../workflows/WorkflowRunDialog";
+import WorkflowDialog from "../workflows/WorkflowDialog";
+import WorkflowFixButton from "./WorkflowFixButton";
+import WorkflowResults from "../workflows/WorkflowResults";
 
 const button = "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800";
 const input = "w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-gray-700 dark:bg-darkBackground";
@@ -133,7 +137,7 @@ function NodeInspector({ node, canEdit, busy, onPreview, sessionId, context, onP
   </aside>;
 }
 
-export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId, canEdit = false, canControl = false, simple = false, initialSelectedNodeId = "", selectionStorageKey, onChatChanged, savedProposals = [], onNodeContext, onWorkflowContext, onFocusChat }) {
+export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId, canEdit = false, canControl = false, simple = false, viewReset, initialSelectedNodeId = "", selectionStorageKey, onChatChanged, savedProposals = [], onNodeContext, onWorkflowContext, onFocusChat }) {
   const workspace = useChatWorkspace();
   const docked = Boolean(simple && workspace);
   const inspectorRef = useRef(null);
@@ -149,6 +153,8 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
   const [run, setRun] = useState(null), [timeline, setTimeline] = useState([]), [runInput, setRunInput] = useState({});
   const [submittingRun, setSubmittingRun] = useState(false);
   const [unconfirmedRun, setUnconfirmedRun] = useState(false);
+  const runPending = useRef(false);
+  const [showRunDialog, setShowRunDialog] = useState(false), [showSaveDialog, setShowSaveDialog] = useState(false), [showResults, setShowResults] = useState(false);
   const recovery = useRunAdmissionRecovery(workflowId, actorId);
   const exactRun = recovery.denied ? null : recovery.run || (recovery.pending ? null : run);
   const monitor = useExecutionMonitor(exactRun?.id, { enabled: exactRun?.readProgress?.profile === "read-progress-v1" || isActiveExecution(exactRun?.status) });
@@ -224,7 +230,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       onProposal: setProposal, clear: () => { setSelected(""); writeWorkspaceValue(selectionStorageKey ? `${selectionStorageKey}.node` : null, ""); } } : null);
     return () => onNodeContext?.(null);
   }, [onNodeContext, canEdit, workflowId, sessionId, nodeId, nodeLabel, version, contentHash, contextPending, selectionStorageKey, protectedGroup, groupChatSupported]);
-  const pendingProposal = (proposal && !resolvedProposals.includes(proposal.id) ? proposal : null) || savedProposals.findLast((item) => item.workflowId === workflowId && item.status === "PROPOSED" && item.baseVersion === record?.version && item.baseHash === record?.contentHash && !resolvedProposals.includes(item.id));
+  const pendingProposal = (proposal && !resolvedProposals.includes(proposal.id) ? proposal : null) || savedProposals.findLast((item) => item.workflowId === workflowId && item.status === "PROPOSED" && (item.scope === "workflow" || item.baseVersion === record?.version && item.baseHash === record?.contentHash) && !resolvedProposals.includes(item.id));
   const modelInsertionDisabled = busy || record?.readinessUnknown || Boolean(pendingProposal) || !placementModel.valid || modelInsertionStale || !supportsModelInsertion;
   const staleProposal = pendingProposal && (pendingProposal.baseVersion !== version || pendingProposal.baseHash !== contentHash);
   const select = id => {
@@ -281,30 +287,67 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
     const target = placementModel.placements.find(item => item.scopeKey === scopeKey && item.beforeNodeId === beforeId);
     return target ? <FlowPlacementPoint key={target.key} target={target} model={placementModel} moving={moving} revision={{ workflowId, baseVersion: record.version, baseHash: record.contentHash }} disabled={busy || record.readinessUnknown || Boolean(pendingProposal)} onInsert={value => { setMoving(null); setInsertTarget({ target: value, workflowId, baseVersion: record.version, baseHash: record.contentHash }); }} onMove={previewMove} /> : null;
   };
-  const attemptRun = async () => {
+  const attemptRun = async (input = runInput) => {
+    if (!canControl || busy || record.readinessUnknown || !record.can_attempt_run || runPending.current) return null;
     if (pendingProposal) { setNotice("Apply or discard the preview before running. Runs use the saved published workflow, not browser edits."); return; }
     if (submittingRun || unconfirmedRun || recovery.pending || recovery.checking || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status)) return;
-    setSubmittingRun(true); setError(""); setNotice("");
+    runPending.current = true; setSubmittingRun(true); setShowResults(true); setError(""); setNotice("");
     try {
       const options = record.operation_job_admission === "operation-job/v1" ? { mode: "async-operation", idempotencyKey: crypto.randomUUID() } : record.read_job_admission === "read-job-v1" ? { mode: "async-read", idempotencyKey: crypto.randomUUID() } : {};
       const admissionOptions = { ...options, ...(actorId ? { expectedActorId: actorId } : {}) };
-      const result = await workflowService.run(workflowId, runInput, ...(Object.keys(admissionOptions).length ? [admissionOptions] : []));
-      setRun(result);
+      const result = await workflowService.run(workflowId, input, ...(Object.keys(admissionOptions).length ? [admissionOptions] : []));
+      if (typeof result?.id !== "string" || !result.id.trim() || result.workflowId && result.workflowId !== workflowId) throw new Error("The original run receipt could not be confirmed.");
+      setRun(result); setShowResults(true);
       try { setTimeline(await executionService.getTimeline(result.id)); } catch { setNotice("Run admitted, but its timeline could not be refreshed. Follow the saved run ID; nothing was restarted."); }
+      return result;
     } catch (cause) {
       const executionId = cause?.response?.data?.meta?.executionId;
       if (executionId) {
-        try { const result = await executionService.get(executionId); setRun(result); setTimeline(await executionService.getTimeline(executionId)); }
+        try { const result = await executionService.get(executionId); setRun(result); setShowResults(true); setTimeline(await executionService.getTimeline(executionId)); return result; }
         catch { setUnconfirmedRun(true); setNotice(`Run ${executionId} was recorded, but its evidence could not be loaded. Open Execution History before starting another run.`); }
       } else if (cause?.runAdmissionUnconfirmed ?? (!cause?.response || cause.response.status >= 500)) { setUnconfirmedRun(true); setNotice("The run response was not received. Its outcome is unconfirmed; check Execution History before starting another run. No automatic retry was sent."); }
       setError(message(cause));
-    } finally { setSubmittingRun(false); }
+      return null;
+    } finally { runPending.current = false; setSubmittingRun(false); }
   };
   if (!record) return <div className="p-5"><p className="text-xs text-gray-500">Loading saved workflow…</p>{error && <p role="alert" className="mt-3 text-xs text-red-600">{error}</p>}<button className={button} onClick={() => perform(load)}>Reload</button></div>;
-  return <div className="flex min-h-0 flex-1 flex-col">
+  const runInputsDisabled = !canControl || busy || record.readinessUnknown || Boolean(pendingProposal) || submittingRun || recovery.checking || recovery.pending || unconfirmedRun || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status);
+  const cannotRun = runInputsDisabled || !record.can_attempt_run;
+  return <div className="relative flex min-h-0 flex-1 flex-col">
+    {simple && pendingProposal && <section aria-label="Pending workflow change" className="shrink-0 border-b border-primary/20 bg-primary/5 px-3 py-3 text-xs">
+      <p className="font-semibold">New changes are waiting for review</p>
+      <p className="mt-1 leading-5">The canvas shows saved draft v{record.version}, not the proposed changes. {staleProposal ? "The saved draft changed; ask the assistant for a fresh proposal." : "Review the proposal, then save it to update the canvas. Saving does not publish or run it."}</p>
+      {pendingProposal.validation?.passed === false && <p className="mt-1 text-amber-700 dark:text-amber-300">The proposal still has issues. Saving it will not make the workflow ready to run.</p>}
+      <button type="button" disabled={busy || record.readinessUnknown || staleProposal || !canEdit} onClick={() => setShowSaveDialog(true)} className="mt-2 rounded-md border border-primary/30 px-3 py-2 font-semibold text-primary disabled:opacity-50">Review proposed changes</button>
+    </section>}
+    {docked && workspace.chatWorkflowHost && createPortal(<section aria-label="Chat workflow actions" className="border-b border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex flex-wrap items-center gap-2"><p className="min-w-0 flex-1 truncate text-xs font-semibold" title={preview.name}>{preview.name} <span className="font-normal text-gray-500">· saved draft v{record.version}</span></p>
+        <button type="button" className={`${button} border border-gray-200 dark:border-gray-700`} disabled={!canEdit || !pendingProposal || busy || record.readinessUnknown || staleProposal} onClick={() => setShowSaveDialog(true)} title={pendingProposal ? "Review and save this exact change" : "This draft is already saved. Request or preview a change to save another revision."}>Save draft</button>
+        <button type="button" className={`${button} bg-primary text-white hover:bg-primary/90`} disabled={!canControl || busy || record.readinessUnknown || Boolean(pendingProposal) || submittingRun || recovery.checking || recovery.pending || unconfirmedRun || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status)} onClick={() => setShowRunDialog(true)} title={!record.can_attempt_run ? "Check what is needed before this workflow can run" : "Review inputs and start the published workflow"}>{submittingRun ? "Starting…" : runActive ? "Running…" : "Run workflow"}</button>
+        <button type="button" className={`${button} text-primary`} aria-expanded={showResults} onClick={() => setShowResults(value => !value)}>{showResults ? "Hide results" : `Results${shownRun ? ` · ${shownRun.status}` : ""}`}</button>
+      </div>
+      <RunAdmissionRecoveryPanel recovery={recovery} execution={shownRun} onReleased={() => { setRun(null); setTimeline([]); setUnconfirmedRun(false); setNotice("The recorded terminal run was reviewed. A new run requires an explicit click."); }} />
+      {showResults && <WorkflowResults key={`${actorId}:${workflowId}`} workflowId={workflowId} execution={shownRun} monitor={monitor} loading={submittingRun || recovery.checking} />}
+      {error && <p role="alert" className="mt-2 text-xs text-red-600">{error}</p>}
+      {notice && <p role="status" className="mt-2 text-xs text-gray-500">{notice}</p>}
+    </section>, workspace.chatWorkflowHost, "chat-workflow-actions")}
+    <WorkflowRunDialog open={showRunDialog} inline={showRunDialog === "canvas"} workflowId={workflowId} initialRecord={record} onClose={() => setShowRunDialog(false)} onRun={attemptRun} disabled={runInputsDisabled} error={error} onReadinessChanged={setRecord}
+      beforeInputs={showRunDialog === "canvas" ? <RunAdmissionRecoveryPanel recovery={recovery} execution={shownRun} onReleased={() => { setRun(null); setTimeline([]); setUnconfirmedRun(false); setNotice("The recorded terminal run was reviewed. A new run requires an explicit click."); }} /> : null}
+      onHelp={workspace?.requestWorkflowHelp ? text => { setShowRunDialog(false); workspace.requestWorkflowHelp(workflowId, text); } : undefined}
+      onReview={workspace?.openCanvasTools ? () => { setShowRunDialog(false); workspace.openCanvasTools(); } : undefined} />
+    <WorkflowDialog open={showSaveDialog && Boolean(pendingProposal)} title="Save workflow draft" onClose={() => setShowSaveDialog(false)} busy={busy}>
+      {pendingProposal && <div className="space-y-4 text-sm"><p>{pendingProposal.summary || `Review the change to ${pendingProposal.nodeId || "this workflow"}.`}</p><p className="text-xs text-gray-500">Save this exact proposal to draft v{pendingProposal.baseVersion + 1}. Saving does not publish, run or approve any ERP transaction.</p>
+        <details><summary className="cursor-pointer text-primary">Before</summary><ReadableValue value={pendingProposal.before} /></details><div><p className="mb-2 font-semibold">Proposed change</p><ReadableValue value={pendingProposal.after} /></div>
+        {staleProposal && <p role="alert" className="text-amber-700">The saved revision changed. Discard this proposal and request a fresh one.</p>}
+        {pendingProposal.validation?.passed === false && <p role="alert" className="text-amber-700">This can only be saved as a blocked draft. Resolve its validation issues before publishing or running.</p>}
+        {error && <p role="alert" className="text-red-600">{error}</p>}
+        <div className="flex justify-end gap-2"><button type="button" className={button} disabled={busy} onClick={() => setShowSaveDialog(false)}>Cancel</button><button type="button" className={`${button} bg-primary text-white hover:bg-primary/90`} disabled={busy || record.readinessUnknown || staleProposal || !canEdit} onClick={() => perform(async () => { await save(pendingProposal.command, { version: pendingProposal.baseVersion, contentHash: pendingProposal.baseHash, proposalId: pendingProposal.id }); setShowSaveDialog(false); })}>Save changes to draft</button></div>
+      </div>}
+    </WorkflowDialog>
     {docked && <div aria-label="Current canvas draft status" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 bg-white px-3 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-darkBackground">
       <span>Draft v{record.version} · {preview.steps.length} {preview.steps.length === 1 ? "step" : "steps"}</span>
       <span className={record.validation?.passed ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>{record.readinessUnknown ? "Readiness unavailable" : record.validation?.passed ? "Ready for review" : "Needs fixes · not ready to run"}</span>
+      {!record.validation?.passed && <WorkflowFixButton workflowId={workflowId} requirements={preview.metadata?.unresolved_requirements} errors={record.validation?.errors} busy={busy || !canEdit || record.readinessUnknown} />}
       <button type="button" onClick={workspace.openCanvasTools} className="ml-auto font-medium text-primary">Review draft controls</button>
     </div>}
     {shownRun && <WorkflowRunApproval ref={approvalRef} key={`${actorId || ""}:${shownRun.id}`} execution={shownRun} onChanged={monitor.refresh} />}
@@ -334,7 +377,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
           <button className={button} disabled={busy || record.readinessUnknown || preview.error} onClick={() => setConditionMode(value => value === "add" ? null : "add")}>Add condition</button>
           <button className={button} disabled={busy || record.readinessUnknown || preview.error || !supportsReturnInsertion} onClick={() => setAddingReturn(value => !value)}>Add return</button>
           <button className={button} aria-pressed={arranging} disabled={busy || record.readinessUnknown || !placementModel.valid || Boolean(pendingProposal)} onClick={() => { setArranging(value => !value); setMoving(null); setInsertTarget(null); }}>Arrange flow</button></>}
-          <button className={`${button} ml-auto border border-gray-200 dark:border-gray-700`} disabled={busy || record.readinessUnknown || Boolean(pendingProposal) || !record.validation?.passed || record.published && record.compilation?.state !== "BLOCKED"} onClick={() => perform(async () => { await workflowService.publish(workflowId, "Explicitly reviewed in chat workspace", record); setNotice("Draft published. Execution has not been requested."); await load(); })}>{record.published && record.compilation?.state === "BLOCKED" ? "Republish reviewed draft" : "Publish reviewed draft"}</button></>}
+          <button className={`${button} ml-auto border border-gray-200 dark:border-gray-700`} disabled={busy || record.readinessUnknown || Boolean(pendingProposal) || !record.validation?.passed || record.published && record.compilation?.state !== "BLOCKED"} onClick={() => perform(async () => { await workflowService.publish(workflowId, "Explicitly reviewed in chat workspace", record); setNotice("Draft published. Execution has not been requested."); await load(); await onChatChanged?.(); })}>{record.published && record.compilation?.state === "BLOCKED" ? "Republish reviewed draft" : "Publish reviewed draft"}</button></>}
       </div>
     </div>, "editor-heading")}
     <div className={docked ? "flex min-h-0 flex-1 flex-col" : "flex-1 overflow-auto px-5 py-5"}>
@@ -410,7 +453,10 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       {addingReturn && <form aria-label="Create return" className="mb-5 space-y-3 border-b pb-4" onSubmit={event => { event.preventDefault(); previewChange(returnId, { type: "addReturn", nodeId: returnId, output: returnOutput, beforeNodeId: null, ...branchDestination(returnScope, authoring?.controlFlow) }, "No return at this destination", { id: returnId, output: returnOutput, destination: returnScope }); }}><h4 className="text-xs font-semibold">Declare workflow return</h4><input aria-label="New return ID" className={input} value={returnId} onChange={event => setReturnId(event.target.value)} pattern="[A-Za-z][A-Za-z0-9_-]{0,63}" placeholder="Unique stable return ID" required /><ScopeSelect flow={authoring?.controlFlow} value={returnScope} onChange={setReturnScope} label="New return destination" /><ReadValueFields value={returnOutput} onChange={setReturnOutput} /><button disabled={busy} className={button}>Preview new return</button><button type="button" className={button} onClick={() => setAddingReturn(false)}>Cancel return creation</button></form>}
       {iterationModel && !iterationModel.valid && <p role="alert" className="mb-3 text-xs text-amber-700">{iterationModel.error}</p>}
       </div>, "editor-forms")}
-      <WorkflowMiniCanvas simple={simple}
+      <WorkflowMiniCanvas simple={simple} viewReset={viewReset}
+        onPrepareInputs={authoring?.inputSchema?.type === "object" && Object.keys(authoring.inputSchema.properties || {}).length ? () => setShowRunDialog("canvas") : undefined}
+        busy={busy || record.readinessUnknown}
+        onContinueChat={canEdit && onFocusChat ? () => { setSelected(""); writeWorkspaceValue(selectionStorageKey ? `${selectionStorageKey}.node` : null, ""); if (workspace?.requestWorkflowHelp) workspace.requestWorkflowHelp(workflowId, "Help me fix this selected workflow. Load its current saved draft, validation issues and unresolved requirements. Check the latest available ERP tools rather than relying on old missing-tool messages. Ask only for genuinely missing business details, then prepare the changes for my review. Do not publish, run or send anything yet."); else onFocusChat(); } : undefined}
         approvalWaiting={snapshotMatches && shownRun?.status === "AWAITING_APPROVAL"}
         pendingApprovalNode={snapshotMatches && shownRun?.status === "AWAITING_APPROVAL" ? shownRun.pendingApproval?.stepId : undefined}
         approvalNodes={authoring?.nodes?.filter(item => item.requiresIndependentApproval === true).map(item => item.nodeId)}
@@ -454,8 +500,9 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       {protectedGroup && <ProtectedGroupInspector key={`${protectedGroup.id}:${record.version}`} node={protectedGroup} canEdit={canEdit} busy={busy || record.readinessUnknown || Boolean(pendingProposal)} sessionId={sessionId} context={{ workflowId, nodeId: protectedGroup.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} onFocusChat={onFocusChat} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${protectedGroup.id}` : null} authoring={protectedGuidance} onPreview={patch => previewChange(protectedGroup.id, { type: "updateProtected", nodeId: protectedGroup.id, patch }, protectedGroup.output, patch.output)} onUnwrap={() => previewChange(protectedGroup.id, { type: "unwrapProtected", nodeId: protectedGroup.id }, protectedGroup, "Body contents preserved in the parent scope; empty handler removed")} />}
       {node && canEdit && <><button className={`${button} mt-3`} disabled={busy || record.readinessUnknown || Boolean(pendingProposal) || !placementModel.valid} onClick={() => setWrappingProtected(value => !value)}>Protect node with error handler</button>{wrappingProtected && <ProtectedWrapForm key={`${node.id}:${record.version}`} nodeId={node.id} busy={busy || record.readinessUnknown || Boolean(pendingProposal)} onCancel={() => setWrappingProtected(false)} onPreview={(command, before, after) => previewChange(command.protectedId, command, before, after)} />}</>}
       {collection && <CollectionInspector key={`${collection.id}:${record.version}`} node={collection} canEdit={canEdit} busy={busy} sessionId={sessionId} context={{ workflowId, nodeId: collection.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} onFocusChat={onFocusChat} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${collection.id}` : null} authoring={authoring?.collections?.find(item => item.nodeId === collection.id)} onPreview={(command, before, after) => previewChange(collection.id, command, before, after)} onRemove={() => previewChange(collection.id, { type: "removeCollection", nodeId: collection.id }, collection, null)} />}
-      {canEdit && pendingProposal && <section aria-label="Node change preview" className="workspace-reveal mt-5 border-y border-primary/25 py-4">
-        <h4 className="text-xs font-semibold">Review change · {pendingProposal.nodeId}</h4><p className="mt-1 text-[10px] text-gray-500">Based on draft v{pendingProposal.baseVersion}. {pendingProposal.command.type === "moveNode" ? "Configurations are preserved; order and scope change." : "Unrelated nodes are unchanged."}</p>
+      {canEdit && pendingProposal && <section aria-label={pendingProposal.scope === "workflow" ? "Workflow change preview" : "Node change preview"} className="workspace-reveal mt-5 border-y border-primary/25 py-4">
+        <h4 className="text-xs font-semibold">Review change · {pendingProposal.scope === "workflow" ? "Whole workflow" : pendingProposal.nodeId}</h4><p className="mt-1 text-[10px] text-gray-500">Based on draft v{pendingProposal.baseVersion}. {pendingProposal.scope === "workflow" ? "Review the complete proposed draft before applying. Publication, execution and scheduling are separate." : pendingProposal.command.type === "moveNode" ? "Configurations are preserved; order and scope change." : "Unrelated nodes are unchanged."}</p>
+        {pendingProposal.summary && <p className="mt-2 text-xs">{pendingProposal.summary}</p>}
         {staleProposal && <p role="alert" className="mt-2 text-xs text-amber-700">This preview belongs to an older draft. Inspect the current revision, then discard and create a new preview. It cannot be applied to this revision.</p>}
         {pendingProposal.command.type === "moveNode" && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Order and scope change. Node configuration and owned contents are preserved; references and prerequisites may need repair. The backend validates on save and never silently rewires them.</p>}
         {pendingProposal.command.type === "updateProtected" && pendingProposal.command.patch.output && !pendingProposal.command.patch.onError ? <ProtectedPatchPreview proposal={pendingProposal} /> : pendingProposal.command.type === "updateCollection" ? <CollectionPatchPreview proposal={pendingProposal} /> : pendingProposal.command.type === "updateCondition" && pendingProposal.id ? <ConditionPatchPreview proposal={pendingProposal} /> : <><details className="mt-3 text-[10px]"><summary className="cursor-pointer">Before</summary><div className="mt-2 max-h-56 overflow-auto"><ReadableValue value={pendingProposal.before} /></div></details>
@@ -463,10 +510,11 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
         {pendingProposal.validation && <p className="mt-2 text-[10px] text-gray-500">{pendingProposal.validation.passed ? "Proposal validation passed · not published" : "Proposal has validation issues · may only be saved as a blocked draft"}</p>}
         {!pendingProposal.validation && <p className="mt-2 text-[10px] text-gray-500">Local preview only · not saved to the database. Apply to draft validates and saves it. Refreshing or closing this page loses this preview. Nothing executes.</p>}
         {!!pendingProposal.validation?.errors?.length && <details className="mt-2 text-xs"><summary className="cursor-pointer text-amber-700">Proposal issues ({pendingProposal.validation.errors.length})</summary><ul className="mt-2 space-y-1 text-gray-500">{pendingProposal.validation.errors.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
+        {pendingProposal.scope === "workflow" && <details className="mt-3 text-xs"><summary className="cursor-pointer">Complete proposed workflow source</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words">{pendingProposal.command.yaml}</pre></details>}
         <div className="mt-3 flex gap-2"><button className={`${button} bg-primary text-white hover:bg-primary/90`} disabled={busy || record.readinessUnknown || staleProposal} onClick={() => perform(() => save(pendingProposal.command, { version: pendingProposal.baseVersion, contentHash: pendingProposal.baseHash, proposalId: pendingProposal.id }))}>Apply to draft</button><button className={button} disabled={busy || record.readinessUnknown} onClick={() => perform(async () => { if (pendingProposal.id) { await workflowService.command(workflowId, record, { type: "discardProposal", proposalId: pendingProposal.id }); setResolvedProposals((items) => [...items, pendingProposal.id]); onChatChanged?.(); } setProposal(null); setNotice("Proposal discarded. The workflow was not changed."); })}>Discard</button></div>
       </section>}
       <RunAdmissionRecoveryPanel recovery={recovery} execution={shownRun} onReleased={() => { setRun(null); setTimeline([]); setUnconfirmedRun(false); setNotice("The recorded terminal run was reviewed. A new run requires an explicit click."); }} />
-      <PublishedWorkflowRunForm record={record} authoring={authoring} runInput={runInput} onInput={setRunInput} buttonClass={button} onRun={attemptRun} submitting={submittingRun || recovery.checking} unconfirmed={unconfirmedRun && !recovery.run} disabled={busy || Boolean(pendingProposal) || submittingRun || recovery.checking || recovery.pending || unconfirmedRun || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status) || !record.can_attempt_run} />
+      <PublishedWorkflowRunForm record={record} authoring={authoring} runInput={runInput} onInput={setRunInput} buttonClass={button} onRun={() => attemptRun(runInput)} submitting={submittingRun || recovery.checking} unconfirmed={unconfirmedRun && !recovery.run} disabled={cannotRun} />
       <ReadSimulationPanel workflowId={workflowId} record={record} steps={preview.steps} canControl={canControl} disabled={busy || record.readinessUnknown || Boolean(preview.error)} />
       {shownRun && <div className="mt-4 border-t border-gray-200 pt-3 text-[10px] text-gray-500 dark:border-gray-700"><p>Run {shownRun.id} · {shownRun.status} · published v{shownRun.workflowSnapshot?.version ?? "unknown"}</p><p className="mt-1">Answers belong to this run snapshot, not unsaved edits.</p>{shownRun.agentSummary && <p className="mt-2">{shownRun.agentSummary}</p>}<a href={`/executions/${encodeURIComponent(shownRun.id)}`} className="mt-2 inline-block text-primary">Open full run evidence</a></div>}
       {shownRun?.hasOperationReconciliation === true && !snapshotMatches && <div className="mt-4"><OperationStatusQueries executionId={shownRun.id} onHistoryChanged={monitor.refresh} /></div>}

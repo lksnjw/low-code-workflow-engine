@@ -22,6 +22,8 @@ export const toolSchema = z.object({
   // Optional additive admission record; no default changes frozen legacy hashes.
   bridge_contract: z.object({
     profile: z.literal("toolplane-v1"),
+    // Absent preserves historical version-qualified contracts and hashes.
+    selector: z.enum(["digest-pinned-alias", "digest-pinned-operation-alias"]).optional(),
     resource_version: z.string().min(1).max(128).regex(/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/),
     resource_digest: z.string().regex(/^[a-f0-9]{64}$/),
     remote_roles: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/)).max(32).refine(roles => new Set(roles).size === roles.length),
@@ -36,6 +38,7 @@ export const toolSchema = z.object({
     profile: z.literal("operation-result/v1"),
     effect_class: z.enum(["write", "notification"]),
     retry_policy: z.literal("never"),
+    receipt_profile: z.enum(["erpnext-item-create/v1", "erpnext-item-update/v1", "erpnext-stock-receipt-draft/v1", "erpnext-customer-create/v1"]).optional(),
     confirmation: z.object({
       path: z.array(z.string().min(1).max(128).refine(part => !["__proto__", "constructor", "prototype"].includes(part))).min(1).max(12),
       expected: z.union([z.string().min(1).max(256), z.number().finite(), z.boolean()]),

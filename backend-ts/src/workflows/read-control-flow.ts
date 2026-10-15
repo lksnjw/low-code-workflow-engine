@@ -136,6 +136,9 @@ export function validateReadControlFlow(root: ReadSequence, ir: ReadIR, outputSc
   let currentSchemas: ReadonlyMap<string, Record<string, unknown>> = outputSchemas;
   const checkReference = (ref: ReadReference, available: Set<string>, label: string) => {
     if (ref.source === "nodeOutput" && !available.has(ref.nodeId!)) issues.push(`${label} references unavailable branch-local or forward data`);
+    const schema = ref.source === "workflowInput" ? ir.inputSchema : currentSchemas.get(ref.nodeId!);
+    if (schema?.additionalProperties === false && ref.path.length && !Object.hasOwn((schema.properties ?? {}) as object, ref.path[0]!))
+      issues.push(`${label} references an undeclared output path`);
     if (ref.source === "nodeOutput" && loops.has(ref.nodeId!) && available.has(ref.nodeId!) && !schemaAt(currentSchemas.get(ref.nodeId!), ref.path)) issues.push(`${label} references a loop item or collection outside its declared scope`);
     if (protectedIDs.size && !schemaAt(ref.source === "workflowInput" ? ir.inputSchema : currentSchemas.get(ref.nodeId!), ref.path)) issues.push(`${label} must select declared data in its protected lexical scope`);
   };

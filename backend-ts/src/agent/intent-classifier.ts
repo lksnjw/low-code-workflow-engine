@@ -1,5 +1,5 @@
 import { deliveryIntent } from "../delivery/email-draft.js";
-export type Intent = "QUERY" | "AUDIT" | "ACTION" | "CAPABILITIES" | "TOOL_CALL" | "WORKFLOW_MODIFY" | "EMAIL_DELIVERY";
+export type Intent = "QUERY" | "AUDIT" | "ACTION" | "CAPABILITIES" | "TOOL_CALL" | "WORKFLOW_MODIFY" | "WORKFLOW_CONTROL" | "EMAIL_DELIVERY" | "WORKFLOW_DISCUSSION" | "CONVERSATION";
 
 const WORKFLOW_MODIFY_PATTERNS = [
   "modify the workflow", "change the workflow", "update the workflow", "edit the workflow",
@@ -7,6 +7,7 @@ const WORKFLOW_MODIFY_PATTERNS = [
   "update step", "edit step", "rename step", "reorder step",
   "adjust the workflow", "fix the workflow", "tweak the workflow",
   "modify this workflow", "change this workflow", "update this workflow",
+  "edit this workflow", "edit the above workflow", "change the above workflow", "update the above workflow",
 ];
 
 const TOOL_CALL_PATTERNS = [
@@ -112,8 +113,32 @@ function mentionsWorkflowFuzzy(normalized: string): boolean {
  *
  * Classifies a chat message using the configured intent patterns.
  ******************************************************************************/
-export function classifyIntent(message: string): Intent {
-  const normalized = message.toLowerCase().trim();
+export function classifyIntent(message: string, context: { workflowContext?: boolean; nodeContext?: boolean } = {}): Intent {
+  // Negative instructions are constraints, not action authority. Keep a later
+  // affirmative sentence/contrast, but do not revive commands in a comma-list
+  // such as "do not upload, approve or generate a workflow".
+  const affirmative = message.replace(/[’‘]/g, "'").split(/(?:[.!?;\n]+|\b(?:but|however|instead)\b)/i)
+    .map(clause => clause.replace(/\b(?:do\s+not|don't|never|must\s+not|should\s+not|shouldn't|does\s+not|without)\b[\s\S]*$/i, ""))
+    .join(" ");
+  const normalized = affirmative.toLowerCase().trim();
+
+  const discussionQuestion = /^(?:(?:please|can you|could you|would you)\s+)?(?:explain|describe|walk me through|tell me about|what (?:is|does|are|would)|how (?:does|do|is|can|would|to)|why|is (?:this|it)|has (?:this|it))\b/.test(normalized);
+  const combinedEffect = /\b(?:then|and|also)\s+(?:(?:please|actually)\s+)?(?:run|execute|send|delete|approve|reject|create|change|update|add|remove|publish|schedule)\b/.test(normalized);
+  const conceptual = /^(?:(?:please|can you|could you)\s+)?(?:what (?:is|are) (?:a|an)\b|what does .+ mean\b|explain (?:the )?(?:concept|meaning|difference)\b)/.test(normalized);
+  if (conceptual && !combinedEffect) return "CONVERSATION";
+  const workflowSubject = mentionsWorkflowFuzzy(normalized);
+  const contextualSubject = context.workflowContext && !/\b(?:invoices?|orders?|employees?|customers?|vendors?|suppliers?|payments?|balances?)\b/.test(normalized) &&
+    /\b(?:this|it|that|these|those|node|step|nodes|steps|canvas|page size|pagination|schedule)\b/.test(normalized);
+  if (!combinedEffect && discussionQuestion && (workflowSubject || contextualSubject)) return "WORKFLOW_DISCUSSION";
+  if (/^(?:thanks|thank you|hello|hi|okay|ok)(?:\s+(?:a lot|very much|there))?$/.test(normalized)) return "CONVERSATION";
+  // Compatibility mode only selects review controls, never an execution grant.
+  if ((workflowSubject || context.workflowContext && /\b(?:this|it|that|these|those)\b/.test(normalized)) && !GENERATION_VERB_PATTERN.test(normalized) &&
+      /\b(?:run|execute|publish|schedule|pause|stop (?:the |this )?schedule)\b/.test(normalized) && !discussionQuestion && !combinedEffect) return "WORKFLOW_CONTROL";
+  // A catalog/count question is not an edit merely because a canvas node is
+  // selected. Route it to authoritative discovery instead of a keyword search.
+  const catalogQuestion = /\b(?:how many|number of|count(?: of)?|total(?: number of)?)\s+(?:(?:available|erp|erpbridge|bridge|exposed|connected)\s+)*(?:tools|capabilities|operations)\b/.test(normalized);
+  if (!combinedEffect && (catalogQuestion || CAPABILITIES_PATTERNS.some(pattern => normalized.includes(pattern)))) return "CAPABILITIES";
+  if (context.nodeContext && !discussionQuestion && !/^(?:tell me (?:a joke|a story)|help me (?:write|draft|plan)|write (?:a poem|a story))\b/.test(normalized)) return "WORKFLOW_MODIFY";
 
   for (const pattern of CAPABILITIES_PATTERNS) {
     if (normalized.includes(pattern)) return "CAPABILITIES";
@@ -133,7 +158,7 @@ export function classifyIntent(message: string): Intent {
   // patterns above never see as a substring.
   if (GENERATION_VERB_PATTERN.test(normalized) && mentionsWorkflowFuzzy(normalized)) return "ACTION";
 
-  const delivery = deliveryIntent(message);
+  const delivery = deliveryIntent(affirmative);
   // Recurrence describes an automation to design and review. It must never
   // fall into the one-off email-draft path and accidentally lose the cadence.
   if (delivery?.recurring) return "ACTION";
@@ -143,14 +168,16 @@ export function classifyIntent(message: string): Intent {
     if (normalized.includes(pattern)) return "TOOL_CALL";
   }
 
+  const businessScope = /\b(?:erp|erpbridge|database|records?|companies|company|uoms?|units? of measure|invoices?|orders?|employees?|departments?|vendors?|suppliers?|customers?|purchase|payments?|budgets?|balances?|inventory|stock|sales|sick leave|leave requests?|documents?)\b|\b(?:get|list|find|search)_[a-z0-9_]+\b|\b(?:emp|inv|po|cust|so|doc|bill|leave|uom)[-_][a-z0-9_-]+\b/.test(normalized);
   for (const pattern of AUDIT_PATTERNS) {
-    if (normalized.includes(pattern)) return "AUDIT";
+    if (businessScope && normalized.includes(pattern)) return "AUDIT";
   }
 
   for (const pattern of QUERY_PATTERNS) {
-    if (normalized.includes(pattern)) return "QUERY";
+    if (businessScope && normalized.includes(pattern)) return "QUERY";
   }
-
-  // Default to QUERY — conversational response; only synthesise when user explicitly asks
-  return "QUERY";
+  if (businessScope || /\b(?:next page|previous page|more results|next results)\b/.test(normalized)) return "QUERY";
+  // Ordinary dialogue is not an ERP lookup. A tool-less response cannot turn
+  // model knowledge/history into fresh business evidence or action authority.
+  return "CONVERSATION";
 }

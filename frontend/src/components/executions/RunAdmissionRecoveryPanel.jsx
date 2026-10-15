@@ -7,7 +7,7 @@ export default function RunAdmissionRecoveryPanel({ recovery, execution, onRelea
     <div className="flex flex-wrap gap-3">
       <button type="button" className="font-semibold text-primary" disabled={recovery.checking} onClick={() => void recovery.refresh()}>Recover original run</button>
       <a href="/executions" className="font-semibold text-primary">Review Execution History</a>
-      {allowRelease && ["DONE", "FAILED", "CANCELLED"].includes(execution?.status) && <button type="button" className="font-semibold text-primary" disabled={recovery.checking}
+      {allowRelease && (["DONE", "FAILED", "CANCELLED"].includes(execution?.status) || execution?.status === "RECOVERY_REQUIRED" && execution.retryAdmission?.canReviewForNewRun === true) && <button type="button" className="font-semibold text-primary" disabled={recovery.checking}
         onClick={async () => { if (await recovery.release(execution)) onReleased?.(); }}>Review complete · enable a new run</button>}
     </div>
   </section>;

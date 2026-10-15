@@ -41,7 +41,10 @@ export function useChatOperationMonitor(operationId, { interval = 1500, waitMs =
         const page = await chatService.operation(operationId, cursor, { signal: controller.signal, waitMs });
         if (disposed) return;
         const next = reconcileChatProgress(events, cursor, page, operationId);
-        delay = page.hasMore && next.cursor > cursor ? 0 : page.waited === true && isActiveChatOperation(next.operation.status) ? 0 : interval;
+        // Reopen the next held read immediately after genuine new progress.
+        // The old fixed interval added 1.5 seconds after every stage update.
+        // Duplicate/no-progress replies still back off; never replay commands.
+        delay = next.cursor > cursor && (page.hasMore || isActiveChatOperation(next.operation.status)) ? 0 : page.waited === true && isActiveChatOperation(next.operation.status) ? 0 : interval;
         current = next.operation; cursor = next.cursor; events = next.events; failures = 0;
         again = page.hasMore || isActiveChatOperation(current.status);
         setFrame({ id: operationId, scope, operation: current, events, cursor, error: "", denied: false, reconnecting: false });

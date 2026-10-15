@@ -52,10 +52,62 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); client.clear(); localStorage.clear(); sessionStorage.clear(); beginAuthorityTransition(); Object.values(service).forEach(mock => mock.mockReset()); });
 
+test("older conversation pages append without duplicates and remain loaded after refresh", async () => {
+  service.listSessions.mockImplementation(async ({params}) => ({items:Array.from({length:params.page===3?5:20},(_,index)=>({id:`s${(params.page-1)*20+index}`})),meta:{page:params.page,total:45,totalPages:3}}));
+  const view=renderHook(()=>useChatSessions(),{wrapper});await waitFor(()=>expect(view.result.current.sessions).toHaveLength(20));
+  expect(view.result.current.hasMoreSessions).toBe(true);
+  await act(async()=>{await view.result.current.loadMoreSessions();});expect(view.result.current.sessions).toHaveLength(40);
+  await act(async()=>{await view.result.current.loadMoreSessions();});expect(view.result.current.sessions).toHaveLength(45);expect(view.result.current.hasMoreSessions).toBe(false);
+  await act(async()=>{await view.result.current.reload();});expect(view.result.current.sessions).toHaveLength(45);expect(new Set(view.result.current.sessions.map(s=>s.id)).size).toBe(45);
+});
+test("older list failure retains the loaded conversations and exposes an explicit retry",async()=>{
+  service.listSessions.mockResolvedValueOnce({items:[privateSession],meta:{page:1,total:2,totalPages:2}}).mockRejectedValueOnce(new Error("offline"));
+  const view=renderHook(()=>useChatSessions(),{wrapper});await waitFor(()=>expect(view.result.current.sessions).toEqual([privateSession]));
+  await act(async()=>{await view.result.current.loadMoreSessions();});expect(view.result.current.sessions).toEqual([privateSession]);expect(view.result.current.loadMoreSessionsError).toMatch(/could not be loaded/);
+});
+
+test("a new workspace does not automatically download the most recent saved conversation", async () => {
+  const view = renderHook(() => useChatSessions("", { autoSelect: false }), { wrapper });
+  await waitFor(() => expect(view.result.current.sessions).toHaveLength(1));
+  expect(view.result.current.selectedSessionId).toBe("");
+  act(() => view.result.current.setSelectedSessionId(privateSession.id));
+  expect(view.result.current.selectedSessionId).toBe(privateSession.id);
+});
+
+test("native history pagination sends a keyset cursor instead of an offset or unbounded fetch",async()=>{
+  service.listSessions.mockResolvedValueOnce({items:[privateSession],meta:{page:1,total:25,totalPages:2,nextCursor:"page-one-cursor",indexed:true}}).mockResolvedValueOnce({items:[{id:"older"}],meta:{page:2,total:25,totalPages:2,nextCursor:null,indexed:true}});
+  const view=renderHook(()=>useChatSessions(),{wrapper});await waitFor(()=>expect(view.result.current.sessions).toHaveLength(1));
+  await act(async()=>{await view.result.current.loadMoreSessions();});expect(service.listSessions.mock.calls[1][0].params).toEqual({page:2,limit:20,after:"page-one-cursor"});
+  expect(view.result.current.sessions).toHaveLength(2);expect(view.result.current.hasMoreSessions).toBe(false);
+});
+test("older message pages deduplicate and survive a latest-page refetch",async()=>{
+  const view=await loadA(privateSession.id);
+  service.getSession.mockImplementation(async(id,options)=>options?.before?{id,messages:[{id:"old",role:"user",text:"Older"},privateMessage],hasMoreMessages:false}:{id,messages:[privateMessage],hasMoreMessages:true});
+  await act(async()=>{await view.result.current.chat.loadMore();});expect(view.result.current.chat.messages.map(m=>m.id)).toEqual(["old",privateMessage.id]);
+  await act(async()=>{await client.invalidateQueries({queryKey:chatQueryKeys.session(authorityScope(identity),privateSession.id)});});
+  expect(view.result.current.chat.messages.map(m=>m.id)).toEqual(["old",privateMessage.id]);expect(view.result.current.chat.hasMoreMessages).toBe(false);
+});
+test("older message failure preserves saved messages without an unhandled rejection",async()=>{
+  const view=await loadA(privateSession.id);service.getSession.mockRejectedValueOnce(new Error("offline"));
+  await act(async()=>{await view.result.current.chat.loadMore();});expect(view.result.current.chat.messages).toEqual([privateMessage]);expect(view.result.current.chat.loadMoreError).toMatch(/could not be loaded/);
+});
+
 test("a fresh shared cache does not show A's list, auto-selected session or messages on a same-SPA B rerender", async () => {
   const view = await loadA();
   act(() => { identity = accountB; view.rerender(); });
   expect({ sessions: view.result.current.sessions.sessions, selected: view.result.current.sessions.selectedSessionId, messages: view.result.current.chat.messages }).toEqual({ sessions: [], selected: "", messages: [] });
+});
+
+test("workflow catalog identities are scoped to the account and disappear immediately on an account switch", async () => {
+  const catalog = [{ workflowId: "a-payroll-workflow", name: "Private payroll", lastMessageIndex: 0 }];
+  service.getSession.mockImplementation(async id => {
+    if (identity.id !== accountA.id) throw denied();
+    return { id, messages: [privateMessage], workflowCatalog: catalog, hasMoreMessages: true };
+  });
+  const view = await loadA();
+  expect(view.result.current.chat.workflowCatalog).toEqual(catalog);
+  act(() => { identity = accountB; view.rerender(); });
+  expect(view.result.current.chat.workflowCatalog).toEqual([]);
 });
 
 test("B remount cannot consume A's cached list or message before B's held response", async () => {
@@ -112,7 +164,7 @@ test("a held A session response resolving after B switches cannot become B's vis
   const heldA = deferred();
   service.getSession.mockReturnValueOnce(heldA.promise);
   const view = renderHook(() => useWorkspace(privateSession.id), { wrapper });
-  await waitFor(() => expect(service.getSession).toHaveBeenCalledWith(privateSession.id, { signal: expect.any(AbortSignal) }));
+  await waitFor(() => expect(service.getSession).toHaveBeenCalledWith(privateSession.id, { limit: 20, signal: expect.any(AbortSignal) }));
   act(() => { identity = accountB; view.rerender(); });
   await act(async () => { heldA.resolve({ id: privateSession.id, messages: [privateMessage] }); });
   await waitFor(() => expect(client.isFetching()).toBe(0));

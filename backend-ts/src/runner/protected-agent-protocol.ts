@@ -9,7 +9,7 @@ import type { ToolDefinition } from "../registry/schemas.js";
 import { assertProtectedAgentRecords, type ProtectedAgentRecords, type ProtectedAgentProgress, type ProtectedAgentTurn } from "../repository/protected-agent-records.js";
 import { protectedInvocationOperationKey, protectedJournalHash as hash, type ProtectedInvocationLedgerSnapshot } from "../repository/protected-invocation-records.js";
 import { exactBridgeName, hasReservedBridgeRole } from "../tools/erpbridge-contract.js";
-import { mcpResultForModel, safeMcpResult } from "../tools/mcp-result.js";
+import { mcpResultForModel, safeMcpToolResult } from "../tools/mcp-result.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { validateToolArguments } from "../agent/workflow-runtime-validator.js";
 import { validateValue } from "../structured-output/validate.js";
@@ -164,7 +164,7 @@ export function nextProtectedAgent(context: Context, records: ProtectedAgentReco
       if (result.round !== round || result.callIndex !== callIndex || ledger.intents[toolKey]?.argumentHash !== hash(call.arguments))
         throw new Error("Protected agent tool answer belongs to different ordered arguments");
       if (result.result.kind === "READ_ERROR") return finish({ kind: "READ_ERROR" as const, key: toolKey, fault: structuredClone(result.result.fault) });
-      const safe = safeMcpResult(result.result.output, tool.bridge_contract?.output_schema);
+      const safe = safeMcpToolResult(result.result.output, tool);
       const metadata = result.result.output._meta as Record<string, unknown> | undefined, dispatch = metadata?.["io.workflow-engine/dispatch"];
       if (dispatch !== undefined) {
         const expected = { remoteName: exactBridgeName(tool), resourceVersion: tool.bridge_contract!.resource_version, resourceDigest: tool.bridge_contract!.resource_digest };

@@ -1,10 +1,17 @@
 import { randomBytes } from "node:crypto";
+import { reviewedDocumentChatContext, documentContextSchema, documentProposalFailure, documentRetrievalReview } from "../../documents/chat-document-context.js";
+import { readAttachmentTicket, attachmentChatContext } from "../../documents/chat-attachment.js";
+import { directLibraryConfigured, dispatchDirectLibraryRead } from "../../documents/direct-library.js";
+import { LIBRARY_READ_TOOLS } from "../../documents/library-client.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ok } from "../../models/schemas.js";
 import { requestTraceId } from "../../trace/request-trace.js";
 import type { RouteDefinition } from "../generated-routes.js";
 import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, requestParam, stringValue } from "./common.js";
 import { classifyIntent } from "../../agent/intent-classifier.js";
+import type { IntentRouting } from "../../agent/intent-router.js";
+import { identifyAdmittedChatIntent, processConversationalChat, processMissingReadCapability } from "./chat-assistant.js";
+import { administratorChatEnabled, administratorChatRoleEnabled, chatErpActionRoute, processAdministratorCapabilities, processBackendAgentChat } from "./chat-erp-actions.js";
 import { editEmailDraft, prepareEmailDraft } from "../../delivery/email-chat.js";
 import { deliveryIntent } from "../../delivery/email-draft.js";
 import { admitEmailDelivery } from "../../delivery/email-operation.js";
@@ -14,27 +21,24 @@ import { hasRecurringCompositionCapability, inspectRecurringAutomationCandidate,
 import { runQueryLoop } from "../../agent/query-loop.js";
 import { queryChatHistory, queryChatPresentation } from "../../agent/query-chat-presentation.js";
 import { runActionLoop } from "../../agent/action-loop.js";
-import { discoverTools } from "../../agent/tool-discovery.js";
+import { discoverTools, ToolDiscoveryError } from "../../agent/tool-discovery.js";
 import { checkErpPolicy } from "../../governance/rbac.js";
 import { type PolicyDecision } from "../../governance/optional-policy.js";
 import { evaluateChatPolicy } from "../../governance/chat-policy.js";
-import { dispatchReadTool } from "../../tools/read-tool-broker.js";
-import { modifyWorkflow } from "../../agent/workflow-modifier.js";
+import { checkDirectRagPolicy, directRagConfigured } from "../../governance/direct-rag.js";
+import { dispatchReadTool, ReadAdmissionUnavailableError } from "../../tools/read-tool-broker.js";
+import { processWorkflowProposal } from "../../agent/workflow-proposals.js";
+import { processWorkflowControl } from "../../agent/workflow-controls.js";
 import { parseWorkflowYAMLStrict } from "../../parser/workflow.js";
 import { stringify as yamlStringify } from "yaml";
-import { assertActorAuthority, assertChatAuthority, requestedModel, selectProvider } from "./model-selection.js";
+import { assertActorAuthority, assertChatAuthority, requestedModel, selectProvider, withSelectedProvider } from "./model-selection.js";
 import { activeChatStatus, chatJobQueue } from "../../agent/chat-jobs.js";
 import { processNodeProposal } from "../../agent/node-proposals.js";
 import { chatSummary, createChat, deleteChat, getChat, listChats, updateChat } from "./chat-sessions.js";
-import { effectiveChatContext, revisionPriorContext } from "../../agent/chat-request-revisions.js";
+import { revisionPriorContext } from "../../agent/chat-request-revisions.js";
 import { buildCapabilitiesResponse, compactWorkflowArtifacts, errorText } from "./chat-artifacts.js";
 import { reviewedModelSourceContext } from "../../synthesis/reviewed-model-sources.js";
 import { chatWorkspaceStatus, workspaceStatusAnswer } from "../../agent/chat-workspace-status.js";
-/*******************************************************************************
- * Function: buildWorkflowYamlFromSteps
- *
- * Builds workflow YAML from chat tool steps and the user prompt.
- ******************************************************************************/
 export const CHAT_UNHANDLED = Symbol("chat-unhandled");
 
 /*******************************************************************************
@@ -44,6 +48,7 @@ export const CHAT_UNHANDLED = Symbol("chat-unhandled");
  ******************************************************************************/
 export async function handleChatRoute(route: RouteDefinition, request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown | typeof CHAT_UNHANDLED> {
   const base = services.config.apiBasePath;
+  if (route.path === `${base}/chat/sessions/:id/erp-actions/:actionId`) return chatErpActionRoute(request, reply, user, services, route.method === "POST");
   if (route.path === `${base}/chat/sessions` && route.method === "GET") return listChats(request, reply, user, services);
   if (route.path === `${base}/chat/models` && route.method === "GET") return reply.send(ok(
     services.providerRuntime?.catalog() ?? { configured: false, binding: null, models: [] }, "Configured chat models loaded; remote compatibility is not certified", null));
@@ -55,12 +60,7 @@ export async function handleChatRoute(route: RouteDefinition, request: FastifyRe
   return CHAT_UNHANDLED;
 }
 
-/*******************************************************************************
- * Function: sendChatMessage
- *
- * Handles a chat message through the matching query, action, or workflow
- * flow.
- ******************************************************************************/
+/** Function: sendChatMessage. Admit input into the matching query, action or workflow flow. */
 async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const body = bodyRecord(request);
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
@@ -77,8 +77,8 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
   if (content === "") throw new HandlerFailure(400, "message is required");
   const previousModel = await services.repository.read((state) => state.chats[requestParam(request, "id")]?.selectedModel);
   const provider = selectProvider(services, requestedModel(body.model) ?? previousModel);
-  if (provider !== undefined) services = { ...services, providerRuntime: provider };
-  const intent = classifyIntent(content);
+  if (provider !== undefined) services = withSelectedProvider(services, provider);
+  const intent = body.documentContext === undefined ? classifyIntent(content, { workflowContext: body.workflowContext !== undefined || body.nodeContext !== undefined, nodeContext: body.nodeContext !== undefined }) : "ACTION";
   const traceId = requestTraceId(request);
   const stored = await services.repository.mutate((state) => {
     const id = requestParam(request, "id");
@@ -86,7 +86,7 @@ async function sendChatMessage(request: FastifyRequest, reply: FastifyReply, use
       throw new HandlerFailure(409, "This conversation has an active operation; wait or cancel before sending another message", { code: "CHAT_OPERATION_ACTIVE" });
     let chat = state.chats[id];
     if (chat === undefined) { const timestamp = now(); chat = { id, ownerId: user.id, title: content.slice(0, 80), createdAt: timestamp, updatedAt: timestamp, messageCount: 0, messages: [] }; state.chats[id] = chat; }
-    if (chat.ownerId !== user.id && (intent === "EMAIL_DELIVERY" || !user.permissions.includes("workflow:write"))) throw new HandlerFailure(404, "Chat session not found");
+    if (chat.ownerId !== user.id) throw new HandlerFailure(404, "Chat session not found");
     assertChatAuthority(state, user, id);
     if (provider?.binding) chat.selectedModel = provider.binding.model;
     const priorMessages = revisionPriorContext(chat);
@@ -110,9 +110,20 @@ export async function processStoredChat(input: {
   preGeneratedCandidate?: { input: import("../../synthesis/service.js").SynthesisInput; prepared: import("../../synthesis/service.js").PreparedCandidate;
     generated: import("../../analysisprovider/types.js").AnalysisResponse; liveTools: readonly import("../../registry/schemas.js").ToolDefinition[]; admittedPolicy: PolicyDecision };
 }) {
-  const { body, content, sessionId, traceId, stored, user, services, signal, request, hooks, preGeneratedCandidate } = input;
+  const { body, content, sessionId, traceId, user, services, signal, request, hooks, preGeneratedCandidate } = input;
+  const attachment = body.attachmentTicket === undefined ? undefined : readAttachmentTicket(services, user, sessionId, body.attachmentTicket);
+  if (attachment && [body.nodeContext, body.documentContext, body.workflowContext].some(value => value !== undefined))
+    throw new HandlerFailure(422, "An attachment message cannot replace a workflow or node scope");
+  const stored = attachment ? { ...input.stored, priorMessages: [...input.stored.priorMessages, attachmentChatContext(attachment)] } : input.stored;
+  input = { ...input, stored };
   const provider = services.providerRuntime;
-  const intent = classifyIntent(content);
+  // Selecting the reviewed-document workflow handoff is an explicit drafting
+  // request, not an instruction for the conversational agent to execute writes.
+  const documentWorkflow = body.documentContext === undefined ? undefined : documentContextSchema.safeParse(body.documentContext);
+  if (documentWorkflow && (!documentWorkflow.success || body.nodeContext !== undefined || body.workflowContext !== undefined || preGeneratedCandidate))
+    throw new HandlerFailure(422, "Document workflow drafting requires one exact reviewed source and no other workflow or node scope");
+  let intent = documentWorkflow ? "ACTION" as const : classifyIntent(content, { workflowContext: body.workflowContext !== undefined || body.nodeContext !== undefined, nodeContext: body.nodeContext !== undefined });
+  let intentRouting: IntentRouting | undefined;
   const parsedDeliveryIntent = deliveryIntent(content);
   const directoryResolution = parsedDeliveryIntent?.recipientReference ?
     await services.repository.read((state) => resolveRecipientReference(state, user.id, parsedDeliveryIntent.recipientReference!)) : null;
@@ -127,6 +138,8 @@ export async function processStoredChat(input: {
       hooks?.assertCurrent(state);
       const value = mutation(state);
       if (isRecord(value) && value.role === "assistant") {
+        if (attachment) (value as Record<string, unknown>).artifacts = { ...(isRecord(value.artifacts) ? value.artifacts : {}), chatAttachment: { sessionId, ...attachment } };
+        if (intentRouting) (value as Record<string, unknown>).artifacts = { ...(isRecord(value.artifacts) ? value.artifacts : {}), intentRouting };
         if (policyCheck?.source !== "skipped" && policyCheck !== undefined) {
           (value as Record<string, unknown>).artifacts = { ...(isRecord(value.artifacts) ? value.artifacts : {}), policyCheck };
         }
@@ -135,11 +148,24 @@ export async function processStoredChat(input: {
       return value;
     });
   };
-  const readTool = (name: string, args: Record<string, unknown>) => hooks
+  const readTool = (name: string, args: Record<string, unknown>) => directLibraryConfigured(services) && LIBRARY_READ_TOOLS.has(name)
+    ? hooks ? hooks.read(name, args, checkpoint => dispatchDirectLibraryRead(services, user, sessionId, name, args, { signal, traceId, beforeDispatch: () => checkpoint(user.role) }))
+      : dispatchDirectLibraryRead(services, user, sessionId, name, args, { signal, traceId })
+    : hooks
     ? hooks.read(name, args, beforeDispatch => dispatchReadTool(services, user.id, name, args, { signal, traceId, sessionId, beforeDispatch }))
     : dispatchReadTool(services, user.id, name, args, { signal, traceId, sessionId });
   await hooks?.stage("PREPARING");
   policyCheck = preGeneratedCandidate?.admittedPolicy ?? await evaluateChatPolicy(services, user, { prompt: content, intent, nodeContext: body.nodeContext, signal, traceId, sessionId, hooks });
+  // Policy admits the classification inference first. The model's route is
+  // data, not authority: a changed route must pass policy again before use.
+  if (policyCheck.decision === "allow" && intent !== "CAPABILITIES" && !preGeneratedCandidate && !documentWorkflow &&
+      services.config.chatIntentRouting === "agent" && provider?.configured) {
+    intentRouting = await identifyAdmittedChatIntent(input);
+    if (intent !== intentRouting.intent) {
+      intent = intentRouting.intent;
+      policyCheck = await evaluateChatPolicy(services, user, { prompt: content, intent, nodeContext: body.nodeContext, signal, traceId, sessionId, hooks });
+    }
+  }
   if (policyCheck.decision !== "allow") {
     const text = `**Request ${policyCheck.failureCode ? "stopped: policy check failed" : policyCheck.decision === "review" ? "needs policy review" : "blocked by policy"}.**\n\n${policyCheck.reason}`;
     const assistantMessage = await chatMutation(state => {
@@ -150,15 +176,63 @@ export async function processStoredChat(input: {
     });
     return ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: text, intent: "POLICY_DENIAL", policyCheck }, "Policy check stopped this request; no business operation performed", null);
   }
-  if (body.nodeContext !== undefined) {
+  if (intent === "WORKFLOW_DISCUSSION" || intent === "CONVERSATION") return processConversationalChat(input, intent, intentRouting, chatMutation);
+  if (intent === "WORKFLOW_CONTROL") return processWorkflowControl(input, intentRouting, chatMutation, policyCheck);
+  // Count/list the current administrator token catalog directly, not a model's
+  // keyword-search subset or the separate reviewed-role registry.
+  if (intent === "CAPABILITIES" && administratorChatRoleEnabled(services, user) && body.documentContext === undefined) {
+    await services.mcpConnectionRuntime?.ensureSession();
+    return processAdministratorCapabilities(input, chatMutation);
+  }
+  if (directLibraryConfigured(services) && provider?.configured && ["QUERY", "AUDIT", "CAPABILITIES"].includes(intent) && body.nodeContext === undefined && body.documentContext === undefined)
+    return processBackendAgentChat(input, intent, chatMutation);
+  // Other intents may actually require ERP authoring or action capabilities.
+  // Restore only the existing enabled connection, never for document-only reads.
+  await services.mcpConnectionRuntime?.ensureSession();
+  // One-off email is a normal agent task: discover reads/senders and prepare
+  // the exact notification for confirmation. Do not divert administrators to
+  // the legacy report-only draft path, which cannot resolve live email tools.
+  // Recurring delivery remains ACTION and keeps its workflow/schedule gates.
+  if (administratorChatEnabled(services, user) && provider?.configured && ["QUERY", "AUDIT", "CAPABILITIES", "TOOL_CALL", "EMAIL_DELIVERY"].includes(intent) &&
+      (body.nodeContext === undefined || ["QUERY", "AUDIT", "CAPABILITIES"].includes(intent)) && body.documentContext === undefined)
+    return processBackendAgentChat(input, intent, chatMutation);
+  if (body.nodeContext !== undefined && intent === "WORKFLOW_MODIFY") {
     if (!hooks) throw new HandlerFailure(400, "Selected node prompts require saved chat operations");
     return processNodeProposal({ context: body.nodeContext, content, sessionId, traceId, user, services, ...(signal ? { signal } : {}), hooks });
   }
+  if (intent === "WORKFLOW_MODIFY") return processWorkflowProposal(input, chatMutation);
+  if (body.documentContext !== undefined && (body.nodeContext !== undefined || workflowContextYaml || preGeneratedCandidate))
+    throw new HandlerFailure(422, "Document-based ERP proposals require a new resident chat generation, without another workflow or node scope");
+  let documentContext: string | null = null;
+  try {
+    if (body.documentContext !== undefined) documentContext = await reviewedDocumentChatContext(services, user, sessionId, body.documentContext, async (name, args) => {
+      if (directLibraryConfigured(services)) return readTool(name, args);
+      // Check the current offered read before creating a content-read attempt.
+      // An advertised MCP name alone is not an admitted document contract.
+      let available;
+      try { available = await discoverTools(services.erpbridgeSession ?? null, services.registries); }
+      catch (error) { if (error instanceof ToolDiscoveryError) throw new ReadAdmissionUnavailableError(); throw error; }
+      const matches = available.filter(tool => [tool.name, tool.mcp_tool_name].includes(name) && tool.is_read_only && tool.allowed_roles.includes(user.role));
+      if (matches.length !== 1) throw new ReadAdmissionUnavailableError();
+      return readTool(name, args);
+    }, intent === "ACTION" ? "workflow" : "chat");
+  } catch (error) {
+    if (!(error instanceof ReadAdmissionUnavailableError) || body.documentContext === undefined || signal?.aborted) throw error;
+    const recovery = documentRetrievalReview(body.documentContext);
+    const assistantMessage = await chatMutation(state => {
+      const chat = assertChatAuthority(state, user, sessionId);
+      const message = { id: nextID(state, "msg"), role: "assistant", ...recovery, createdAt: now(), traceId, modelBinding: services.providerRuntime?.binding ?? null };
+      chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now(); return message;
+    });
+    return ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage, answer: assistantMessage.text, intent: "WORKFLOW_ERROR" }, "Document retrieval needs review; nothing executed", { traceId });
+  }
+  if (documentContext && intent !== "ACTION" && administratorChatEnabled(services, user) && provider?.configured)
+    return processBackendAgentChat(input, intent, chatMutation, documentContext);
   const contextMessages = workflowContextYaml
     ? [`assistant: I have the following workflow loaded for context:\n**${workflowContextName}**\n\`\`\`yaml\n${workflowContextYaml}\n\`\`\``, ...stored.priorMessages]
     : stored.priorMessages;
-  const augmentedPriorMessages = policyCheck.source === "skipped" ? contextMessages :
-    [...contextMessages, `assistant: Additional policy preflight (${policyCheck.source}): ${policyCheck.reason}. This is not execution permission; mandatory validation and approvals remain required.`];
+  const augmentedPriorMessages = [...contextMessages, ...(documentContext ? [documentContext] : []), ...(policyCheck.source === "skipped" ? [] :
+    [`assistant: Additional policy preflight (${policyCheck.source}): ${policyCheck.reason}. This is not execution permission; mandatory validation and approvals remain required.`])];
   const preserveRecurringShell = async (requestValue: RecurringDeliveryRequest, compositionFailure?: "COMPOSITION_UNAVAILABLE" | "CAPABILITY_DISCOVERY_UNAVAILABLE" | "NO_REVIEWED_COMPOSITION_CAPABILITY") => {
     await hooks?.stage("GENERATING");
     const yaml = recurringAutomationShell(content, requestValue), timestamp = now();
@@ -214,11 +288,12 @@ export async function processStoredChat(input: {
       intent, blocked: true, operation: { success: false, code } }, "Message processed; ERP operation unavailable", null);
   }
   if (intent === "CAPABILITIES") {
-    const liveCapTools = await discoverTools(services.erpbridgeSession ?? null, services.registries);
-    const capText = buildCapabilitiesResponse(liveCapTools);
+    const liveCapTools = (await discoverTools(services.erpbridgeSession ?? null, services.registries)).filter(tool => tool.allowed_roles.includes(user.role));
+    const capText = services.erpbridgeSession ? buildCapabilitiesResponse(liveCapTools) :
+      "The ERPBridge connection is currently unavailable. Check your ERP connection and try again when it is connected. No ERP tools or business operations were invoked.";
     const assistantMessage = await chatMutation((state) => {
       const chat = assertChatAuthority(state, user, sessionId);
-      const message = { id: nextID(state, "msg"), role: "assistant", modelBinding: provider?.binding ?? null, text: capText, artifacts: { intent: "CAPABILITIES" }, createdAt: now(), traceId };
+      const message = { id: nextID(state, "msg"), role: "assistant", modelBinding: provider?.binding ?? null, text: capText, artifacts: { intent: "CAPABILITIES", capabilities: { offeredCount: liveCapTools.length, readOnlyCount: liveCapTools.filter(tool => tool.is_read_only).length } }, createdAt: now(), traceId };
       chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
       return message;
     });
@@ -232,6 +307,7 @@ export async function processStoredChat(input: {
       readOnlyTools = (await discoverTools(services.erpbridgeSession, services.registries))
         .filter((tool) => tool.is_read_only && tool.allowed_roles.includes(user.role));
     }
+    if (services.erpbridgeSession && readOnlyTools.length === 0) return processMissingReadCapability(input, intent, chatMutation);
     const workspaceStatus = await services.repository.readAuthoritative(state => chatWorkspaceStatus(state, user, sessionId));
     const chatHistory = queryChatHistory(body, stored, policyCheck);
     let loopResult;
@@ -284,14 +360,22 @@ export async function processStoredChat(input: {
         allTools,
         readTool,
         // Required write authorization cannot be disabled by an advisory toggle.
-        async (toolName, toolDef, args, govUser) =>
-              checkErpPolicy(bridgeSession, {
+        async (toolName, toolDef, args, govUser) => {
+          if (directRagConfigured(services.config)) {
+            const result = await checkDirectRagPolicy(services.config, { id: govUser.id, role: govUser.role }, {
+              prompt: `User "${govUser.id}" (${govUser.role}) wants to execute: ${toolDef.display_name ?? toolName}`,
+              action: toolName, context: { tool: toolName, arguments: args }, signal,
+            });
+            return { allowed: result.decision === "allow", decision: result.decision === "unavailable" ? "deny" as const : result.decision, reason: result.reason };
+          }
+          return checkErpPolicy(bridgeSession, {
                 userId: govUser.id,
                 userRole: govUser.role,
                 action: toolName,
                 prompt: `User "${govUser.id}" (${govUser.role}) wants to execute: ${toolDef.display_name ?? toolName}`,
                 context: { tool: toolName, arguments: args },
-              }),
+              });
+        },
         services.providerRuntime,
       );
     } catch (error) {
@@ -300,8 +384,8 @@ export async function processStoredChat(input: {
     const actionArtifacts = {
       intent: "TOOL_CALL",
       steps: actionResult.steps,
+      ...(actionResult.proposalCorrections?.length ? { proposalCorrections: actionResult.proposalCorrections } : {}),
       blocked: actionResult.blocked,
-      workflowDraft: actionResult.workflowYaml,
       ...(actionResult.modelRouting ? { modelRouting: actionResult.modelRouting } : {}),
       toolSteps: actionResult.steps.map((s) => ({ toolName: s.toolName, arguments: s.arguments, result: s.result })),
     };
@@ -321,55 +405,9 @@ export async function processStoredChat(input: {
       intent,
       steps: actionResult.steps,
       blocked: actionResult.blocked,
-      workflowDraft: actionResult.workflowYaml,
       modelBinding: answerBinding,
       usage: { inputTokens: actionResult.totalTokens.input, outputTokens: actionResult.totalTokens.output, measured: actionResult.totalTokens.measured === true },
     }, "Message processed", null);
-  }
-
-  if (intent === "WORKFLOW_MODIFY" && services.providerRuntime?.configured === true) {
-    const lastWorkflowYaml = await services.repository.read((state) => {
-      const chat = state.chats[sessionId];
-      if (chat === undefined) return null;
-      const context = effectiveChatContext(chat.messages);
-      for (let i = context.length - 1; i >= 0; i--) {
-        const msg = context[i] as Record<string, unknown>;
-        const artifacts = msg.artifacts as Record<string, unknown> | undefined;
-        const yaml = artifacts?.yaml ?? artifacts?.selected_workflow_yaml ?? artifacts?.workflowDraft;
-        if (typeof yaml === "string" && yaml.trim().length > 0) return yaml;
-        if (typeof yaml === "object" && yaml !== null && typeof (yaml as Record<string, unknown>).yaml === "string") {
-          return (yaml as Record<string, unknown>).yaml as string;
-        }
-      }
-      return null;
-    });
-
-    const effectiveYaml = lastWorkflowYaml ?? workflowContextYaml;
-    if (effectiveYaml !== null) {
-      await hooks?.stage("GENERATING");
-      const modResult = await modifyWorkflow(effectiveYaml, content, services.providerRuntime, signal);
-      const responseText = modResult.ok
-        ? `I've prepared a workflow change proposal: ${modResult.changeDescription}\n\nReview the proposal in the panel; it is not saved, published or executed.`
-        : `I wasn't able to apply that modification: ${modResult.errorMessage ?? "Unknown error"}`;
-      const modArtifacts = modResult.ok
-        ? { intent: "WORKFLOW", yaml: modResult.yaml, selected_workflow_yaml: modResult.yaml, can_execute: false, validation: { passed: false, failed_rules: [], warnings: [] } }
-        : { intent: "WORKFLOW_MODIFY_ERROR" };
-      const assistantMessage = await chatMutation((state) => {
-        const chat = assertChatAuthority(state, user, sessionId);
-        const message = { id: nextID(state, "msg"), role: "assistant", modelBinding: provider?.binding ?? null, text: responseText, artifacts: modArtifacts, createdAt: now(), traceId };
-        chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
-        return message;
-      });
-      return ok({
-        session: stored.session,
-        userMessage: stored.userMessage,
-        assistantMessage,
-        answer: responseText,
-        intent,
-        ...(modResult.ok ? { yaml: modResult.yaml } : {}),
-      }, "Message processed", null);
-    }
-    // Fall through to synthesis if no previous workflow found in chat
   }
 
   if (intent !== "ACTION") {
@@ -412,12 +450,13 @@ export async function processStoredChat(input: {
     if (automationRequest) return preserveRecurringShell(automationRequest, "COMPOSITION_UNAVAILABLE");
     const errText = errorText(error);
     const errorDetail = errText.split(":").at(-1)?.trim() || errText;
-    const friendlyText = errText.includes("HTTP 400") || errText.includes("Generation attempt failed") || errText.includes("Candidate generation failed")
+    const documentFailure = documentContext ? documentProposalFailure(body.documentContext) : null;
+    const friendlyText = documentFailure?.text ?? (errText.includes("HTTP 400") || errText.includes("Generation attempt failed") || errText.includes("Candidate generation failed")
       ? "I wasn't able to generate a workflow for this request.\n\nThis usually happens when the request involves capabilities not available in this ERP system (e.g. tax verification, sanctions checking, email notifications), or when the AI model is temporarily unavailable.\n\nTry asking for a simpler workflow, or check **Capabilities** to see what this system supports."
-      : `Unable to generate workflow — the generation service encountered an error. Please try again.\n\n_${errorDetail}_`;
+      : `Unable to generate workflow — the generation service encountered an error. Please try again.\n\n_${errorDetail}_`);
     const errMessage = await chatMutation((state) => {
       const chat = assertChatAuthority(state, user, sessionId);
-      const msg = { id: nextID(state, "msg"), role: "assistant", modelBinding: provider?.binding ?? null, text: friendlyText, artifacts: { intent: "WORKFLOW_ERROR" }, createdAt: now(), traceId };
+      const msg = { id: nextID(state, "msg"), role: "assistant", modelBinding: provider?.binding ?? null, text: friendlyText, artifacts: documentFailure?.artifacts ?? { intent: "WORKFLOW_ERROR" }, createdAt: now(), traceId };
       chat.messages.push(msg); chat.messageCount = chat.messages.length; chat.updatedAt = now();
       return msg;
     });

@@ -74,6 +74,17 @@ test("bounded reopen preserves an unresolved original MCP connect claim and its 
   } finally { finish(); await pending; await reopened?.close(); }
 });
 
+test("chat admission preserves configured identity without network discovery or a no-op database write",async()=>{
+  const s=await setup(new Persistence(),"bounded-invocation");await s.connect();
+  const binding=s.runtime.session!.admissionBinding, calls=s.factory.mock.calls.length;
+  const mutate=vi.spyOn(s.repository,"mutate");
+  const deferred=await McpConnectionRuntime.open({...s.options,deferConnection:true});runtimes.push(deferred);
+  expect(s.factory).toHaveBeenCalledTimes(calls);expect(mutate).not.toHaveBeenCalled();
+  expect(deferred.session).toBeUndefined();expect(deferred.admissionConfigurationBinding).toBe(binding);
+  expect((await deferred.status(s.admin)).connections[0]).toMatchObject({initialized:false,discoveryAvailable:false});
+  expect(s.sdkClients.every(client=>client.callTool.mock.calls.length===0)).toBe(true);
+});
+
 test.each(["connect", "test"] as const)("bounded %s reopen keeps original receipt, rejects competing work and disconnect fences its late completion", async action => {
   const storage = new Persistence(), s = await setup(storage, "bounded-invocation");
   if (action === "test") await s.connect();
@@ -326,6 +337,25 @@ test("a successful restore candidate is disposed when the final authoritative re
   s.factory.mockImplementationOnce(options => createErpbridgeMcpSession({ ...options, sdkClient: client }));
   const restored = await McpConnectionRuntime.open(s.options); runtimes.push(restored); expect(restored.session).toBeUndefined(); expect(client.close).toHaveBeenCalled();
   expect((await restored.status(s.admin)).connections[0]!.state).toBe("DEGRADED");
+});
+
+test("deferred document runtime makes no bridge request until ERP is selected", async () => {
+  const s = await setup(new Persistence()); await s.connect(); await s.runtime.stop();
+  const deferred = await McpConnectionRuntime.open({ ...s.options, deferConnection: true }); runtimes.push(deferred);
+  expect(deferred.session).toBeUndefined(); expect(s.factory).toHaveBeenCalledTimes(1);
+  await Promise.all([deferred.ensureSession(), deferred.ensureSession()]);
+  expect(deferred.session).toBeDefined(); expect(s.factory).toHaveBeenCalledTimes(2);
+  expect(s.sdkClients.every(client => client.callTool.mock.calls.length === 0)).toBe(true);
+});
+
+test("deferred startup does not enable a disabled connection or retry a degraded bridge", async () => {
+  const s = await setup(new Persistence());
+  await s.runtime.ensureSession(); expect(s.factory).not.toHaveBeenCalled();
+  await s.connect(); await s.runtime.stop();
+  const deferred = await McpConnectionRuntime.open({ ...s.options, deferConnection: true }); runtimes.push(deferred);
+  s.factory.mockRejectedValueOnce(new Error("Unavailable"));
+  await deferred.ensureSession(); await deferred.ensureSession();
+  expect(deferred.session).toBeUndefined(); expect(s.factory).toHaveBeenCalledTimes(2);
 });
 
 test("same enabled configuration can restore initialize-only after restart; disabled intent and configuration rotation never auto-connect", async () => {

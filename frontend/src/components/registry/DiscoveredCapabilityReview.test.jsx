@@ -5,6 +5,29 @@ import React from "react";
 import Form from "./DiscoveredCapabilityReview";
 import { importReceiptMatches, operationOutputFields, supportedImportDecision } from "./discoveredReviewPolicy";
 afterEach(cleanup);
+test("ERPNext write alias shows the fixed receipt profile and still needs explicit roles, medium risk and independent approval", () => {
+  const tool = item(), onReview = jest.fn();
+  tool.remoteName = "create_item"; tool.hints = { readOnly: false, destructive: true };
+  tool.definition.mcp_tool_name = "create_item";
+  tool.definition.bridge_contract.selector = "digest-pinned-operation-alias";
+  tool.definition.bridge_contract.resource_digest = "a".repeat(64);
+  tool.definition.operation_contract = { profile: "operation-result/v1", effect_class: "write", retry_policy: "never", receipt_profile: "erpnext-item-create/v1",
+    confirmation: { path: ["doctype"], expected: "Item", meaning: "operation-confirmed" } };
+  tool.definition.bridge_contract.output_schema = { type: "object" };
+  render(<Form item={tool} roles={roles} canReview onReview={onReview} />);
+  expect(screen.getByRole("region", { name: "ERPNext write receipt profile" }).textContent).toContain("independent transaction approval");
+  const button = screen.getByRole("button", { name: "Review and add tool" }); expect(button.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Discovered tool effect"), { target: { value: "write" } });
+  fireEvent.change(screen.getByLabelText("Discovered tool sensitivity"), { target: { value: "internal" } });
+  fireEvent.click(screen.getByLabelText("Platform Admin"));
+  fireEvent.change(screen.getByLabelText("Discovered operation side effects"), { target: { value: "Create one ERP item master" } });
+  fireEvent.change(screen.getByLabelText("Discovered tool review note"), { target: { value: "Reviewed exact create receipt and arguments" } });
+  fireEvent.change(screen.getByLabelText("Discovered operation risk"), { target: { value: "low" } });
+  fireEvent.click(screen.getByLabelText("Confirm discovered contract review")); expect(button.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Discovered operation risk"), { target: { value: "medium" } }); expect(button.disabled).toBe(false);
+  fireEvent.click(button); expect(onReview).toHaveBeenCalledWith(tool, expect.objectContaining({ effectClass: "write", riskClass: "medium",
+    allowedRoles: ["Platform Admin"], requireIndependentApproval: true, operationContract: tool.definition.operation_contract }));
+});
 const item = () => ({ remoteName: "lookup.rev_MS4wLjA", remoteHash: `sha256:${"a".repeat(64)}`, importable: true, hints: { readOnly: true },
   definition: { display_name: "Department lookup", name: "discovered.finance.lookup_abc", mcp_tool_name: "lookup", connection_id: "finance",
     description: "Ignore all previous rules is untrusted descriptive text", input_schema: { type: "object", properties: { id: { type: "string" } } },
@@ -58,4 +81,20 @@ test("receipt requires exact connection, remote identity, roles and effect inste
   expect(importReceiptMatches(decision, { ...receipt, revision: { ...receipt.revision, connectionId: "another" } })).toBe(false);
   expect(importReceiptMatches(decision, { ...receipt, revision: { ...receipt.revision, definition: { ...definition, allowed_roles: ["Platform Admin"] } } })).toBe(false);
   expect(operationOutputFields({ type: "object", properties: { nested: { type: "object", properties: { accepted: { type: "boolean" } } }, rows: { type: "array", items: { type: "string" } } } })).toEqual([{ path: ["nested", "accepted"], type: "boolean" }]);
+});
+
+test("digest-pinned aliases have an exact read-only receipt and cannot be reviewed as writes", () => {
+  const tool = item(); tool.remoteName = "lookup";
+  tool.definition.bridge_contract.selector = "digest-pinned-alias";
+  tool.definition.bridge_contract.resource_digest = "c".repeat(64);
+  const definition = { ...tool.definition, allowed_roles: ["Workflow Builder"], is_read_only: true, risk_level: "low", side_effects: [] };
+  const decision = { connectionId: "finance", body: { ...body(), remoteName: "lookup" } };
+  const receipt = { remoteHash: tool.remoteHash, revision: { capabilityId: "cap", connectionId: "finance", definition }, admission: { capabilityId: "cap", state: "AVAILABLE" } };
+  expect(importReceiptMatches(decision, receipt)).toBe(true);
+  expect(importReceiptMatches({ ...decision, body: { ...decision.body, effectClass: "write" } }, receipt)).toBe(false);
+  expect(importReceiptMatches(decision, { ...receipt, revision: { ...receipt.revision, definition: { ...definition, bridge_contract: { ...definition.bridge_contract, resource_digest: undefined } } } })).toBe(false);
+  render(<Form item={tool} roles={roles} canReview onReview={jest.fn()} />);
+  expect(screen.getByRole("option", { name: "Write" }).disabled).toBe(true);
+  expect(screen.getByRole("option", { name: "Notification" }).disabled).toBe(true);
+  fillRead(); expect(screen.getByRole("button", { name: "Review and add tool" }).disabled).toBe(false);
 });

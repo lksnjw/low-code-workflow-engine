@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { OperationDeadlineExceeded } from "../core/bounded-operation.js";
+import { boundedOperation, OperationDeadlineExceeded } from "../core/bounded-operation.js";
 import type { HandlerServices, CurrentUser } from "../http/handlers/common.js";
 import { effectiveUserFromState, type RepositoryState } from "../repository/store.js";
 import { promptData } from "../prompts/contracts.js";
@@ -12,10 +12,12 @@ import { fallbackPolicySchema } from "./llm-fallback.js";
 import { interpretPolicyResponse } from "./rbac.js";
 import { OpenAICompatibleError } from "../providers/openai-compatible.js";
 import type { AnalysisResponse, GenerationDiagnostics, ProviderInvocationContext } from "../analysisprovider/types.js";
+import { checkDirectRagPolicy, directRagConfigured } from "./direct-rag.js";
+import { INTERACTIVE_HANDOFF_MS } from "../core/interactive-handoff.js";
 
 export type PolicyDecision = {
   decision: "allow" | "deny" | "review" | "unavailable";
-  source: "erpbridge" | "local_model" | "skipped";
+  source: "erpbridge" | "rag" | "local_model" | "skipped";
   reason: string;
   fallbackUsed?: boolean;
   policyVersion?: string;
@@ -26,6 +28,7 @@ export type PolicyDecision = {
   failureCode?: "LOCAL_POLICY_CONFIG_INVALID" | "LOCAL_POLICY_PROVIDER_FAILED" | "LOCAL_POLICY_RESPONSE_INVALID" | "POLICY_CHECK_CANCELLED";
 };
 export type PolicySwitches = { remote: boolean; local: boolean };
+export const REMOTE_POLICY_HANDOFF_MS = INTERACTIVE_HANDOFF_MS;
 export type PolicyRequest = { prompt: string; action: string; context?: Record<string, unknown>; signal?: AbortSignal | undefined; traceId?: string | undefined; sessionId?: string | undefined };
 export type LocalPolicyPlan = { prompt: string; metadata: Required<Pick<PolicyDecision, "policyVersion" | "policyHash" | "promptTemplateVersion">>;
   context: ProviderInvocationContext };
@@ -64,6 +67,7 @@ export async function choosePolicyCheck(settings: PolicySwitches, remote: () => 
 }
 
 async function checkRemote(services: HandlerServices, user: CurrentUser, input: PolicyRequest): Promise<PolicyDecision> {
+  if (directRagConfigured(services.config)) return checkDirectRagPolicy(services.config, user, input);
   const source = "erpbridge" as const, session = services.erpbridgeSession;
   if (!session || session.available === false) return { decision: "unavailable", source, reason: "ERPBridge policy checker is not connected." };
   // These two server-owned adapters have explicit argument contracts. Never
@@ -78,11 +82,17 @@ async function checkRemote(services: HandlerServices, user: CurrentUser, input: 
     return { decision: "deny", source, reason: "ERPBridge policy-checker contract or role grant is invalid." };
   const args = tool.mcp_tool_name === "check_policy"
     ? { tool_name: input.action, user_id: user.id, user_role: user.role, arguments: { prompt: input.prompt, ...input.context } }
-    : { actor: { id: user.id, role: user.role }, prompt: input.prompt, context: { ...input.context, action: input.action } };
+    : { actor: { user_id: user.id, role: user.role }, prompt: input.prompt, context: { ...input.context, action: input.action } };
   if (validateToolInput(tool.input_schema, args).length) return { decision: "deny", source, reason: "ERPBridge policy-checker input does not match its reviewed contract." };
   try {
-    const result = interpretPolicyResponse(await session.callToolDirect(tool.mcp_tool_name, args, input.signal));
-    return { decision: result.allowed ? "allow" : "deny", source, reason: (result.reason || (result.allowed ? "ERPBridge policy check allowed this request." : "ERPBridge policy check denied this request.")).slice(0, 1000) };
+    // Soft handoff only. Aborting this SDK request would close the shared MCP
+    // session and break subsequent ERP calls. The SDK still owns its bounded
+    // read-only transport; boundedOperation observes and fences late results.
+    const raw = await boundedOperation(() => session.callToolDirect(tool.mcp_tool_name, args, input.signal), {
+      timeoutMs: REMOTE_POLICY_HANDOFF_MS, label: "ERPBridge optional policy", signal: input.signal,
+    });
+    const result = interpretPolicyResponse(raw);
+    return { decision: result.decision, source, reason: (result.reason || (result.allowed ? "ERPBridge policy check allowed this request." : result.decision === "review" ? "ERPBridge policy check requires review before execution." : "ERPBridge policy check denied this request.")).slice(0, 1000) };
   } catch (error) {
     return { decision: remotePolicyUnavailable(error) ? "unavailable" : "deny", source,
       reason: input.signal?.aborted ? "Policy check cancelled." : remotePolicyUnavailable(error) ? "ERPBridge policy checker is temporarily unavailable." : "ERPBridge policy check failed safely; no operation was approved." };

@@ -11,6 +11,27 @@ const steps = ["read", "yes", "no", "send"].map(id => ({ id, label: id, source: 
 const action = nodeId => ({ kind: "action", nodeId });
 const sequence = (...nodes) => ({ kind: "sequence", nodes });
 
+test("reset view restores zoom and scroll without editing nodes or invoking tools", () => {
+  const select = jest.fn(), before = JSON.stringify(steps);
+  const { rerender } = render(<WorkflowMiniCanvas simple steps={steps} onSelectCondition={select} viewReset={0} />);
+  screen.getByLabelText("Workflow node connections").scrollLeft = 200;
+  fireEvent.click(screen.getByRole("button", { name: "Zoom in canvas" }));
+  expect(screen.getByRole("button", { name: "Reset canvas zoom" }).textContent).toBe("125%");
+  rerender(<WorkflowMiniCanvas simple steps={steps} onSelectCondition={select} viewReset={1} />);
+  expect(screen.getByRole("button", { name: "Reset canvas zoom" }).textContent).toBe("100%");
+  expect(screen.getByLabelText("Workflow node connections").scrollLeft).toBe(0);
+  expect(select).not.toHaveBeenCalled(); expect(JSON.stringify(steps)).toBe(before);
+});
+
+test("first canvas input entry opens preparation without selecting or executing an ERP step", () => {
+  const prepare = jest.fn(), select = jest.fn();
+  render(<WorkflowMiniCanvas simple steps={steps} onPrepareInputs={prepare} onSelectCondition={select} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select input Inputs & documents" }));
+  expect(prepare).toHaveBeenCalledTimes(1); expect(select).not.toHaveBeenCalled();
+  expect(screen.getAllByRole("button", { name: /^Select step/ })).toHaveLength(4);
+  expect(screen.getByText("Upload image/PDF or enter fields")).toBeTruthy();
+});
+
 test("required human approval is an explicit display gate before the effect, without changing saved branches", () => {
   const flow = sequence(action("read"), { id: "check", kind: "if", then: sequence(action("send")), else: sequence({ id: "finish", kind: "return" }) });
   const before = JSON.stringify(flow);
@@ -54,11 +75,13 @@ test("tree preview retains human checkpoints and a recorded old wait does not be
 });
 
 test("an empty saved draft explains its unresolved requirements instead of drawing a blank grid", () => {
-  const controls = jest.fn();
-  render(<WorkflowMiniCanvas simple savedDraft steps={[]} onSelectCondition={jest.fn()} emptyDescription="ERP report tools are not available yet." unresolvedRequirements={["Choose a reporting tool", "Confirm delivery timezone"]} onOpenControls={controls} />);
+  const controls = jest.fn(), chat = jest.fn();
+  render(<WorkflowMiniCanvas simple savedDraft steps={[]} onSelectCondition={jest.fn()} emptyDescription="ERP report tools are not available yet." unresolvedRequirements={["Choose a reporting tool", "Confirm delivery timezone"]} onOpenControls={controls} onContinueChat={chat} />);
   expect(screen.getByRole("status", { name: "Empty saved workflow" }).textContent).toContain("no steps yet");
   expect(screen.getByText("Choose a reporting tool")).toBeTruthy(); expect(screen.queryByLabelText("Workflow node connections")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Review requirements and add steps" })); expect(controls).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Complete in chat" })); expect(chat).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(/not a pending approval/)).toBeTruthy(); expect(screen.queryByRole("button", { name: /^(OK|Approve)$/ })).toBeNull();
 });
 
 test("decision arrows retain both declared paths and their shared continuation", () => {

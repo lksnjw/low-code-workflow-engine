@@ -6,7 +6,7 @@ import { interpretReadPlan, type ReadVisit } from "./read-interpreter.js";
 import { boundFixtureData, type SimulationEntry } from "./read-simulation.js";
 import { modelInputItemCount } from "./model-input.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
-import { safeMcpResult } from "../tools/mcp-result.js";
+import { safeMcpToolResult } from "../tools/mcp-result.js";
 import { withoutSecretFields } from "../redact/secrets.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import type { CompletedRead } from "./read-completion-evidence.js";
@@ -78,7 +78,7 @@ export async function simulateModelWorkflow(yaml: string, input: Record<string, 
           entry.arguments = withoutSecretFields(args);
           if (validateSelected && !validateSelected(node.id, args, prior, visit)) return fail(entry, "SELECTED_PATH_RULE_BLOCKED");
           if (!Object.hasOwn(fixtures.outputs, node.id)) return fail(entry, "MISSING_FIXTURE");
-          try { output = safeMcpResult(fixtures.outputs[node.id], tool.bridge_contract?.output_schema); }
+          try { output = safeMcpToolResult(fixtures.outputs[node.id], tool); }
           catch { return fail(entry, "FIXTURE_OUTPUT_INVALID"); }
           used.add(node.id);
           if (output.isError === true) return fail({ ...entry, output }, "FIXTURE_TOOL_ERROR");

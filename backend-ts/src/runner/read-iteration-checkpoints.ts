@@ -11,7 +11,7 @@ import { assertCompiledReadMatches, compileReadWorkflow, type CompiledReadPlan, 
 import { loopNodes, structuralNodes, type ReadSkipReason } from "../workflows/read-control-flow.js";
 import { ReadValueBudget } from "../workflows/read-value-budget.js";
 import type { ToolDefinition } from "../registry/schemas.js";
-import { safeMcpResult } from "../tools/mcp-result.js";
+import { safeMcpToolResult } from "../tools/mcp-result.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { withoutSecretFields } from "../redact/secrets.js";
 import { appendExecutionEvent, assertCurrentRunController, ReadCheckpointFailure, ReadRunCancelled } from "./read-checkpoints.js";
@@ -374,7 +374,7 @@ export class ReadIterationCheckpoints {
       // No next boundary may start without the authority/cancel check above.
       const { point, receipt, attempt } = await this.actionPoint(item, state, visit, "DISPATCH_INTENT");
       const definition = this.#plan.ir.root.nodes[point.sourceIndex]!, tool = this.#tools.find(value => value.tool_id === definition.capability.toolId)!;
-      const output = safeMcpResult(rawOutput, tool.bridge_contract?.output_schema), error = output.isError === true;
+      const output = safeMcpToolResult(rawOutput, tool), error = output.isError === true;
       const timestamp = new Date().toISOString(); attempt.status = error ? "FAILED" : "DONE"; attempt.completedAt = timestamp;
       const { seal: _seal, ...record } = receipt; this.put(item, { ...record, status: attempt.status, recordedAt: timestamp, ...(!error ? { outputBinding: this.outputBinding(output) } : {}) });
       const entry = state.timelines[item.id]?.find(value => value.attemptId === attempt.id); if (!entry) throw new Error("Iteration attempt lacks its timeline");

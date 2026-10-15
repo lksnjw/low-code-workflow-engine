@@ -128,6 +128,7 @@ describe("complete HTTP route graph", () => {
     expect(captured.filter((route) => !actual.includes(route))).toEqual([]);
     expect(actual.filter((route) => !captured.includes(route)).sort()).toEqual([
       "GET /api/dashboard/tasks",
+      "GET /api/chat/sessions/:id/erp-actions/:actionId", "POST /api/chat/sessions/:id/erp-actions/:actionId",
       "GET /api/workflows/:id/run-receipts/:key",
       "POST /api/executions/:id/approve", "POST /api/executions/:id/reject", "POST /api/executions/:id/reconcile",
       "GET /api/executions/:id/report-page-resolutions", "POST /api/executions/:id/report-page-resolutions",
@@ -140,12 +141,22 @@ describe("complete HTTP route graph", () => {
       "GET /api/executions/:id/events",
       "GET /api/execution-reviews",
       "GET /api/settings/runtime-approval-policy",
+      "GET /api/settings/rag-policy", "POST /api/settings/rag-policy/test", "POST /api/settings/rag-policy/documents",
       "GET /api/chat/models",
       "GET /api/chat/capabilities",
       "GET /api/pipeline/v1/health/ready", "GET /api/pipeline/v1/jobs/:id",
       "POST /api/pipeline/v1/files/csv", "POST /api/pipeline/v1/files/documents",
+      "GET /api/pipeline/v1/library/catalog", "POST /api/pipeline/v1/library/catalog", "GET /api/pipeline/v1/library/inventory",
+      "POST /api/pipeline/v1/library/search", "POST /api/pipeline/v1/library/resolve",
+      "POST /api/pipeline/v1/library/migrate",
+      "POST /api/pipeline/v1/library/delegation",
+      "GET /api/chat/sessions/:id/attachments", "POST /api/chat/sessions/:id/attachments", "GET /api/chat/sessions/:id/attachments/:uploadId",
+      "POST /api/chat/sessions/:id/attachments/preview",
+      "POST /api/chat/sessions/:id/attachments/prepare",
+      "POST /api/chat/sessions/:id/attachments/:uploadId/analyse", "POST /api/chat/sessions/:id/attachments/:uploadId/confirm", "POST /api/chat/sessions/:id/attachments/:uploadId/recover",
       "GET /api/registry/capabilities", "POST /api/registry/capabilities/discovery", "POST /api/registry/capabilities/import", "POST /api/registry/capabilities/:id/review", "POST /api/registry/capabilities/:id/disable",
       "GET /api/settings/mcp-connections", "POST /api/settings/mcp-connections/:id/connect", "POST /api/settings/mcp-connections/:id/disconnect", "POST /api/settings/mcp-connections/:id/test",
+      "GET /api/profile/erp-connections", "PUT /api/profile/erp-connections/:id", "DELETE /api/profile/erp-connections/:id", "POST /api/profile/erp-connections/:id/test",
       "GET /api/chat/sessions/:id/operations", "GET /api/chat/operations/:id", "POST /api/chat/operations/:id/cancel",
     ].sort());
   });

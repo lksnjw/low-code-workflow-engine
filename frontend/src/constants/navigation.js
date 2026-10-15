@@ -83,6 +83,7 @@ const allNavigationGroups = [
 		requiredAny: ["settings:manage"],
     subMenu: [
       { id: "general", label: "General", path: "/settings" },
+      { id: "rag", label: "RAG policies", path: "/settings/rag-policy" },
       { id: "integrations", label: "Integrations", path: "/settings/integrations" },
       { id: "llm", label: "LLM Policy", path: "/settings/llm" },
     ],
@@ -135,6 +136,7 @@ const allNavigationGroups = [
     requiredAny: ["pipeline:upload", "chat:use"],
     subMenu: [
       { id: "upload", label: "Files & Documents", path: "/datafeed/upload", requiredAny: ["pipeline:upload"] },
+        { id: "search", label: "Document Search", path: "/datafeed/search", requiredAny: ["chat:use", "workflow:write"] },
       { id: "chat", label: "Indexed Data Chat", path: "/datafeed/chat", requiredAny: ["chat:use"] },
     ],
   },

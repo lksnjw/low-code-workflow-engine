@@ -24,23 +24,24 @@ export default function PolicyChecksPanel({ rbac = {}, onChanged }) {
       setError(message); notify(message, "error");
     } finally { setSaving(null); }
   };
-  const mode = remote && local ? "ERPBridge first; local JSON/model only if the checker is unavailable."
-    : remote ? "ERPBridge only. If the checker is unavailable, the request is blocked."
+  const mode = remote && local ? "Backend RAG first (up to 10 seconds); local JSON/model only if the checker is unavailable."
+    : remote ? "Backend RAG only. If the checker is unavailable, the request is blocked."
     : local ? "Local JSON/model only, using your selected model."
     : "Additional policy checks are off.";
   return <Card>
     <h2 className="section-title">Policy checks</h2>
+    <a href="/settings/rag-policy" className="mt-2 inline-block text-sm text-primary hover:underline">Open RAG policy console</a>
     <fieldset disabled={Boolean(saving)} className="mt-4 space-y-5 disabled:opacity-70">
       {[
-        ["enabled", "ERPBridge policy checker", remote, "Check requests with the reviewed policy tool exposed by ERPBridge."],
-        ["localPolicyAgentEnabled", "Local JSON policy agent", local, "Send the configured JSON policies to your selected model for an allow, deny or review decision."],
+        ["enabled", "RAG policy checker", remote, "The backend checks requests against the configured RAG service. Its key stays on the server. Older deployments without a direct RAG connection retain their reviewed ERPBridge adapter."],
+        ["localPolicyAgentEnabled", "Local JSON policy agent", local, "Use your backend-configured JSON policy with the selected model for an allow, deny or review decision. JSON files are configured on the backend, not imported here."],
       ].map(([field, title, checked, description]) => <div key={field} role="group" aria-label={title} className="flex items-start justify-between gap-4">
-        <div><h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3><p className="mt-1 max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">{description}</p></div>
-        <Toggle checked={checked} onChange={next => toggle(field, next)} label={saving === field ? "Saving…" : checked ? "On" : "Off"} />
+        <div className="min-w-0"><h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3><p id={`policy-${field}-description`} className="mt-1 max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">{description}</p></div>
+        <Toggle checked={checked} onChange={next => toggle(field, next)} ariaLabel={title} describedBy={`policy-${field}-description`} disabled={Boolean(saving)} label={saving === field ? "Saving…" : checked ? "On" : "Off"} />
       </div>)}
     </fieldset>
     <p role="status" className="mt-4 text-sm text-gray-600 dark:text-gray-300">{mode}</p>
-    <p className="mt-2 text-xs leading-5 text-gray-500">A remote denial is never overridden. Login, role permissions, validation and required runtime approvals remain enforced in every mode.</p>
+    <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">A remote denial or review requirement is never overridden. Login, role permissions, validation and required runtime approvals remain enforced in every mode.</p>
     {error && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
   </Card>;
 }

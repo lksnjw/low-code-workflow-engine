@@ -25,6 +25,7 @@ import { boundMcpConnection, selectedMcpConnectionId } from "../../tools/mcp-dis
 import { effectiveStepKind } from "../../models/schemas.js";
 import { hasWorkflowEffects, usesCheckpointedOperationWorkflow } from "../../workflows/execution-shape.js";
 import { operationModelReadinessIssues } from "../../workflows/operation-model-readiness.js";
+import { runtimeApprovalPolicyHash } from "../../runner/runtime-approvals.js";
 import { selectedConditionGuidance } from "../../workflows/selected-condition-guidance.js";
 import { selectedProtectedGuidance } from "../../workflows/selected-protected-guidance.js";
 import { protectedOperationProfile } from "../../workflows/protected-operation-profile.js";
@@ -107,6 +108,14 @@ export async function handleWorkflowCommand(kind: "commands" | "node-proposals" 
           } catch { bridge = "discovery_failed"; }
         }
       } catch { issues.push("Workflow could not be parsed"); }
+      let approvalSetupRequired = false;
+      if (effectProfile === "contains-effects") {
+        try { await services.repository.readAuthoritative(state => runtimeApprovalPolicyHash(state, user.id)); }
+        catch (error) {
+          if (!(error instanceof HandlerFailure) || !error.meta || typeof error.meta !== "object" || !("code" in error.meta) || error.meta.code !== "RUNTIME_APPROVAL_DENIED") throw error;
+          approvalSetupRequired = true; issues.push("Transaction reviewers are not configured or enabled. An administrator must configure independent approval in Settings before this workflow can run.");
+        }
+      }
       const published = await services.repository.read((state) => (state.versions[workflowId] ?? []).some((version) => version.artifactState === "PUBLISHED" && version.version === current.publishedVersion && version.yaml === current.yaml));
       const compilation = await services.repository.readAuthoritative(state => {
         const version = (state.versions[workflowId] ?? []).findLast(value => value.artifactState === "PUBLISHED" && value.version === current.publishedVersion && value.yaml === current.yaml);
@@ -136,7 +145,10 @@ export async function handleWorkflowCommand(kind: "commands" | "node-proposals" 
         editHistory, effectProfile, ...(protectedCompilation ? { protectedCompilation } : {}),
         can_attempt_run: canAttempt && published && compilation.state === "CURRENT" && validation.passed && !issues.length && bridge === "discovery_available" && !current.pendingGenerationApproval?.steps.length,
         read_job_admission: supportsReadJobs(services) ? "read-job-v1" : "unavailable",
+        read_snapshot_schedule_admission: supportsReadJobs(services) && published && compilation.state === "CURRENT" && !operationProfile &&
+          effectProfile === "read-only" && "receipt" in compilation && compilation.receipt?.schemaVersion !== "workflow-read-ir/v4" && validation.passed ? "read-snapshot/v1" : "unavailable",
         operation_job_admission: !protectedRuntimePending && operationProfile && supportsOperationJobs(services) ? "operation-job/v1" : "unavailable",
+        approval_setup_required: approvalSetupRequired, can_manage_approval_policy: user.role === "Platform Admin" && user.permissions.includes("settings:manage"),
         authorization: "rechecked_at_dispatch", executionProfile: protectedRuntimePending ? "protected-draft-runtime-pending" : "executionProfile" in authoring && authoring.executionProfile === "protected-operation-v1" ? "protected-operation-v1" : operationProfile ? "sequential-operation-v1" : "receipt" in compilation && compilation.receipt?.schemaVersion === "workflow-read-ir/v4" ? "collection-read-v1" : "executionProfile" in authoring ? authoring.executionProfile : "sequential-read-v1" }, "Readiness checked", { traceId }));
     }
     if (kind === "node-proposals") {

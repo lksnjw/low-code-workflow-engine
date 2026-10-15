@@ -15,6 +15,8 @@ export type AnalysisResponse = {
 };
 
 export type ProviderInvocationContext = {
+  /** Private, bounded document input. Never persisted as invocation metadata. */
+  documentAttachment?: { filename: string; mimeType: "image/png" | "image/jpeg" | "application/pdf"; dataBase64: string; sha256: string };
   promptTemplateVersion: string;
   fallbackUsed?: boolean;
   traceId?: string;

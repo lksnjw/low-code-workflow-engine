@@ -15,13 +15,13 @@ function WorkflowFilters({ query, status, onQueryChange, onStatusChange }) {
           icon="mdi:magnify"
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
         />
-        <Input className="pl-9" placeholder="Search workflows..." value={query} onChange={(event) => onQueryChange(event.target.value)} />
+        <Input aria-label="Search saved workflows" className="pl-9" placeholder="Search workflows..." value={query} onChange={(event) => onQueryChange(event.target.value)} />
       </label>
       <div className="flex gap-2">
-        <Select value={status} onChange={(event) => onStatusChange(event.target.value)}>
+        <Select aria-label="Workflow status filter" value={status} onChange={(event) => onStatusChange(event.target.value)}>
           <option value="">All statuses</option>
           <option value="PENDING">Pending</option>
-          <option value="DONE">Published</option>
+          <option value="PUBLISHED">Published</option>
           <option value="draft-unvalidated">Unvalidated draft</option>
         </Select>
       </div>

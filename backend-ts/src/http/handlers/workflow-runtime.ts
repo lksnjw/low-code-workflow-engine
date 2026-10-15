@@ -16,29 +16,40 @@ import { isTraceId, requestTraceId } from "../../trace/request-trace.js";
 import { canViewWorkflow } from "../../workflows/commands.js";
 import type { ApplicationServices } from "../application-services.js";
 import { INVALID_JSON_BODY } from "../request-body.js";
-import { HandlerFailure, type CurrentUser, stringValue, validateWorkflow as validateWithGovernance } from "./common.js";
+import { HandlerFailure, type CurrentUser, paginate, stringValue, validateWorkflow as validateWithGovernance } from "./common.js";
 import { assertActorAuthority } from "./model-selection.js";
 import { validateWorkspaceDraft } from "../../workflows/draft-validation.js";
 import { runVerifiedRead } from "./read-execution.js";
 import { boundedReadFixtureRequest, handleReadFixtureSimulation } from "./read-simulation.js";
+import { workflowSummary } from "../../workflows/summary.js";
+import { assertExecutionRetry } from "../../runner/execution-retry.js";
+import { visibleExecutions } from "../execution-scope.js";
 
 export async function listWorkflows(
-  _request: FastifyRequest,
+  request: FastifyRequest,
   reply: FastifyReply,
   user: User & { permissions: string[] },
-  services: ApplicationServices,
+  services: { repository: Pick<ApplicationServices["repository"], "read"> },
 ): Promise<unknown> {
-  const state = await services.repository.snapshot();
+  return services.repository.read(state => {
   const all = Object.values(state.workflows).filter((item) => !item.archived);
   const visible = all.filter((item) => canViewWorkflow(item, user));
-  return reply.send(ok(visible.map(publicWorkflow), "OK", {
-    page: 1,
-    limit: 20,
-    total: visible.length,
-    totalPages: visible.length === 0 ? 0 : 1,
+  const query = request.query as Record<string, unknown>, term = typeof query.q === "string" ? query.q.trim().toLowerCase() : "";
+  const status = query.status === "DONE" ? "PUBLISHED" : typeof query.status === "string" ? query.status : "";
+  const executions = visibleExecutions(user, Object.values(state.executions));
+  // Build the run lookup once, not once for every workflow in the list.
+  const byWorkflow = new Map<string, Execution[]>();
+  for (const run of executions) { const runs = byWorkflow.get(run.workflowId) ?? []; runs.push(run); byWorkflow.set(run.workflowId, runs); }
+  const summaries = visible.map(workflow => workflowSummary(workflow, byWorkflow.get(workflow.id) ?? [], user))
+    .filter(workflow => (!status || workflow.status === status) && (!term || `${workflow.id} ${workflow.name} ${workflow.description}`.toLowerCase().includes(term)));
+  summaries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+  const page = paginate(summaries, request);
+  return reply.send(ok(page.items, "OK", {
+    ...page.meta,
     sort: "updatedAt",
     relevance: "relevant",
   }));
+  });
 }
 
 export async function createWorkflow(
@@ -82,7 +93,7 @@ export async function createWorkflow(
   const originExists = (state: Readonly<RepositoryState>) => {
     if (chatSessionId === "") return true;
     const chat = state.chats[chatSessionId];
-    if (chat === undefined || (chat.ownerId !== user.id && !user.permissions.includes("workflow:read")))
+    if (chat === undefined || chat.ownerId !== user.id)
       return false;
     return chat.messages.some((message) => message.id === chatMessageId && stringValue(message.role) === "user");
   };
@@ -165,10 +176,13 @@ export async function getWorkflow(
   user: User & { permissions: string[] },
   services: { repository: Pick<ApplicationServices["repository"], "read"> },
 ): Promise<unknown> {
-  const item = await services.repository.read((state) => state.workflows[param(request, "id")] ?? null);
-  if (item === null || !canViewWorkflow(item, user))
+  const item = await services.repository.read((state) => {
+    const workflow = state.workflows[param(request, "id")];
+    return workflow && canViewWorkflow(workflow, user) ? workflowSummary(workflow, visibleExecutions(user, Object.values(state.executions)), user) : null;
+  });
+  if (item === null)
     return reply.status(404).send(fail("Workflow not found", null));
-  return reply.send(ok(publicWorkflow(item), "OK", null));
+  return reply.send(ok(item, "OK", null));
 }
 
 export async function validateWorkflowRoute(
@@ -218,6 +232,13 @@ export async function runWorkflowFor(
   const traceId = requestTraceId(request, workflow.traceId);
   if (parsed.data.expectedActorId !== undefined && parsed.data.expectedActorId !== user.id)
     return reply.status(403).send(fail("The signed-in account changed before run admission; no work was admitted", { code: "RUN_ACTOR_CHANGED" }));
+  if (parsed.data.retry) {
+    if (parsed.data.dryRun || parsed.data.simulation !== undefined || !["async-read", "async-operation"].includes(parsed.data.mode) || parsed.data.input !== null)
+      return reply.status(400).send(fail("Retry requires queued execution and server-owned original inputs", { code: "EXECUTION_RETRY_INVALID" }));
+    const original = await services.repository.readAuthoritative(state => assertExecutionRetry(state, workflow, user, parsed.data.retry!));
+    if (parsed.data.mode !== original.mode) return reply.status(400).send(fail("Retry mode must match the original queued execution profile", { code: "EXECUTION_RETRY_INVALID" }));
+    parsed.data.input = original.input;
+  }
   if (!user.permissions.some((permission) => ["workflow:run", "workflow:run_own"].includes(permission)))
     return reply.status(403).send(fail("Permission denied", { requiredAny: ["workflow:run", "workflow:run_own"] }));
   if (!user.permissions.includes("workflow:run") && workflow.owner.id !== user.id && !(workflow.assignedUserIds ?? []).includes(user.id))
@@ -238,7 +259,7 @@ export async function runWorkflowFor(
     if (parsed.data.dryRun)
       return reply.send(ok({ dry_run: true, simulation: "static-operation-plan", can_execute: false, live_readiness: "not_checked", requires_independent_approval: true,
         planned_steps: withoutSecretFields(parseWorkflowYAMLStrict(workflow.yaml).steps) }, "Static operation plan only; no ERP calls or effects occurred", { traceId }));
-    const admission = await operationJobQueue(services).admit(workflow, parsed.data.input ?? {}, user, parsed.data.idempotencyKey, traceId);
+    const admission = await operationJobQueue(services).admit(workflow, parsed.data.input ?? {}, user, parsed.data.idempotencyKey, traceId, undefined, undefined, parsed.data.retry);
     return reply.status(202).send(ok(admission.execution, admission.replayed ? "Existing operation run; no additional run admitted" : "Operation queued; verification and independent approvals are required before writes", { traceId, admission: "operation-job/v1", replayed: admission.replayed,
       ...("taskDispatch" in admission ? { taskDispatch: admission.taskDispatch } : {}) }));
   }
@@ -247,7 +268,7 @@ export async function runWorkflowFor(
     if (parsed.data.dryRun)
       return reply.status(422).send(fail("Async admission is not a dry-run mode", { code: "UNSUPPORTED_EXECUTION_MODE", traceId }));
     const queue = readJobQueue(services);
-    const admission = queue.prepare(workflow, parsed.data.input ?? {}, user, parsed.data.idempotencyKey);
+    const admission = queue.prepare(workflow, parsed.data.input ?? {}, user, parsed.data.idempotencyKey, parsed.data.retry);
     const existing = await services.repository.read((state) => queue.existing(state, admission, user));
     if (existing) {
       const taskDispatch = residentExecutionAllowed(services.repository) ? undefined : await dispatchReadTaskOutbox(services.repository, existing.id);
@@ -285,7 +306,7 @@ export async function runWorkflowFor(
     return reply.status(409).send(fail("A current verified publication snapshot is required; legacy or edited drafts need explicit publication", { code: "PUBLISHED_SNAPSHOT_REQUIRED", traceId }));
   if (!asyncRead && gate!.token === null)
     return reply.status(422).send(fail("Execution verification receipt is unavailable", { traceId }));
-  return runVerifiedRead(workflow, parsed.data.input ?? {}, gate?.token ?? null, traceId, request, reply, user, services);
+  return runVerifiedRead(workflow, parsed.data.input ?? {}, gate?.token ?? null, traceId, request, reply, user, services, parsed.data.retry);
 }
 
 export async function resumeWorkflowApproval(

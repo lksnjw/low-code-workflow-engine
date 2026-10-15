@@ -35,6 +35,24 @@ routes.push(
   { method: "POST", path: "/api/pipeline/v1/files/documents" },
   { method: "GET", path: "/api/pipeline/v1/jobs/:id" },
 );
+routes.push(
+  { method: "GET", path: "/api/pipeline/v1/library/catalog" }, { method: "POST", path: "/api/pipeline/v1/library/catalog" },
+  { method: "GET", path: "/api/pipeline/v1/library/inventory" },
+  { method: "POST", path: "/api/pipeline/v1/library/search" }, { method: "POST", path: "/api/pipeline/v1/library/resolve" },
+  { method: "POST", path: "/api/pipeline/v1/library/migrate" },
+  { method: "POST", path: "/api/pipeline/v1/library/delegation" },
+  { method: "GET", path: "/api/chat/sessions/:id/attachments" }, { method: "POST", path: "/api/chat/sessions/:id/attachments" },
+  { method: "POST", path: "/api/chat/sessions/:id/attachments/preview" },
+  { method: "POST", path: "/api/chat/sessions/:id/attachments/prepare" },
+  { method: "GET", path: "/api/chat/sessions/:id/attachments/:uploadId" },
+  ...["analyse", "confirm", "recover"].map(action => ({ method: "POST", path: `/api/chat/sessions/:id/attachments/:uploadId/${action}` })),
+);
+routes.push({ method: "GET", path: "/api/profile/erp-connections" },
+  { method: "PUT", path: "/api/profile/erp-connections/:id" },
+  { method: "DELETE", path: "/api/profile/erp-connections/:id" },
+  { method: "POST", path: "/api/profile/erp-connections/:id/test" });
+routes.push({ method: "GET", path: "/api/chat/sessions/:id/erp-actions/:actionId" }, { method: "POST", path: "/api/chat/sessions/:id/erp-actions/:actionId" });
+routes.push({ method: "GET", path: "/api/settings/rag-policy" }, { method: "POST", path: "/api/settings/rag-policy/test" }, { method: "POST", path: "/api/settings/rag-policy/documents" });
 const content = `// Generated from frozen Go routes plus named product extensions. Do not hand-edit.\n` +
   `export const routeTable = ${JSON.stringify(routes, null, 2)} as const;\n` +
   `export type RouteDefinition = (typeof routeTable)[number];\n`;

@@ -68,6 +68,8 @@ export async function handlePipelineGatewayRoute(
   const isCSV = route.method === "POST" && route.path === `${base}/files/csv`;
   const isDocument = route.method === "POST" && route.path === `${base}/files/documents`;
   if (!isCSV && !isDocument) return PIPELINE_GATEWAY_UNHANDLED;
+  if (isDocument && !user.permissions.includes("registry:write"))
+    throw new HandlerFailure(403, "Legacy document ingestion is administrator-only. Use chat Documents & forms for private, reviewed uploads.", { code: "LEGACY_INGESTION_ADMIN_REQUIRED" });
   if (!request.isMultipart())
     throw new HandlerFailure(400, "Choose a supported file to upload", { code: "PIPELINE_FILE_REQUIRED" });
 
@@ -122,18 +124,20 @@ export async function handlePipelineGatewayRoute(
   return reply.status(result.response.status).send(result.payload);
 }
 
-async function bufferUpload(request: FastifyRequest, allowedFields: ReadonlySet<string>, auditKey: string): Promise<BufferedUpload> {
+export async function bufferUpload(request: FastifyRequest, allowedFields: ReadonlySet<string>, auditKey: string): Promise<BufferedUpload> {
   const form = new FormData();
   const metadata: Record<string, string> = {};
   let fileSeen = false;
   let filenameHash = "";
   let sizeBytes = 0;
 
-  for await (const part of request.parts()) {
+  for await (const part of request.parts(allowedFields.has("idempotency_key") ? { limits: { fileSize: 16 * 1024 * 1024, files: 1, fields: 1, parts: 2 } } : {})) {
     if (part.type === "file") {
       if (fileSeen || part.fieldname !== "file")
         throw new HandlerFailure(400, "Exactly one file field is required", { code: "PIPELINE_FILE_INVALID" });
       const bytes = await part.toBuffer();
+      if (allowedFields.has("idempotency_key") && bytes.length > 16 * 1024 * 1024)
+        throw new HandlerFailure(413, "The attachment limit is 16 MiB");
       if (bytes.length === 0)
         throw new HandlerFailure(422, "The selected file is empty", { code: "PIPELINE_FILE_EMPTY" });
       fileSeen = true;

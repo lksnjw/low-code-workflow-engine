@@ -141,13 +141,13 @@ function ReviewWorkspace({ actorId, canReview }) {
     </div> : null}
     {error ? <p role="alert" className="mt-4 text-sm text-red-700">{error}</p> : null}
     {message ? <p role="status" className="mt-4 text-sm text-gray-600 dark:text-gray-300">{message}</p> : null}
-    <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(14rem,0.7fr)_minmax(0,1.3fr)]">
-      <div><h3 className="text-sm font-semibold">Current capability states</h3>
+    <div className="mt-5 grid min-w-0 gap-6 lg:grid-cols-[minmax(14rem,0.7fr)_minmax(0,1.3fr)]">
+      <div className="min-w-0"><h3 className="text-sm font-semibold">Current capability states</h3>
         {!entries.length && ready ? <p className="mt-3 text-sm text-gray-500">No capability observations. Configure a supported backend session, then refresh discovery.</p> : null}
         <ul className="mt-3 divide-y divide-gray-200 dark:divide-gray-800">{entries.map((entry) => {
           const definition = entry.observation?.definition ?? entry.revision?.definition;
           return <li key={entry.capabilityId}><button disabled={busy || Boolean(pending)} aria-pressed={selectedId === entry.capabilityId} onClick={() => setSelectedId(entry.capabilityId)} className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-gray-100 focus-visible:outline focus-visible:outline-primary dark:hover:bg-gray-800">
-            <span className="block text-sm font-semibold">{definition?.display_name || definition?.name || entry.capabilityId}</span><span className="mt-1 block text-xs text-gray-500">{label(entry.effectiveState)} · {entry.observation?.toolId ?? entry.revision?.toolId}</span>
+            <span className="block break-words text-sm font-semibold">{definition?.display_name || definition?.name || entry.capabilityId}</span><span className="mt-1 block break-all text-xs text-gray-500">{label(entry.effectiveState)} · {entry.observation?.toolId ?? entry.revision?.toolId}</span>
           </button></li>;
         })}</ul>
         <div className="mt-4 flex items-center gap-3"><Button variant="ghost" disabled={!offset || busy || Boolean(pending)} onClick={() => { setOffset(offset - 10); setSelectedId(null); }}>Previous</Button><span className="text-xs">Page {offset / 10 + 1}</span><Button variant="ghost" disabled={!ready || !query.data?.hasMoreCapabilities || busy || Boolean(pending)} onClick={() => { setOffset(offset + 10); setSelectedId(null); }}>Next</Button></div>

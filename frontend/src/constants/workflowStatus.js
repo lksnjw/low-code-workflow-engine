@@ -1,5 +1,6 @@
 export const WORKFLOW_STATUS = {
   PENDING: "PENDING",
+  PUBLISHED: "PUBLISHED",
   RUNNING: "RUNNING",
   DONE: "DONE",
   FAILED: "FAILED",
@@ -14,6 +15,10 @@ export const WORKFLOW_STATUS = {
 };
 
 export const STATUS_META = {
+  PUBLISHED: {
+    label: "Published", tone: "green",
+    color: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  },
   PENDING: {
     label: "Pending",
     tone: "amber",

@@ -46,6 +46,7 @@ export class GovernedValidationGate implements ValidationGate {
     readonly registries: RegistryService,
     readonly repository: Repository,
     readonly policyGate: PolicyGateClient | null = null,
+    readonly recordPolicy?: (yaml: string, user: GovernanceUser, context: GovernedValidationContext) => Promise<Exclude<PolicyGateOutcome, { outcome: "fallback" }> | null>,
   ) {}
 
   /*******************************************************************************
@@ -62,6 +63,15 @@ export class GovernedValidationGate implements ValidationGate {
       proposedActions: proposal.actions,
       caseContext: context.caseContext ?? {},
     };
+
+    // Use the selected direct record-policy service only when no independent
+    // primary/secondary governance endpoint has been configured. Existing
+    // external governance denials must never be bypassed by this adapter.
+    if (this.policyGate === null && this.governance.primary === null && this.governance.secondary === null && this.recordPolicy) {
+      const record = await this.recordPolicy(rawYAML, user, context);
+      if (context.signal?.aborted) throw new DOMException("Policy evaluation cancelled", "AbortError");
+      if (record) return this.#resolveFromPolicyGate(record, action, rawYAML, user, proposal, request, context, "direct-record-policy/v1");
+    }
 
     // Tier 0: Hansaja policy gate — if configured and reachable, its decision is final.
     // On any network failure the outcome is "fallback" and we drop through to tier 1.
@@ -119,6 +129,7 @@ export class GovernedValidationGate implements ValidationGate {
     proposal: { actions: string[]; readOnly: boolean },
     request: GovernanceRequest,
     context: GovernedValidationContext,
+    policyVersion = "policy-gate",
   ): Promise<ValidationGateResult> {
     if (context.signal?.aborted) throw new DOMException("Policy evaluation cancelled", "AbortError");
     // Defense in depth: even an injected policy client cannot make conditional
@@ -127,7 +138,7 @@ export class GovernedValidationGate implements ValidationGate {
       pg = { outcome: "review", reason: "Policy conditions require enforced review before execution" };
     const decision: GovernanceDecision = {
       status: pg.outcome === "review" ? "HUMAN_REVIEW" : pg.outcome === "allow" ? "FRESH" : "BLOCKED",
-      policyVersion: "policy-gate",
+      policyVersion,
       registryHash: this.registries.hash(),
       source: "primary",
       evidenceIds: [],

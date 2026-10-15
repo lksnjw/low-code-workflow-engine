@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { captureUserMcpBinding, withUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import { stringify } from "yaml";
 import { canonicalJSONBytes, resolvedParameterHashBytes } from "../core/canonical-json.js";
 import { boundedOperation } from "../core/bounded-operation.js";
@@ -165,6 +166,7 @@ export class OperationReadbackQueue {
         if (!session?.admissionBinding || matches.length !== 1) deny("Reviewed status tool is unavailable", 503);
         const args = resolveOperationReadbackArguments(source.tool, matches[0]!, source.args);
         const job = operationReadbackJobSchema.parse({ profile: "operation-readback-job/v1", id: `readback-${randomBytes(16).toString("hex")}`, executionId, intentId: command.intentId, nodeId: source.intent.nodeId,
+          ...(this.services.userMcpCredentials ? { erpCredentialSecret: captureUserMcpBinding(this.services, state, actor.id)! } : {}),
           baseVersion: command.baseVersion, factsHash: command.factsHash, actorId: actor.id, roleId: actor.roleId, admittedRole: actor.role, keyHash, requestFingerprint: fingerprint,
           targetId: binding.toolId, targetHash: binding.contractHash, admission: { ...binding.admission }, connectionBinding: source.connectionBinding,
           argumentHash: source.intent.argumentHash, arguments: args, createdAt: new Date().toISOString(), epoch: 1, state: "QUEUED" });
@@ -301,6 +303,10 @@ export class OperationReadbackQueue {
     });
   }
   private async work(control: Active) {
+    const original = await this.services.repository.readAuthoritative(state => state.executions[control.executionId]?.operationSecret?.readbacks?.[control.id]);
+    return withUserMcpBinding(this.services, original?.actorId ?? "", original?.erpCredentialSecret, () => this.workBound(control));
+  }
+  private async workBound(control: Active) {
     const { services } = this, { repository } = services;
     try {
       const initial = await repository.mutateExecution(control.executionId, state => {

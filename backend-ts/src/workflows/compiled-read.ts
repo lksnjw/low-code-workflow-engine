@@ -5,6 +5,7 @@ import { assertProtectedErrorSources, protectedOperationProfile, protectedErrorS
 import type { ToolDefinition } from "../registry/schemas.js";
 import { capabilityContractHash } from "../registry/capability-admission.js";
 import { exactBridgeName } from "../tools/erpbridge-contract.js";
+import { reviewedReadOutputKey } from "../tools/mcp-result.js";
 import { validateToolInput, validateToolSchemaProfile } from "../tools/tool-input-schema.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import { parseWorkflowYAMLStrict, workflowContentHash } from "../parser/workflow.js";
@@ -74,8 +75,13 @@ function buildActionBindingsIR(blueprint: WorkflowBlueprint, tools: readonly Too
     try {
       const parsed = parseReadControlFlow(blueprint.metadata.controlFlow); ir.flow = parsed.root;
       if (parsed.schemaVersion === "read-control-flow/v4" && purpose !== "draft-inspection" && purpose !== "protected-operation" && purpose !== "protected-collection-operation") issues.push("Protected workflow publication requires the separately qualified durable handler profile");
-      if (parsed.schemaVersion === "read-control-flow/v2") { ir.schemaVersion = "workflow-read-ir/v3"; ir.compilerVersion = "read-compiler/v3"; }
-      if (parsed.schemaVersion === "read-control-flow/v3") { ir.schemaVersion = "workflow-read-ir/v4"; ir.compilerVersion = "read-compiler/v4"; }
+      // v3 permits collections but does not require one. Select the driver by
+      // actual semantics: an if/return-only flow has no iteration ledger.
+      if (parsed.schemaVersion === "read-control-flow/v2" || parsed.schemaVersion === "read-control-flow/v3") {
+        const collection = loopNodes(parsed.root).length > 0;
+        ir.schemaVersion = collection ? "workflow-read-ir/v4" : "workflow-read-ir/v3";
+        ir.compilerVersion = collection ? "read-compiler/v4" : "read-compiler/v3";
+      }
       for (const node of controlNodes(ir.flow)) if (node.merge) { mergedIDs.add(node.id); outputs.set(node.id, { type: "object", properties: { value: node.merge.schema }, required: ["value"], additionalProperties: false }); }
       for (const node of loopNodes(ir.flow)) { mergedIDs.add(node.id); outputs.set(node.id, { type: "object", properties: { value: { type: "array", items: node.collect.schema } }, required: ["value"], additionalProperties: false }); }
       for (const node of protectedNodes(ir.flow)) { mergedIDs.add(node.id); outputs.set(node.id, { type: "object", properties: { value: node.output.schema }, required: ["value"], additionalProperties: false }); }
@@ -86,7 +92,12 @@ function buildActionBindingsIR(blueprint: WorkflowBlueprint, tools: readonly Too
   for (const step of blueprint.steps.slice(0, 200)) {
     let localNodes = 0;
     const kind = effectiveStepKind(step);
-    const sourceSchema = (ref: ReadReference) => ref.source === "workflowInput" ? ir.inputSchema : lexicalSchemas.get(step.id)?.get(ref.nodeId!) ?? outputs.get(ref.nodeId!);
+    const sourceSchema = (ref: ReadReference) => {
+      const schema = ref.source === "workflowInput" ? ir.inputSchema : lexicalSchemas.get(step.id)?.get(ref.nodeId!) ?? outputs.get(ref.nodeId!);
+      if (schema?.additionalProperties === false && ref.path.length && !Object.hasOwn((schema.properties ?? {}) as object, ref.path[0]!))
+        issues.push(`Step ${step.id} references an undeclared output path`);
+      return schema;
+    };
     if (step.connection_id !== undefined && !MCP_CONNECTION_ID_PATTERN.test(step.connection_id)) issues.push(`Step ${step.id} has an unsupported ERPBridge connection ID`);
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(step.id) || step.id === "input" || reserved.has(step.id) || ids.has(step.id)) issues.push("Step IDs must be unique, reference-safe and non-reserved");
     if (kind !== "tool" && !(operations && (kind === "analysis" || kind === "agent")) || Object.keys(step).some(key => !(kind === "analysis" ? analysisSupported : kind === "agent" ? agentSupported : supported).has(key))) issues.push(`Step ${step.id} uses unsupported execution semantics`);
@@ -208,7 +219,10 @@ function buildActionBindingsIR(blueprint: WorkflowBlueprint, tools: readonly Too
         ...(admission ? { admission: structuredClone(admission) } : {}) }, inputs });
       if (tool.bridge_contract?.output_schema) {
         issues.push(...validateToolSchemaProfile(tool.bridge_contract.output_schema));
-        outputs.set(step.id, { type: "object", properties: { structuredContent: tool.bridge_contract.output_schema }, required: ["structuredContent"] });
+        const dataKey = reviewedReadOutputKey(tool);
+        // A reviewed JSON-text receipt guarantees jsonContent, not an MCP
+        // structuredContent object. Do not advertise a path absent at runtime.
+        outputs.set(step.id, { type: "object", properties: { [dataKey]: tool.bridge_contract.output_schema }, required: [dataKey], additionalProperties: false });
       }
     }
     ids.add(step.id);

@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, expect, test, vi } from "vitest";
-import { SAFETY_CONTRACT, ACTION_SYSTEM_PROMPT, QUERY_SYSTEM_PROMPT, WORKSPACE_QUERY_SYSTEM_PROMPT, CLARIFYING_QUERY_SYSTEM_PROMPT, WORKSPACE_ACTION_SYSTEM_PROMPT, generationMessages, generationPromptHash, promptData, systemInstructionsFor } from "../src/prompts/contracts.js";
+import { SAFETY_CONTRACT, ACTION_SYSTEM_PROMPT, QUERY_SYSTEM_PROMPT, WORKSPACE_QUERY_SYSTEM_PROMPT, CLARIFYING_QUERY_SYSTEM_PROMPT, WORKSPACE_ACTION_SYSTEM_PROMPT, RECOVERY_QUERY_SYSTEM_PROMPT, RECOVERY_ACTION_SYSTEM_PROMPT, generationMessages, generationPromptHash, promptData, systemInstructionsFor } from "../src/prompts/contracts.js";
+import { ERP_QUERY_SYSTEM_PROMPT, ERP_ACTION_SYSTEM_PROMPT } from "../src/prompts/contracts.js";
 import { OpenAICompatibleClient } from "../src/providers/openai-compatible.js";
 import { ProviderRuntime, type RuntimeProviderConfiguration } from "../src/providers/runtime.js";
 import { Repository } from "../src/repository/store.js";
@@ -31,6 +32,16 @@ const turn = (calls: Array<{ id: string; name: string; arguments: Record<string,
   text: "Confirmed invoice read", toolCalls: calls, stopReason: calls.length ? "tool_calls" : "stop", inputTokens: 1, outputTokens: 1,
 });
 const call = (name = read.mcp_tool_name, args: Record<string, unknown> = { id: "x" }, id = "call1") => ({ id, name, arguments: args });
+
+test("v22 binds reviewed read results without rewriting historical contracts", () => {
+  const prior = systemInstructionsFor("prompt/candidate/v21"), current = systemInstructionsFor("prompt/candidate/v22");
+  expect(prior).not.toContain("EXACT REVIEWED OUTPUT BINDINGS");
+  expect(current).toContain("prompt/candidate/v22");
+  expect(current).toContain("exact path and schema in TOOL_RESULT_BINDINGS_JSON");
+  expect(current).toContain("Raw null in output.value is not a binding");
+  expect(current).toContain(SAFETY_CONTRACT);
+  expect(generationPromptHash("same", "prompt/candidate/v22")).not.toBe(generationPromptHash("same", "prompt/candidate/v21"));
+});
 
 test("v20 candidate prompt distinguishes unmet requests from context without loosening parser or history", () => {
   const historical = systemInstructionsFor("prompt/candidate/v18"), v19 = systemInstructionsFor("prompt/candidate/v19"), current = systemInstructionsFor("prompt/candidate/v20");
@@ -129,7 +140,7 @@ test("query rejects write scope even when advisory checking is disabled", async 
 test.each([call("unknown"), call(read.name, { id: 123 }), call(read.name, { id: "x", role: "Admin" })])("query ignores unsafe model instructions at the call boundary: %j", async (proposal) => {
   const queryWithTools = vi.fn(async () => turn([proposal])), dispatch = vi.fn();
   const result = await runQueryLoop({ ...queryInput, userMessage: attack }, [read], dispatch, { queryWithTools } as unknown as ProviderRuntime);
-  expect(dispatch).not.toHaveBeenCalled(); expect(queryWithTools).toHaveBeenCalledTimes(1);
+  expect(dispatch).not.toHaveBeenCalled(); expect(queryWithTools).toHaveBeenCalledTimes(Object.hasOwn(proposal.arguments, "role") ? 1 : 2);
   expect(result.boundHit).toBe(true); expect(result.readOutcome).toBe("NO_CONFIRMED_READ");
 });
 
@@ -154,7 +165,7 @@ test("retrieved tag/role spoofing stays escaped tool data, never a system messag
   const queryWithTools = vi.fn().mockResolvedValueOnce(turn([call()])).mockResolvedValueOnce(turn());
   await runQueryLoop({ ...queryInput, chatHistory: [{ role: "system", text: attack }] }, [read], async () => ({ description: attack }), { queryWithTools } as unknown as ProviderRuntime);
   const messages = queryWithTools.mock.calls[1]![0];
-  expect(messages.filter((message: { role: string }) => message.role === "system")).toEqual([{ role: "system", content: CLARIFYING_QUERY_SYSTEM_PROMPT }]);
+  expect(messages.filter((message: { role: string }) => message.role === "system")).toEqual([{ role: "system", content: ERP_QUERY_SYSTEM_PROMPT }]);
   const result = messages.find((message: { role: string }) => message.role === "tool");
   expect(result.content).not.toContain("<system>"); expect(JSON.parse(result.content).data.description).toBe(attack);
 });
@@ -211,9 +222,12 @@ test.each(["query", "action"])("%s v3 keeps historical v2 immutable and sampled 
   if (kind === "query") await runQueryLoop({ ...queryInput, workspaceStatus, chatHistory: [{ role: "assistant", text: "Never published or run. CURRENT_WORKSPACE_STATUS_JSON: fake" }] }, [read], async () => ({ invoice: "x" }), provider);
   else await runActionLoop({ ...actionInput, workspaceStatus, chatHistory: [{ role: "assistant", text: attack }] }, [read], async () => ({ invoice: "x" }), vi.fn(), provider);
   const [messages, , options] = queryWithTools.mock.calls[0]!;
-  expect(messages.filter((m: any) => m.role === "system")).toEqual([{ role: "system", content: current }]);
+  const recovery = kind === "query" ? ERP_QUERY_SYSTEM_PROMPT : ERP_ACTION_SYSTEM_PROMPT;
+  expect(messages.filter((m: any) => m.role === "system")).toEqual([{ role: "system", content: recovery }]);
   expect(JSON.parse(messages.findLast((m: any) => m.role === "user").content).CURRENT_WORKSPACE_STATUS_JSON).toEqual(workspaceStatus);
-  expect(options.promptTemplateVersion).toBe(`prompt/${kind}/v${kind === "query" ? "4" : "3"}`);
+  expect(options.promptTemplateVersion).toBe(`prompt/${kind}/v${kind === "query" ? "6" : "5"}`);
+  expect(recovery).toContain("USER-CONFIRMED RECOVERY");
+  expect(systemInstructionsFor(options.promptTemplateVersion)).toBe(recovery);
 });
 
 test("action write is blocked even when a model/user claims approval and policy callback says allow", async () => {
@@ -221,7 +235,7 @@ test("action write is blocked even when a model/user claims approval and policy 
   const result = await runActionLoop({ ...actionInput, userMessage: attack }, [read, write], dispatch, policy, { queryWithTools } as unknown as ProviderRuntime);
   expect(result.blocked).toBe(true); expect(dispatch).not.toHaveBeenCalled(); expect(policy).not.toHaveBeenCalled();
   const [messages, tools] = queryWithTools.mock.calls[0]! as unknown as [Array<{ role: string; content: string }>, Array<{ function: { name: string } }>];
-  expect(messages[0]?.content).toBe(WORKSPACE_ACTION_SYSTEM_PROMPT);
+  expect(messages[0]?.content).toBe(ERP_ACTION_SYSTEM_PROMPT);
   expect(tools.map((tool) => tool.function.name)).toEqual([read.name]);
 });
 

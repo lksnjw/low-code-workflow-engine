@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { boundedJSONRequest, InvalidResponseJSON, type OwnedJSONRequest } from "../core/bounded-json-request.js";
 import { OperationDeadlineExceeded } from "../core/bounded-operation.js";
 import type { AnalysisProvider, AnalysisResponse, GenerationDiagnostics, ProviderInvocationContext } from "../analysisprovider/types.js";
@@ -69,10 +70,53 @@ export function isQueryFallbackEligible(error: unknown): boolean {
 
 /** One pure wire builder for resident generation and exact phased dispatch. */
 export function generationRequestBody(baseURL: string, model: string, temperature: number, prompt: string, context?: ProviderInvocationContext) {
-  return { model, messages: generationMessages(prompt, context?.promptTemplateVersion), temperature,
+  const attachment = context?.documentAttachment;
+  if (attachment) {
+    if (!["prompt/document-attachment/v1", "prompt/document-preview/v1"].includes(context.promptTemplateVersion ?? "") || context.egress?.purpose !== "interactive" || context.egress.dataClass !== "restricted" ||
+        !["image/png", "image/jpeg", "application/pdf"].includes(attachment.mimeType) || attachment.filename.length > 120 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(attachment.dataBase64) || attachment.dataBase64.length > 5_592_408 ||
+        Buffer.from(attachment.dataBase64, "base64").length > 4 * 1024 * 1024 ||
+        createHash("sha256").update(Buffer.from(attachment.dataBase64, "base64")).digest("hex") !== attachment.sha256)
+      throw new Error("Document model input must be bounded, source-bound and explicitly approved for interactive review");
+    if (attachment.mimeType === "application/pdf" && baseURL.trim().replace(/\/+$/, "") !== "https://openrouter.ai/api/v1")
+      throw new Error("Native PDF review is only configured for the reviewed OpenRouter adapter");
+  }
+  const messages = generationMessages(prompt, context?.promptTemplateVersion).map(message => !attachment || message.role !== "user" ? message : {
+    role: message.role, content: [{ type: "text", text: message.content }, attachment.mimeType === "application/pdf"
+      ? { type: "file", file: { filename: attachment.filename, file_data: `data:application/pdf;base64,${attachment.dataBase64}` } }
+      : { type: "image_url", image_url: { url: `data:${attachment.mimeType};base64,${attachment.dataBase64}` } }],
+  });
+  return { model, messages, temperature,
+    ...(attachment?.mimeType === "application/pdf" ? { plugins: [{ id: "file-parser", pdf: { engine: "native" } }] } : {}),
     ...(context?.maxOutputTokens === undefined ? {} : { max_tokens: context.maxOutputTokens }),
+    ...(interactiveGenerationReasoningProfile(baseURL, model, context) ? { reasoning: interactiveGenerationReasoningProfile(baseURL, model, context) === "openrouter-gemini-bounded-low/v1" ? { effort: "low" } : { enabled: false } } : {}),
+    ...(interactiveGenerationReasoningProfile(baseURL, model, context) === "openrouter-gemini-bounded-low/v1" ? { response_format: { type: "json_object" } } : {}),
     ...(context?.promptTemplateVersion === "prompt/local-policy/v2" && baseURL.trim().replace(/\/+$/, "") === "https://openrouter.ai/api/v1" && model === "deepseek/deepseek-v4.1-flash"
       ? { response_format: { type: "json_object" }, reasoning: { enabled: false } } : {}) };
+}
+
+/** Explicit low-latency sampling for current interactive DeepSeek requests.
+ * Runtime nodes, historical prompt contracts, other endpoints and models keep
+ * their reviewed behavior. This changes inference, never ERP authority. */
+export function interactiveQueryReasoningProfile(baseURL: string, model: string, options: QueryOptions) {
+  // Gemini's published model contract requires thinking and accepts low, not
+  // "none". Bound only the new small routing/chat contracts; never disable it
+  // or change historical/runtime request semantics.
+  if (baseURL.trim().replace(/\/+$/, "") === "https://openrouter.ai/api/v1" && model === "google/gemini-3.8-flash" &&
+      options.context?.egress?.purpose === "interactive" && ["prompt/intent-routing/v3", "prompt/intent-routing/v4", "prompt/erp-chat/v3", "prompt/erp-chat/v4"].includes(options.promptTemplateVersion ?? ""))
+    return "openrouter-gemini-bounded-low/v1" as const;
+  return baseURL.trim().replace(/\/+$/, "") === "https://openrouter.ai/api/v1" && ["deepseek/deepseek-v4.1-flash", "qwen/qwen3.8-flash"].includes(model) &&
+    options.context?.egress?.purpose === "interactive" &&
+    ["prompt/intent-routing/v1", "prompt/intent-routing/v2", "prompt/intent-routing/v3", "prompt/intent-routing/v4", "prompt/erp-chat/v1", "prompt/erp-chat/v2", "prompt/erp-chat/v3", "prompt/erp-chat/v4", "prompt/conversation/v1", "prompt/workflow-discussion/v1", "prompt/query/v6", "prompt/action/v5"].includes(options.promptTemplateVersion ?? "")
+    ? model === "qwen/qwen3.8-flash" ? "openrouter-qwen-interactive-fast/v1" as const : "openrouter-deepseek-interactive-fast/v1" as const : undefined;
+}
+export function interactiveGenerationReasoningProfile(baseURL: string, model: string, context?: ProviderInvocationContext) {
+  if (baseURL.trim().replace(/\/+$/, "") === "https://openrouter.ai/api/v1" && model === "google/gemini-3.8-flash" &&
+      context?.egress?.purpose === "interactive" && ["prompt/local-policy/v2", "prompt/workflow-modifier/v3", "prompt/workflow-modifier/v4"].includes(context.promptTemplateVersion ?? ""))
+    return "openrouter-gemini-bounded-low/v1" as const;
+  return baseURL.trim().replace(/\/+$/, "") === "https://openrouter.ai/api/v1" && model === "qwen/qwen3.8-flash" &&
+    context?.egress?.purpose === "interactive" && context.promptTemplateVersion === "prompt/candidate/v21"
+    ? "openrouter-qwen-interactive-fast/v1" as const : undefined;
 }
 
 export class OpenAICompatibleClient implements AnalysisProvider {
@@ -137,10 +181,12 @@ export class OpenAICompatibleClient implements AnalysisProvider {
    * Requests a completion with tool definitions and tool-call messages.
    ******************************************************************************/
   async queryWithTools(messages: QueryMessage[], tools: QueryToolDefinition[], options: QueryOptions): Promise<QueryTurnResult> {
+    if (["prompt/conversation/v1", "prompt/workflow-discussion/v1", "prompt/intent-routing/v1", "prompt/intent-routing/v2", "prompt/intent-routing/v3", "prompt/intent-routing/v4"].includes(options.promptTemplateVersion ?? "") && tools.length) throw new Error("Assistant conversation cannot offer tools");
     const selectedModel = (options.model ?? "").trim() === "" ? this.model : options.model!.trim();
     const decoded = await this.requestJSON({
       model: selectedModel, messages: providerWireMessages(messages, selectedModel, this.baseURL), tools: tools.length > 0 ? tools : undefined, temperature: this.temperature,
       ...(options.maxOutputTokens !== undefined ? { max_tokens: options.maxOutputTokens } : {}),
+      ...(interactiveQueryReasoningProfile(this.baseURL, selectedModel, options) ? { reasoning: interactiveQueryReasoningProfile(this.baseURL, selectedModel, options) === "openrouter-gemini-bounded-low/v1" ? { effort: "low" } : { enabled: false } } : {}),
     }, options.signal, "Query");
     const parsed = parseQueryResponse(decoded);
     const choice = parsed.choices[0];
@@ -172,10 +218,10 @@ export class OpenAICompatibleClient implements AnalysisProvider {
       try { providerContinuationSecret = captureProviderContinuation(choice.message, selectedModel, this.baseURL); }
       catch { throw new OpenAICompatibleError("Query provider returned invalid continuation metadata", "malformed"); }
     }
-    // Only interactive query v4 consumes this new clarification evidence.
-    // Runtime-agent turns retain their strict persisted shape and ACK hashes.
+    // Interactive reads, tool-less conversation and semantic routing require
+    // explicit completion. Runtime turns retain their persisted shape/ACKs.
     return { text, toolCalls, stopReason,
-      ...(options.promptTemplateVersion === "prompt/query/v4" ? { completionConfirmed: choice.explicit_finish_reason_stop && toolCalls.length === 0 } : {}),
+      ...(["prompt/query/v4", "prompt/query/v5", "prompt/query/v6", "prompt/workflow-discussion/v1", "prompt/conversation/v1", "prompt/intent-routing/v1", "prompt/intent-routing/v2", "prompt/intent-routing/v3", "prompt/intent-routing/v4", "prompt/erp-chat/v1", "prompt/erp-chat/v2", "prompt/erp-chat/v3", "prompt/erp-chat/v4"].includes(options.promptTemplateVersion ?? "") ? { completionConfirmed: choice.explicit_finish_reason_stop && toolCalls.length === 0 } : {}),
       inputTokens, outputTokens, measured, model: selectedModel, provider: this.provider,
       ...(providerContinuationSecret ? { providerContinuationSecret } : {}) };
   }

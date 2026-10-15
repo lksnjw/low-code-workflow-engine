@@ -4,7 +4,7 @@ import { runQueryLoop } from "../src/agent/query-loop.js";
 import { queryChatPresentation } from "../src/agent/query-chat-presentation.js";
 import { toolSchema } from "../src/registry/schemas.js";
 
-test.each([undefined, "prompt/query/v3", "prompt/runtime-agent/v1", "prompt/query/v4"])(
+test.each([undefined, "prompt/query/v3", "prompt/runtime-agent/v1", "prompt/query/v4", "prompt/query/v5", "prompt/query/v6"])(
   "F03 actual client adds clarification evidence only to the versioned interactive contract (%s)", async promptTemplateVersion => {
     for (const finishReason of ["stop", "length", undefined, "tool_calls"]) {
       const transport = vi.fn<typeof fetch>(async () => Response.json({ choices: [{
@@ -17,7 +17,7 @@ test.each([undefined, "prompt/query/v3", "prompt/runtime-agent/v1", "prompt/quer
       const turn = await client.queryWithTools([{ role: "user", content: "fixture" }], [], {
         ...(promptTemplateVersion === undefined ? {} : { promptTemplateVersion }),
       });
-      if (promptTemplateVersion === "prompt/query/v4") expect(turn.completionConfirmed).toBe(finishReason === "stop");
+      if (["prompt/query/v4", "prompt/query/v5", "prompt/query/v6"].includes(promptTemplateVersion ?? "")) expect(turn.completionConfirmed).toBe(finishReason === "stop");
       else {
         expect(turn).not.toHaveProperty("completionConfirmed");
         expect(JSON.parse(JSON.stringify(turn))).not.toHaveProperty("completionConfirmed");
@@ -35,7 +35,7 @@ test.each(["clarification", "unsupported-completion"] as const)("F03 actual mode
   const transport = vi.fn<typeof fetch>(async (_url, init) => {
     const wire = JSON.parse(String(init?.body));
     expect(wire.model).toBe("model-b");
-    expect(wire.messages[0].content).toContain("prompt/query/v4");
+    expect(wire.messages[0].content).toContain("prompt/query/v6");
     expect(wire).not.toHaveProperty("response_format");
     expect(JSON.parse(wire.messages.at(-1).content).USER_REQUEST).toBe("Get the invoices for a customer");
     return Response.json({ choices: [{ finish_reason: "stop", message: { content } }], usage: { prompt_tokens: 9, completion_tokens: 8 } });

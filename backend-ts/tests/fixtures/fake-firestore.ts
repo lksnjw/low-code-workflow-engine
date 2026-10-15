@@ -44,7 +44,12 @@ export class FakeClient {
       this.database.documents.set(path, clone(value)); this.database.version++;
     },
   }; }
-  collection(path: string) { return { doc: (id: string) => this.doc(`${path}/${id}`), limit: (limit: number) => ({ path, limit, query: true }) }; }
+  collection(path: string) {
+    const build = (filters:any[]=[],orders:any[]=[],after:any[]|undefined=undefined,limit=Infinity):any => ({path,maxRows:limit,query:true,filters,orders,after,
+      doc:(id:string)=>this.doc(`${path}/${id}`), where:(field:string,op:string,value:unknown)=>{if(op!=="==") throw new Error("Unsupported fixture operator");return build([...filters,[field,value]],orders,after,limit);},
+      orderBy:(field:string,direction="asc")=>build(filters,[...orders,[field,direction]],after,limit), startAfter:(...values:any[])=>build(filters,orders,values,limit), limit:(size:number)=>build(filters,orders,after,size)});
+    return build();
+  }
   async terminate() { this.closed = true; }
   async runTransaction(callback: (tx: any) => Promise<unknown>, options: any) {
     this.database.invocations++;
@@ -57,7 +62,13 @@ export class FakeClient {
       const tx = {
         get: async (ref: any) => { read(); this.database.reads.push(ref.path);
           if (!ref.query) return row(ref);
-          const docs = [...image.keys()].filter(path => path.startsWith(ref.path + "/") && !path.slice(ref.path.length + 1).includes("/")).sort().slice(0, ref.limit).map(path => row({ path }));
+          const field = (path:string,key:string) => key.split(".").reduce((value,part)=>value?.[part],image.get(path));
+          const compare = (left:string,right:string|any[],cursor=false) => {
+            for(let i=0;i<(ref.orders??[]).length;i++) {const [name,direction]=ref.orders[i],a=field(left,name),b=cursor?(right as any[])[i]:field(right as string,name);const order=a<b?-1:a>b?1:0;if(order) return direction==="desc"?-order:order;}
+            return cursor?0:left.localeCompare(right as string);
+          };
+          const docs = [...image.keys()].filter(path => path.startsWith(ref.path + "/") && !path.slice(ref.path.length + 1).includes("/") && (ref.filters??[]).every(([key,value]:any[])=>field(path,key)===value))
+            .sort((a,b)=>compare(a,b)).filter(path=>!ref.after || compare(path,ref.after,true)>0).slice(0, ref.maxRows ?? ref.limit).map(path => row({ path }));
           return { docs, size: docs.length, empty: !docs.length };
         },
         getAll: async (...refs: any[]) => { read(); this.database.reads.push(...refs.map(ref => ref.path)); return refs.map(row); },

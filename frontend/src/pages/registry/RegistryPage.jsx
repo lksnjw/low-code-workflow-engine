@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import RegistryBulkImportPanel from "../../components/registry/RegistryBulkImportPanel";
-import RegistryGenerationContextViewer from "../../components/registry/RegistryGenerationContextViewer";
 import RegistryStatusBanner from "../../components/registry/RegistryStatusBanner";
 import CapabilityReviewPanel from "../../components/registry/CapabilityReviewPanel";
+import LiveErpToolsPanel from "../../components/registry/LiveErpToolsPanel";
 import { ErrorState, EmptyState, LoadingState } from "../../components/shared/ResourceState";
 import DataTable from "../../components/shared/tables/DataTable";
 import Button from "../../components/shared/ui/Button";
@@ -21,35 +21,6 @@ const TABS = [
   { id: "tools", label: "Tools" },
   { id: "rules", label: "Rules" },
 ];
-
-const NEW_TOOL = {
-  tool_id: "TOOL-NEW-001",
-  name: "module.action",
-  display_name: "New Tool",
-  module: "general",
-  status: "active_mcp_schema_present",
-  description: "Describe the tool capability.",
-  business_capability: "Workflow operation",
-  endpoint: "/tools/execute",
-  http_method: "POST",
-  mcp_tool_name: "module.action",
-  input_schema: { type: "object", properties: {} },
-  required_parameters: [],
-  optional_parameters: [],
-  allowed_roles: ["Platform Admin"],
-  risk_level: "low",
-  is_read_only: false,
-  side_effects: [],
-  preconditions: [],
-  postconditions: [],
-  failure_modes: [],
-  validator_checks: ["tool_exists", "parameters_present"],
-  prompt_usage_guidance: "",
-  semantic_search_keywords: [],
-  semantic_search_description: "",
-  execution_notes: "",
-  current_gaps: [],
-};
 
 const NEW_RULE = {
   rule_id: "RULE-NEW-001",
@@ -88,15 +59,16 @@ function RegistryPage({ initialKind = "tools" }) {
   const [editor, setEditor] = useState(null);
   const [draft, setDraft] = useState("");
   const [parseError, setParseError] = useState("");
+  const [reviewsOpen, setReviewsOpen] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { notify } = useNotifications();
   const { has } = usePermissions();
-  const statusQuery = useQuery({ queryKey: ["registry-status"], queryFn: registryService.status });
+  const statusQuery = useQuery({ queryKey: ["registry-status"], queryFn: registryService.status, enabled: kind === "rules" });
   const releaseManaged = statusQuery.data?.writable === false;
   const canWrite = has("registry:write") && statusQuery.data?.writable === true;
   const canRebuild = features.semanticSearch && has("settings:manage");
-  const query = useQuery({ queryKey: ["admin-registry"], queryFn: registryService.load });
+  const query = useQuery({ queryKey: ["admin-registry", "rules"], queryFn: registryService.rules, enabled: kind === "rules" });
 
   const items = query.data?.[kind] ?? [];
 /*******************************************************************************
@@ -173,7 +145,7 @@ function RegistryPage({ initialKind = "tools" }) {
  ******************************************************************************/
   const openCreate = () => {
     setEditor({ id: null });
-    setDraft(pretty(kind === "tools" ? NEW_TOOL : NEW_RULE));
+    setDraft(pretty(NEW_RULE));
     setParseError("");
   };
 
@@ -203,7 +175,22 @@ function RegistryPage({ initialKind = "tools" }) {
     }
   };
 
-  if (query.isLoading) return <LoadingState label="Loading registry…" />;
+  const changeKind = (next) => {
+    setKind(next); navigate(`/registry/${next}`); setSelected(null); setEditor(null); setParseError("");
+  };
+  if (kind === "tools") return <div className="space-y-6 pb-10">
+    <section><p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Connected tool catalog</p>
+      <h1 className="page-heading mt-3 text-gray-950 dark:text-white">Registry</h1>
+      <p className="mt-3 text-sm text-gray-500">Browse the current ERPBridge inventory. Tool definitions come from the bridge, not a bundled tool list.</p>
+    </section>
+    <Tabs tabs={TABS} active={kind} onChange={changeKind} />
+    <LiveErpToolsPanel />
+    <details className="surface-panel rounded-xl p-4" onToggle={event => setReviewsOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold">Saved workflow capability reviews</summary>
+      <p className="my-3 text-sm text-gray-500">Historical review records for workflow execution, not the live tool inventory above. Refresh tools does not change these permissions.</p>
+      {reviewsOpen ? <CapabilityReviewPanel /> : null}
+    </details>
+  </div>;
+  if (query.isLoading) return <LoadingState label="Loading policy rules…" />;
   if (query.error) return <ErrorState error={query.error} onRetry={query.refetch} />;
 
   return (
@@ -229,18 +216,10 @@ function RegistryPage({ initialKind = "tools" }) {
         </section>
       ) : null}
 
-      {kind === "tools" ? <CapabilityReviewPanel /> : null}
-
       <Tabs
         tabs={TABS}
         active={kind}
-        onChange={(next) => {
-          setKind(next);
-          navigate(`/registry/${next}`);
-          setSelected(null);
-          setEditor(null);
-          setParseError("");
-        }}
+        onChange={changeKind}
       />
 
       <RegistryBulkImportPanel kind={kind} writable={canWrite} />
@@ -297,7 +276,6 @@ function RegistryPage({ initialKind = "tools" }) {
         </aside>
       </section>
 
-      <RegistryGenerationContextViewer />
     </div>
   );
 }

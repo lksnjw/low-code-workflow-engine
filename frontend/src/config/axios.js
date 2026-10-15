@@ -191,7 +191,7 @@ apiClient.interceptors.response.use(
     } catch (refreshError) {
       if ((requestEpoch ?? currentAuthorityEpoch()) !== currentAuthorityEpoch()) return Promise.reject(refreshError);
       // The refresh itself failed. That, and only that, ends the session.
-      if (isServerUnavailable(refreshError)) {
+      if (isServerUnavailable(refreshError) || ![401, 403].includes(refreshError?.response?.status)) {
         window.dispatchEvent(new CustomEvent("auth:unreachable"));
         return Promise.reject(refreshError);
       }

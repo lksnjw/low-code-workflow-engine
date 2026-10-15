@@ -33,11 +33,9 @@ export async function login(
     return reply.status(401).send(fail("Invalid email or password", null));
   if (user.status.toLowerCase() !== "active")
     return reply.status(403).send(fail("User account is not active", null));
-  const session = await issueSession(user, parsed.data.rememberMe, services);
-  await services.repository.mutate((draft) => {
-    const current = draft.users[user.id];
-    if (current !== undefined) current.lastLoginAt = new Date().toISOString();
-  });
+  // One acknowledged commit for both the refresh session and login timestamp.
+  // A second whole-workspace persistence pass only extends writer contention.
+  const session = await issueSession(user, parsed.data.rememberMe, services, new Date().toISOString());
   return reply.send(ok(session, "Login successful", null));
 }
 
@@ -182,7 +180,7 @@ export function publicAuthenticatedUser(
   };
 }
 
-async function issueSession(user: User, remember: boolean, services: AuthenticationServices): Promise<Record<string, unknown>> {
+async function issueSession(user: User, remember: boolean, services: AuthenticationServices, loginAt?: string): Promise<Record<string, unknown>> {
   const accessToken = jwt.sign({}, services.config.jwtSecret, {
     algorithm: "HS256",
     subject: user.id,
@@ -195,6 +193,7 @@ async function issueSession(user: User, remember: boolean, services: Authenticat
       userId: user.id,
       expiresAt: new Date(Date.now() + days * 86_400_000).toISOString(),
     };
+    if (loginAt !== undefined && state.users[user.id]) state.users[user.id]!.lastLoginAt = loginAt;
   });
   const effective = await services.repository.effectiveUser(user.id);
   return {

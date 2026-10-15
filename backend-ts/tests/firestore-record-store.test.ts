@@ -5,6 +5,7 @@ import { initialState } from "../src/repository/store.js";
 import { splitFirestoreState, assembleFirestoreState } from "../src/storage/firestore-record-layout.js";
 import type { RuntimeRecord } from "../src/storage/execution-record-layout.js";
 import { recordKey } from "../src/storage/execution-record-layout.js";
+import * as canonicalJSON from "../src/core/canonical-json.js";
 
 const runtime = vi.hoisted(() => ({ db: null as any }));
 vi.mock("@google-cloud/firestore", () => ({ Firestore: class { constructor(settings: any) { return new FakeClient(runtime.db, settings); } } }));
@@ -32,6 +33,60 @@ test("a complete repository round-trips through normalized encrypted records", a
   expect(assembleFirestoreState(storage.readRecords(await storage.load()))).toEqual(original);
   expect(saved.recordCount).toBeGreaterThan(10);
   expect([...db.documents.values()].every(value => value.payload && !value.payload.includes(Buffer.from("synthetic-secret")))).toBe(true);
+});
+
+test("native business records keep indexed authenticated manifests and exact checkpoint/duplicate semantics", async () => {
+  const storage=FirestoreRecordStore.create(key,scope,{},"native-fields/v1"), source=initialState();
+  source.providers.fixture={id:"fixture",name:"Readable provider",apiKey:"synthetic-native-secret",active:false};
+  const saved=await storage.initializeStaged(splitFirestoreState(source),"native-staged-fixture");
+  expect(assembleFirestoreState(storage.readRecords(await storage.load()))).toEqual(source);
+  const documents=[...db.documents.values()]; expect(documents.some(value=>value.profile==="firestore-native/v1")).toBe(true);
+  expect(documents.some(value=>value.index?.kind==="providers")).toBe(true);
+  expect(JSON.stringify(documents)).not.toContain("synthetic-native-secret");
+  const mutation={transitionId:"native-update-provider",upsert:[{profile:"runtime-record/v1" as const,path:["domain","providers","fixture"],value:{...source.providers.fixture,name:"Updated native provider"}}]};
+  const updated=await storage.commit(saved,mutation); expect((await storage.commit(saved,mutation)).revision).toBe(updated.revision);
+  expect(storage.readRecords(await storage.load()).find(row=>row.path.join("/")==="domain/providers/fixture")?.value).toMatchObject({name:"Updated native provider",apiKey:"synthetic-native-secret"});
+  await storage.close();
+});
+
+test("native mode rejects legacy manifests with an explicit migration error, not a canonical JSON TypeError", async () => {
+  const { storage } = await setup();
+  const native = FirestoreRecordStore.create(key, scope, {}, "native-fields/v1");
+  await expect(native.load()).rejects.toThrow("explicit migration is required");
+  expect(native.writeUncertain).toBe(true);
+  await native.close(); await storage.close();
+});
+
+test("native owner/date index uses keyset pages and rejects a changed committed head", async () => {
+  const storage=FirestoreRecordStore.create(key,scope,{},"native-fields/v1");
+  const records=Array.from({length:45},(_,i)=>({profile:"runtime-record/v1" as const,path:["domain","chats",`chat-${i}`],value:{id:`chat-${i}`,ownerId:i<40?"owner":"other",updatedAt:new Date(Date.UTC(2026,9,1,0,i)).toISOString(),messages:[]}}));
+  const image=await storage.initializeStaged(records,"native-query-fixture");
+  const page=await storage.metadataPage(image,"chats","owner",20); expect(page).toHaveLength(20);
+  expect(page[0]!.path[2]).toBe("chat-39"); const last=page.at(-1)!.value as any;
+  const older=await storage.metadataPage(image,"chats","owner",20,{updatedAt:last.updatedAt,entityId:last.id});
+  expect(older).toHaveLength(20); expect(new Set([...page,...older].map(row=>row.path[2])).size).toBe(40);
+  await storage.commit(image,{transitionId:"native-query-change",upsert:[{...records[0]!,value:{...records[0]!.value,updatedAt:"2026-10-16T10:00:00Z"}}]});
+  await expect(storage.metadataPage(image,"chats","owner",20)).rejects.toThrow("changed"); await storage.close();
+});
+
+test("unchanged observer head requires one fresh database read; a new commit reloads changed data", async () => {
+  const { storage, first } = await setup(); db.reads = [];
+  expect(await storage.load(first)).toBe(first); expect(db.reads).toEqual([storage.headPath]);
+  const other = store(); await other.commit(await other.load(), { transitionId: "observer-update", upsert: [record("one", "new")] });
+  const fresh = await storage.load(first); expect(fresh).not.toBe(first);
+  expect(storage.readRecords(fresh)).toContainEqual(record("one", "new"));
+});
+
+test("invalid or missing head never serves the observer's cached image", async () => {
+  const { storage, first } = await setup(); db.documents.get(storage.headPath).payload[80] ^= 1;
+  await expect(storage.load(first)).rejects.toThrow(); expect(storage.writeUncertain).toBe(true);
+  expect(() => storage.readRecords(first)).toThrow("fenced");
+});
+
+test("writer ownership cannot use the read-only observer shortcut", async () => {
+  const { storage, first } = await setup(); await storage.acquireWriter(); db.reads = [];
+  expect(await storage.load(first)).not.toBe(first);
+  expect(db.reads).toContain(storage.collectionPath); await storage.close();
 });
 test("scoped activation touches only the changed encrypted manifest plus head, not unrelated data", async () => {
   const { storage, first } = await setup(), before = new Map(db.documents); db.writes = []; db.reads = [];
@@ -115,6 +170,16 @@ test("large records activate and shrink atomically; retired immutable bodies do 
   expect([...db.documents.keys()].filter(path => path.startsWith(storage.chunkCollectionPath + "/"))).toHaveLength(large.chunkCount + 1);
   expect([...db.documents.keys()].filter(path => path.startsWith(storage.collectionPath + "/"))).toHaveLength(1);
   expect(storage.readRecords(await storage.load())).toEqual([record("large", "answer")]);
+});
+
+test("packet equality never expands binary chunk payloads into canonical JSON objects", async () => {
+  const storage = store(), original = await storage.load();
+  const large = await storage.commit(original, { transitionId: "binary-compare-initial", upsert: [record("large", "x".repeat(64000))] });
+  const canonical = vi.spyOn(canonicalJSON, "canonicalJSONBytes");
+  try {
+    await storage.commit(large, { transitionId: "binary-compare-update", upsert: [record("large", "updated")] });
+    expect(canonical.mock.calls.filter(([value]) => value && typeof value === "object" && "payload" in value && Buffer.isBuffer(value.payload) && value.payload.length > 16000)).toHaveLength(0);
+  } finally { canonical.mockRestore(); await storage.close(); }
 });
 test("atomic metadata write/size and logical record budgets reject before SDK staging or activation", async () => {
   const { storage, first } = await setup(), calls = db.invocations, prepared = db.staged.length;

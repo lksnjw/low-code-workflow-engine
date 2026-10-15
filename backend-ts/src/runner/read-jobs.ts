@@ -1,11 +1,12 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { captureUserMcpBinding, withUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import type { Execution, Repository, RepositoryState } from "../repository/store.js";
 import type { Workflow } from "../models/schemas.js";
 import { AESGCMCodec, decodeEncryptionKey } from "../storage/aes-gcm.js";
 import { HandlerFailure, validateWorkflow, type CurrentUser, type HandlerServices } from "../http/handlers/common.js";
 import { completeCheckpointedRead } from "./checkpointed-read.js";
 import { appendExecutionEvent, assertCurrentRunController, reconcileInterruptedExecutions, reconcileReadExecution } from "./read-checkpoints.js";
-import { assertReadWorkerLease, issueReadWorkerLease, renewReadWorkerLease, nextFairReadJob, ReadWorkerLeaseFailure, type ReadWorkerLease, type ReadWorkerContext } from "./read-worker-lease.js";
+import { readJobHasInput, assertReadWorkerLease, issueReadWorkerLease, renewReadWorkerLease, nextFairReadJob, ReadWorkerLeaseFailure, type ReadWorkerLease, type ReadWorkerContext } from "./read-worker-lease.js";
 import { workflowContentHash, parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import { inspectReadWorkflow } from "./read-workflow.js";
 import { discoverTools } from "../agent/tool-discovery.js";
@@ -15,8 +16,11 @@ import { completeCheckpointedCollectionRead } from "./checkpointed-collection-re
 import { boundMcpConnection, selectedMcpConnectionId } from "../tools/mcp-dispatch-context.js";
 import { bindExecutionHost, residentExecutionAllowed, requireResidentExecution } from "./execution-host.js";
 import { newReadTaskOutbox, assertReadTaskOutbox, readTaskCommandSchema, requireReadTaskAdmission, type ReadTaskCommand } from "./read-task-outbox.js";
+import type { ExecutionRetryRequest } from "./execution-retry.js";
+import { withoutSecretFields } from "../redact/secrets.js";
 
-type Admission = { input: Record<string, unknown>; actorId: string; admittedRole: string; scope: string; fingerprint: string; connectionFingerprint: string };
+type Admission = { input: Record<string, unknown>; actorId: string; admittedRole: string; scope: string; fingerprint: string; connectionFingerprint: string;
+  snapshotScheduleSource?: Execution["snapshotScheduleSource"] };
 const queues = new WeakMap<Repository, ReadJobQueue>();
 const memoryKeys = new WeakMap<Repository, string>();
 type ActiveRead = { id: string; actorId: string; controller: AbortController; lease?: ReadWorkerLease; failure?: ReadWorkerLeaseFailure;
@@ -67,19 +71,21 @@ export class ReadJobQueue {
       }
     } });
   }
-  prepare(workflow: Workflow, input: Record<string, unknown>, user: CurrentUser, key: string): Admission {
+  prepare(workflow: Workflow, input: Record<string, unknown>, user: CurrentUser, key: string, retry?: ExecutionRetryRequest, snapshotScheduleSource?: Execution["snapshotScheduleSource"]): Admission {
     if (this.#closed) throw new HandlerFailure(503, "Read queue is shutting down", { code: "READ_QUEUE_UNAVAILABLE" });
     if (!/^[A-Za-z0-9_-]{16,128}$/.test(key)) throw new HandlerFailure(400, "Async read admission requires a 16–128 character idempotency key", { code: "READ_JOB_KEY_REQUIRED" });
     const canonical = canonicalInput(input);
     if (Buffer.byteLength(canonical) > 64_000) throw new HandlerFailure(413, "Read job input exceeds 64 KB", { code: "READ_JOB_INPUT_LIMIT" });
     const scope = this.digest(JSON.stringify([user.id, workflow.id, key]));
-    const fingerprint = this.digest(JSON.stringify([workflow.publishedVersion, workflowContentHash(workflow.yaml), canonical]));
+    const identity = [workflow.publishedVersion, workflowContentHash(workflow.yaml), canonical];
+    const fingerprint = this.digest(JSON.stringify(snapshotScheduleSource ? [...identity, { snapshotScheduleSource: canonicalInput(snapshotScheduleSource) }] : retry ? [...identity, retry] : identity));
     // An existing idempotent admission remains queryable while its connection
     // is degraded or fenced. A new admission still fails in store() because an
     // empty fingerprint cannot match a current connected context.
     let connectionFingerprint = "";
     try { connectionFingerprint = this.connectionFingerprint(workflow.yaml); } catch { /* resolved after existing-key lookup */ }
-    return { input: structuredClone(input), actorId: user.id, admittedRole: user.role, scope, fingerprint, connectionFingerprint };
+    return { input: structuredClone(input), actorId: user.id, admittedRole: user.role, scope, fingerprint, connectionFingerprint,
+      ...(snapshotScheduleSource ? { snapshotScheduleSource: structuredClone(snapshotScheduleSource) } : {}) };
   }
   private digest(value: string): string { return createHmac("sha256", this.#fingerprintKey).update(value).digest("hex"); }
   private connectionFingerprint(yaml: string): string {
@@ -114,14 +120,19 @@ export class ReadJobQueue {
       throw new HandlerFailure(429, "Read queue is full; no run was admitted", { code: "READ_QUEUE_FULL" });
   }
   store(state: RepositoryState, item: Execution, admission: Admission): void {
+    if (canonicalInput(item.snapshotScheduleSource ?? null) !== canonicalInput(admission.snapshotScheduleSource ?? null))
+      throw new Error("Read schedule source changed during admission");
+    const credential = captureUserMcpBinding(this.services, state, admission.actorId);
+    if (credential) item.erpCredentialSecret = credential;
     requireReadTaskAdmission(this.services.repository);
     if (this.#closed || this.#stalled) throw new HandlerFailure(503, "Read workers are unavailable", { code: "READ_QUEUE_UNAVAILABLE" });
     if (!item.workflowSnapshot?.yaml || this.connectionFingerprint(item.workflowSnapshot.yaml) !== admission.connectionFingerprint)
       throw new HandlerFailure(503, "Read connection identity is unavailable or changed during admission", { code: "READ_CONNECTION_BINDING_REQUIRED" });
-    const inputCiphertext = this.#codec.encode(Buffer.from(JSON.stringify({ version: 1, executionId: item.id, input: admission.input }))).toString("base64");
+    const capturedInput={version:1 as const,executionId:item.id,input:structuredClone(admission.input)};
+    const inputStorage=this.services.config.firestoreContentFormat==="native-fields/v1"?{inputFields:capturedInput}:{inputCiphertext:this.#codec.encode(Buffer.from(JSON.stringify(capturedInput))).toString("base64")};
     const queueSequence = Object.values(state.readJobs).reduce((highest, job) => Math.max(highest, job.queueSequence ?? 0), 0) + 1;
     if (!Number.isSafeInteger(queueSequence) || queueSequence < 1) throw new Error("Read admission sequence is unavailable");
-    state.readJobs[item.id] = { version: 1, executionId: item.id, actorId: admission.actorId, admittedRole: admission.admittedRole, state: "QUEUED", inputCiphertext,
+    state.readJobs[item.id] = { version: 1, executionId: item.id, actorId: admission.actorId, admittedRole: admission.admittedRole, state: "QUEUED", ...inputStorage,
       requestFingerprint: admission.fingerprint, idempotencyScope: admission.scope, connectionFingerprint: admission.connectionFingerprint, createdAt: item.startedAt, queueSequence };
     if (!residentExecutionAllowed(this.services.repository)) state.readJobs[item.id]!.taskDispatchSecret = newReadTaskOutbox(state.readJobs[item.id]!);
   }
@@ -152,7 +163,7 @@ export class ReadJobQueue {
         const job = current.readJobs[command.executionId], run = current.executions[command.executionId];
         if (job?.state !== "CLAIMED" || !run) return;
         job.state = ["DONE", "FAILED", "CANCELLED"].includes(run.status) ? "FINISHED" : "RECOVERY_REQUIRED";
-        if (job.state === "FINISHED") { job.finishedAt = run.completedAt ?? new Date().toISOString(); delete job.inputCiphertext; delete job.lease; }
+        if (job.state === "FINISHED") { job.finishedAt = run.completedAt ?? new Date().toISOString(); delete job.inputCiphertext; delete job.inputFields; delete job.lease; }
       });
       return this.taskReceipt(command);
     }
@@ -198,7 +209,7 @@ export class ReadJobQueue {
         const job = state.readJobs[id], item = state.executions[id];
         if (job?.state !== "CLAIMED") return;
         job.state = item && ["DONE", "FAILED", "CANCELLED"].includes(item.status) ? "FINISHED" : "RECOVERY_REQUIRED";
-        if (job.state === "FINISHED") { job.finishedAt = item!.completedAt ?? new Date().toISOString(); delete job.inputCiphertext; delete job.lease; }
+        if (job.state === "FINISHED") { job.finishedAt = item!.completedAt ?? new Date().toISOString(); delete job.inputCiphertext; delete job.inputFields; delete job.lease; }
       });
     }
     if (jobs.some(job => job.state === "QUEUED")) this.kick();
@@ -268,10 +279,14 @@ export class ReadJobQueue {
       if (!job || !item || job.workerId !== this.#workerId || job.state !== "CLAIMED" || !job.lease || control.lease && (job.lease.leaseId !== control.lease.leaseId || job.lease.epoch !== control.lease.epoch) || item.readProgress?.epoch !== job.lease.epoch) return;
       reconcileReadExecution(state, item, reason, new Date().toISOString());
       job.state = ["DONE", "FAILED", "CANCELLED"].includes(item.status) ? "FINISHED" : "RECOVERY_REQUIRED";
-      if (job.state === "FINISHED") { delete job.inputCiphertext; delete job.lease; }
+      if (job.state === "FINISHED") { delete job.inputCiphertext; delete job.inputFields; delete job.lease; }
     }); } catch { /* Persistence remains fenced; startup performs authoritative reconciliation. */ }
   }
   private async process(control: ActiveRead): Promise<void> {
+    const expected = await this.services.repository.readAuthoritative(state => state.executions[control.id]?.erpCredentialSecret);
+    return withUserMcpBinding(this.services, control.actorId, expected, () => this.processBound(control));
+  }
+  private async processBound(control: ActiveRead): Promise<void> {
     const id = control.id;
     let initial: Execution | null = null;
     let preparationStage = "CLAIM";
@@ -296,7 +311,7 @@ export class ReadJobQueue {
       control.lease = claimed.job.lease!; control.controllerAllowed = true; this.heartbeat(control);
       const job = claimed.job, snapshot = initial.workflowSnapshot;
       if (this.#closed || control.controller.signal.aborted || job.version !== 1 || !snapshot || snapshot.contentHash !== workflowContentHash(snapshot.yaml) ||
-          job.actorId !== initial.startedBy.id || !job.inputCiphertext) throw new Error("Invalid queued job");
+          job.actorId !== initial.startedBy.id || !readJobHasInput(job)) throw new Error("Invalid queued job");
       if (this.services.config.mcpTransport === "erpbridge-mcp" && this.services.config.mcpMode === "remote" && !snapshot.compilation) throw new Error("Queued modern run has no compiled admission receipt");
       const actor = await this.services.repository.effectiveUser(job.actorId);
       preparationStage = "PUBLICATION";
@@ -310,9 +325,12 @@ export class ReadJobQueue {
       if (!actor || actor.role !== job.admittedRole || snapshot.registryHash !== this.services.registries.hash() ||
           job.connectionFingerprint !== this.connectionFingerprint(snapshot.yaml)) throw new Error("Queued authority, connection or registry changed");
       preparationStage = "PRIVATE_INPUT";
-      const privateInput = JSON.parse(this.#codec.decode(Buffer.from(job.inputCiphertext, "base64")).toString("utf8")) as { version?: number; executionId?: string; input?: Record<string, unknown> };
+      const privateInput = job.inputFields??JSON.parse(this.#codec.decode(Buffer.from(job.inputCiphertext!, "base64")).toString("utf8")) as { version?: number; executionId?: string; input?: Record<string, unknown> };
       if (privateInput.version !== 1 || privateInput.executionId !== id || !privateInput.input || Array.isArray(privateInput.input) || typeof privateInput.input !== "object") throw new Error("Private job input is not authentic");
-      canonicalInput(privateInput.input);
+      if(canonicalInput(withoutSecretFields(privateInput.input))!==canonicalInput(snapshot.input))throw new Error("Queued input differs from its bound publication snapshot");
+      if (initial.snapshotScheduleSource && job.requestFingerprint !== this.digest(JSON.stringify([
+        snapshot.version, snapshot.contentHash, canonicalInput(privateInput.input), { snapshotScheduleSource: canonicalInput(initial.snapshotScheduleSource) }
+      ]))) throw new Error("Queued snapshot schedule source changed");
       preparationStage = "GOVERNANCE_AND_VALIDATION";
       const gate = await validateWorkflow(this.services, "ReadJobWorker", snapshot.yaml, actor, { traceId: initial.traceId, workflowId: initial.workflowId, executionId: id, signal: control.controller.signal });
       if (!gate.result.passed || !gate.token || gate.token.registry_hash !== snapshot.registryHash) throw new Error("Queued verification failed");
@@ -357,7 +375,7 @@ export class ReadJobQueue {
         const job = state.readJobs[id], item = state.executions[id];
         if (!job || job.workerId !== this.#workerId || job.state !== "CLAIMED" || !item || job.lease?.leaseId !== control.lease?.leaseId || ["RUNNING", "PENDING"].includes(item.status)) return;
         job.state = item.status === "RECOVERY_REQUIRED" ? "RECOVERY_REQUIRED" : "FINISHED"; job.finishedAt = new Date().toISOString();
-        if (job.state === "FINISHED") { delete job.inputCiphertext; delete job.lease; }
+        if (job.state === "FINISHED") { delete job.inputCiphertext; delete job.inputFields; delete job.lease; }
       }); } catch { /* No replay/false completion on failed persistence. */ }
     }
   }

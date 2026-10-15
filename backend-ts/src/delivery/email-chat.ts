@@ -83,8 +83,10 @@ export async function prepareEmailDraft(services: HandlerServices, user: Current
     const chat = assertOwner(state, sessionId, user);
     const recipientResolution = intent.recipientReference ? resolveRecipientReference(state, user.id, intent.recipientReference) : null;
     const draft = createEmailDraft(nextID(state, "email_draft"), sessionId, user.id, content, intent, report, recipientResolution);
-    const text = emailDraftMessage(draft);
+    const questions = report?.clarification?.questions ?? [];
+    const text = emailDraftMessage(draft) + (questions.length ? `\n\nTo prepare this email, please answer in chat:\n${questions.map(question => `- ${question}`).join("\n")}` : "");
     const message = { id: nextID(state, "msg"), role: "assistant", text, modelBinding: services.providerRuntime?.binding ?? null, ...(context.traceId ? { traceId: context.traceId } : {}), artifacts: { intent: "EMAIL_DELIVERY", emailDraft: draft, can_execute: false, reportReason: reason,
+      ...(questions.length ? { emailPreparation: { status: "NEEDS_DETAILS", questions } } : {}),
       ...(report ? { sources: report.toolCallLog, toolSteps: report.toolSteps, readOutcome: report.readOutcome, boundHit: report.boundHit, stopReason: report.stopReason } : {}) }, createdAt: now() };
     chat.messages.push(message); chat.messageCount = chat.messages.length; chat.updatedAt = now();
     hooks?.saved(state, message);

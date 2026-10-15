@@ -34,7 +34,7 @@ jest.unstable_mockModule("../services/semantic.service", () => ({
 }));
 
 jest.unstable_mockModule("../services/registry.service", () => ({
-  registryService: { load: registryLoad, create: registryCreate, update: registryUpdate, status: registryStatus },
+  registryService: { load: registryLoad, rules: registryLoad, create: registryCreate, update: registryUpdate, status: registryStatus },
 }));
 
 jest.unstable_mockModule("../context/NotificationContext", () => ({
@@ -92,9 +92,9 @@ test("disabled semantic search hides rebuild even from a settings manager", asyn
   registryLoad.mockResolvedValue({ tools: [], rules: [] });
   registryCreate.mockResolvedValue({});
   registryStatus.mockResolvedValue({ mode: "runtime", writable: true });
-  const queryClient = renderWithQuery(<RegistryPage />, true);
+  const queryClient = renderWithQuery(<RegistryPage initialKind="rules" />, true);
 
-  fireEvent.click(await screen.findByRole("button", { name: "Add tool" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add rule" }));
   fireEvent.click(screen.getByRole("button", { name: "Validate & save" }));
   await waitFor(() => expect(registryCreate).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(notify).toHaveBeenCalledWith(

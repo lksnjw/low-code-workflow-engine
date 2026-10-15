@@ -14,6 +14,25 @@ const user = { id: "usr_test", role: "Platform Admin", department: "finance" };
 const readOnlyYAML = `name: Read attendance\ndescription: Reads attendance without side effects.\ntrigger:\n  type: manual\nsteps:\n  - id: read\n    action: fetch_attendance\n    parameters: {}\n`;
 const sideEffectYAML = `name: Create leave\ndescription: Creates a leave request.\ntrigger:\n  type: manual\nsteps:\n  - id: create\n    action: create_leave\n    parameters: {}\n`;
 
+test("fresh direct record adapter still runs deterministic validation and records its own source version", async () => {
+  const s = await governedSetup(vi.fn()), governance = new GovernanceService(null, null, 0, s.registries, s.repository);
+  const record = vi.fn(async () => ({ outcome: "allow" as const, reason: "Fresh record rules", conditions: [] }));
+  const gate = new GovernedValidationGate(governance, s.validator, s.registries, s.repository, null, record);
+  const validate = vi.spyOn(s.validator, "validateAndIssueToken");
+  const result = await gate.validateAndIssueToken("RecordProposal", sideEffectYAML, user);
+  expect(record).toHaveBeenCalledOnce(); expect(validate).toHaveBeenCalledOnce();
+  expect((await s.repository.snapshot()).auditLogs).toContainEqual(expect.objectContaining({ action: "governance.gate.RecordProposal",
+    after: expect.objectContaining({ policyVersion: "direct-record-policy/v1", passed: result.result.passed }) }));
+});
+
+test("a configured primary governance endpoint cannot be bypassed by direct record allow", async () => {
+  const s = await governedSetup(vi.fn(async () => new Response("Forbidden", { status: 403 })));
+  const record = vi.fn(async () => ({ outcome: "allow" as const, reason: "Must not be consulted", conditions: [] }));
+  const gate = new GovernedValidationGate(s.governance, s.validator, s.registries, s.repository, null, record);
+  const result = await gate.validateAndIssueToken("RecordProposal", sideEffectYAML, user);
+  expect(result.result.passed).toBe(false); expect(record).not.toHaveBeenCalled();
+});
+
 describe("governance adapter contract", () => {
   test("environment configuration requires a key and explicit positive cache TTL", () => {
     expect(() => loadConfig({ GOVERNANCE_URL: governanceURL })).toThrow(/GOVERNANCE_API_KEY/);

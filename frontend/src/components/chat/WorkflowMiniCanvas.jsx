@@ -1,27 +1,41 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import ReadFlowTree from "./ReadFlowTree";
 import ReadableValue from "./ReadableValue";
 import { miniWorkflowGraph, miniNodeEvidence, unselectedMiniNodes } from "./miniWorkflowGraph";
 import { createPortal } from "react-dom";
 import { useChatWorkspace } from "./ChatWorkspaceContext";
+import WorkflowRequirementSummary from "./WorkflowRequirementSummary";
 
-const icons = { if: "lucide:git-branch", foreach: "lucide:repeat-2", protect: "lucide:shield-check", return: "lucide:flag", approval: "lucide:hand" };
-const types = { if: "Decision", foreach: "Repeat", protect: "Error handler", return: "Finish", approval: "Human approval" };
+const icons = { input: "lucide:file-input", if: "lucide:git-branch", foreach: "lucide:repeat-2", protect: "lucide:shield-check", return: "lucide:flag", approval: "lucide:hand" };
+const types = { input: "Run preparation", if: "Decision", foreach: "Repeat", protect: "Error handler", return: "Finish", approval: "Human approval" };
 
-export default function WorkflowMiniCanvas({ simple, run, declaredStructure, ...props }) {
+export default function WorkflowMiniCanvas(props) {
+  // Reset display state only; the saved editor, proposal and input forms stay mounted.
+  return <WorkflowMiniCanvasView key={props.viewReset} {...props} />;
+}
+
+function WorkflowMiniCanvasView({ simple, run, declaredStructure, ...props }) {
   const workspace = useChatWorkspace();
   const docked = Boolean(simple && workspace);
   const inTools = (content, key) => docked ? workspace.canvasToolsHost ? createPortal(content, workspace.canvasToolsHost, key) : null : content;
   const [view, setView] = useState("canvas"), [zoom, setZoom] = useState(1), [query, setQuery] = useState("");
-  const [selectedApproval, setSelectedApproval] = useState(null);
+  const [approvalSelection, setApprovalSelection] = useState(null);
+  const { selectedId } = props;
+  const selectedApproval = approvalSelection && approvalSelection.context === selectedId ? approvalSelection.id : null;
+  const setSelectedApproval = id => setApprovalSelection({ id, context: selectedId });
   const scroller = useRef(null), marker = useId().replaceAll(":", "");
   const recordedApprovalNode = props.timeline?.findLast(item => item.status === "AWAITING_APPROVAL")?.nodeId;
   const waitingNode = (props.approvalWaiting ?? (!run || run.status === "AWAITING_APPROVAL")) ? props.pendingApprovalNode || recordedApprovalNode : undefined;
-  const approvalNodes = useMemo(() => [...new Set([...(props.approvalNodes || []), ...(recordedApprovalNode ? [recordedApprovalNode] : []), ...(waitingNode ? [waitingNode] : [])])], [props.approvalNodes, waitingNode, recordedApprovalNode]);
-  const graph = useMemo(() => miniWorkflowGraph(props.steps, props.flow, declaredStructure, approvalNodes), [props.steps, props.flow, declaredStructure, approvalNodes]);
-  const unselected = useMemo(() => unselectedMiniNodes(props.flow, props.decisions), [props.flow, props.decisions]);
-  useEffect(() => setSelectedApproval(null), [props.selectedId]);
+  const approvalNodes = [...new Set([...(props.approvalNodes || []), ...(recordedApprovalNode ? [recordedApprovalNode] : []), ...(waitingNode ? [waitingNode] : [])])];
+  const graph = (() => {
+    const base = miniWorkflowGraph(props.steps, props.flow, declaredStructure, approvalNodes);
+    if (!props.onPrepareInputs || base.error || !base.nodes.length) return base;
+    const first = base.nodes[0], offset = base.nodeWidth + 64;
+    // A display-only input entry, never an ERP step or a saved workflow mutation.
+    return { ...base, width: base.width + offset, nodes: [{ id: "$run-inputs", kind: "input", title: "Inputs & documents", x: first.x, y: first.y }, ...base.nodes.map(node => ({ ...node, x: node.x + offset }))], edges: [{ from: "$run-inputs", to: first.id, label: "Reviewed inputs" }, ...base.edges] };
+  })();
+  const unselected = unselectedMiniNodes(props.flow, props.decisions);
   const renderActionWithApproval = (step, index) => <Fragment key={step.id}>
     {approvalNodes.includes(step.id) && <li aria-label={`Human approval before ${step.id}`} className="relative z-10 border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs dark:bg-amber-950/30">
       <p className="font-semibold">Human approval · {step.source.description || step.id}</p>
@@ -36,7 +50,8 @@ export default function WorkflowMiniCanvas({ simple, run, declaredStructure, ...
   const selectedIndex = graph.nodes.indexOf(selected);
   const go = node => {
     if (!node) return;
-    if (node.kind === "approval") { setSelectedApproval(node.id); if (node.control.nodeId === waitingNode) props.onReviewApproval?.(); }
+    if (node.kind === "input") { setSelectedApproval(node.id); props.onPrepareInputs?.(); }
+    else if (node.kind === "approval") { setSelectedApproval(node.id); if (node.control.nodeId === waitingNode) props.onReviewApproval?.(); }
     else { setSelectedApproval(null); props.onSelectCondition(node.id); }
     scroller.current?.scrollTo?.({ left: Math.max(0, node.x * zoom - 32), top: Math.max(0, node.y * zoom - 48), behavior: "smooth" });
   };
@@ -46,14 +61,18 @@ export default function WorkflowMiniCanvas({ simple, run, declaredStructure, ...
       {[ ["canvas", "Mini canvas"], ["tree", "Workflow preview"] ].map(([id, title]) => <button key={id} type="button" role="tab" aria-selected={view === id} aria-controls={`workflow-${marker}-${id}`} onClick={() => setView(id)} className={`border-b-2 px-3 py-2 text-xs font-semibold ${view === id ? "border-primary text-primary" : "border-transparent text-gray-500"}`}>{title}</button>)}
       <span className="ml-auto text-[10px] text-gray-500">{props.steps.length} {props.steps.length === 1 ? "step" : "steps"}</span>
     </div>, "canvas-view")}
-    {!graph.error && graph.nodes.length === 0 ? <div role="status" aria-label={props.savedDraft ? "Empty saved workflow" : "Empty workflow"} className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
-      <div className="max-w-md space-y-3 border-l-2 border-amber-400 pl-4 text-sm">
+    {!graph.error && graph.nodes.length === 0 ? <div role="status" aria-label={props.savedDraft ? "Empty saved workflow" : "Empty workflow"} className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="mx-auto max-w-md space-y-3 border-l-2 border-amber-400 pl-4 text-sm">
         <h3 className="font-semibold text-gray-900 dark:text-gray-100">This {props.savedDraft ? "saved " : ""}draft has no steps yet</h3>
-        <p className="text-xs leading-5 text-gray-500">{props.savedDraft ? "The draft is saved, but there are no workflow nodes to draw. Saving a draft does not make it runnable." : "There are no workflow nodes to draw yet. This preview does not confirm that the draft is saved or runnable."}</p>
-        {props.emptyDescription && <p className="text-xs leading-5 text-gray-600 dark:text-gray-300">{props.emptyDescription}</p>}
-        {Array.isArray(props.unresolvedRequirements) && props.unresolvedRequirements.length > 0 && <div><p className="text-xs font-semibold">Still needed</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-gray-500">{props.unresolvedRequirements.slice(0, 8).map((issue, index) => <li key={index}>{typeof issue === "string" ? issue : "Review this unresolved requirement in the saved workflow source."}</li>)}</ul></div>}
-        <p className="text-xs text-gray-500">Ask in chat to complete this workflow, or use the canvas controls to add steps. Required tools and fields must be available before running.</p>
-        {props.onOpenControls && <button type="button" onClick={props.onOpenControls} className="rounded-md bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">Review requirements and add steps</button>}
+        <p className="text-xs leading-5 text-gray-500">{props.savedDraft ? "Your draft is saved, but it needs executable steps before it can run." : "There are no workflow nodes to draw yet. This preview does not confirm that the draft is saved or runnable."}</p>
+        <p className="text-xs font-medium text-amber-800 dark:text-amber-200">Complete the missing details first. This is not a pending approval, so there is no OK or Approve action yet.</p>
+        <WorkflowRequirementSummary issues={props.unresolvedRequirements} />
+        <div className="flex flex-wrap gap-2">
+          {props.onContinueChat && <button type="button" disabled={props.busy} onClick={props.onContinueChat} className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50">Complete in chat</button>}
+          {props.onOpenControls && <button type="button" disabled={props.busy} onClick={props.onOpenControls} className="rounded-md border border-primary/30 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50 dark:border-fuchsia-400/40 dark:text-fuchsia-300">Review requirements and add steps</button>}
+        </div>
+        {props.emptyDescription && <details className="text-xs text-gray-600 dark:text-gray-300"><summary className="cursor-pointer font-medium">Draft description</summary><p className="mt-2 leading-5">{props.emptyDescription}</p></details>}
+        {Array.isArray(props.unresolvedRequirements) && props.unresolvedRequirements.length > 0 && <details><summary className="cursor-pointer text-xs font-medium text-primary dark:text-fuchsia-300">Technical requirements · {props.unresolvedRequirements.length}</summary><ul className="mt-2 list-disc space-y-2 pl-4 text-xs text-gray-500">{props.unresolvedRequirements.map((issue, index) => <li key={index}>{typeof issue === "string" ? issue : "Review this unresolved requirement in the saved workflow source."}</li>)}</ul></details>}
       </div>
     </div> : view === "tree" ? <div role="tabpanel" id={`workflow-${marker}-tree`} className={docked ? "min-h-0 flex-1 overflow-auto p-5" : undefined}>{tree()}</div> : <div role="tabpanel" id={`workflow-${marker}-canvas`} className={docked ? "flex min-h-0 flex-1 flex-col" : undefined}>
       {graph.error ? <><p role="alert" className="mb-3 text-xs text-amber-700">{graph.error}</p>{tree()}</> : <>
@@ -90,6 +109,7 @@ export default function WorkflowMiniCanvas({ simple, run, declaredStructure, ...
               const evidenceId = node.kind === "approval" ? node.control.nodeId : node.id;
               let evidence = unselected.has(evidenceId) ? { label: "Not selected", tone: "idle" } : miniNodeEvidence(evidenceId, run, props.iterations ? [] : props.timeline, props.decisions, props.values);
               if (node.kind === "approval") evidence = evidenceId === waitingNode ? { label: "Paused · Review here", tone: "attention" } : evidence.tone === "done" ? { label: "Passed in this run", tone: "done" } : evidence.label === "Not selected" || evidence.label === "Skipped" || evidence.label === "Review recorded · Check run" ? evidence : { label: "Required before this action", tone: "idle" };
+              if (node.kind === "input") evidence = { label: "Upload image/PDF or enter fields", tone: "idle" };
               const active = node.id === selected?.id;
               const kind = types[node.kind] || (node.step?.source.kind === "approval" ? "Human approval" : node.step?.source.kind === "analysis" ? "Analysis" : node.step?.source.kind === "agent" ? "Assistant" : "ERP step");
               return <button type="button" key={node.id} aria-label={`Select ${node.kind === "action" ? "step" : node.kind === "if" ? "decision" : node.kind} ${node.title}`} aria-pressed={active} onClick={() => go(node)} className={`mini-workflow-node mini-node-${evidence.tone} ${active ? "mini-node-selected" : ""}`} style={{ left: node.x, top: node.y, width: graph.nodeWidth, height: graph.nodeHeight }}>

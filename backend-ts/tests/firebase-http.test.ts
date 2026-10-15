@@ -1,11 +1,22 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { handleFunctionHttp } from "../src/firebase/http.js";
+import { handleFunctionHttp, isAsyncChatAdmission } from "../src/firebase/http.js";
 import { boundedReadFixture, TaskRecords } from "./fixtures/bounded-read-task.js";
 import { FirestoreOwnershipFailure } from "../src/storage/firestore-writer-ownership.js";
 const fixtures = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("../src/firebase/invocation.js", () => ({ withFunctionRuntime: fixtures.invoke }));
 const closers: (() => Promise<unknown>)[] = [];
 beforeEach(() => vi.resetAllMocks());
+
+test("only an exact async-chat admission may defer the ERP connection",()=>{
+  const base={method:"POST",url:"/api/chat/sessions/chat_123/messages",headers:{}};
+  const body={delivery:"async-chat",content:"Hello",idempotencyKey:"original_request_0001"};
+  expect(isAsyncChatAdmission({...base,rawBody:Buffer.from(JSON.stringify(body))})).toBe(true);
+  for(const invalid of [{...body,emailDeliveryCommand:{}},{...body,emailDraftCommand:{}},{...body,delivery:"sync"},{...body,unknown:true}])
+    expect(isAsyncChatAdmission({...base,rawBody:Buffer.from(JSON.stringify(invalid))})).toBe(false);
+  expect(isAsyncChatAdmission({...base,url:base.url+"?override=true",body})).toBe(false);
+  expect(isAsyncChatAdmission({...base,method:"GET",body})).toBe(false);
+  expect(isAsyncChatAdmission({...base,rawBody:Buffer.from("{invalid")})).toBe(false);
+});
 afterEach(async () => { await Promise.all(closers.splice(0).map(close => close())); });
 async function setup(options: Parameters<typeof boundedReadFixture>[0] = {}) {
   const f = await boundedReadFixture(options); closers.push(f.close);
@@ -66,6 +77,16 @@ test("unconfirmed invocation cleanup returns actionable 503 without exposing dep
   const result = await handleFunctionHttp(f.input, { method: "GET", url: "/api/workflows", headers: f.headers });
   expect(result.statusCode).toBe(503); expect(result.body.toString()).not.toContain("upstream token");
   expect(JSON.parse(result.body.toString()).meta.code).toBe("FUNCTIONS_INVOCATION_UNCONFIRMED");
+});
+
+test("unconfirmed startup exposes recovery guidance only to the configured web origin", async () => {
+  const f = await setup(); f.input.config.corsOrigins = ["https://workflow.example.test"];
+  fixtures.invoke.mockRejectedValue(new Error("private failure"));
+  const allowed = await handleFunctionHttp(f.input, { method: "GET", url: "/api/registry/status", headers: { ...f.headers, origin: "https://workflow.example.test" } });
+  expect(allowed.statusCode).toBe(503); expect(allowed.headers["access-control-allow-origin"]).toBe("https://workflow.example.test");
+  expect(allowed.headers["access-control-allow-credentials"]).toBe("true"); expect(allowed.body.toString()).not.toContain("private failure");
+  const denied = await handleFunctionHttp(f.input, { method: "GET", url: "/api/registry/status", headers: { ...f.headers, origin: "https://foreign.example.test" } });
+  expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
 });
 
 test("initialization diagnostic is a bounded authority category, not raw error, identity or credentials", async () => {

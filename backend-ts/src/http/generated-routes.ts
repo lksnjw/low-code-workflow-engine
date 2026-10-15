@@ -835,6 +835,102 @@ export const routeTable = [
   {
     "method": "GET",
     "path": "/api/pipeline/v1/jobs/:id"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pipeline/v1/library/catalog"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pipeline/v1/library/catalog"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pipeline/v1/library/inventory"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pipeline/v1/library/search"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pipeline/v1/library/resolve"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pipeline/v1/library/migrate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pipeline/v1/library/delegation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/chat/sessions/:id/attachments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/sessions/:id/attachments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/sessions/:id/attachments/preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/sessions/:id/attachments/prepare"
+  },
+  {
+    "method": "GET",
+    "path": "/api/chat/sessions/:id/attachments/:uploadId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/sessions/:id/attachments/:uploadId/analyse"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/sessions/:id/attachments/:uploadId/confirm"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/sessions/:id/attachments/:uploadId/recover"
+  },
+  {
+    "method": "GET",
+    "path": "/api/profile/erp-connections"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/profile/erp-connections/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/profile/erp-connections/:id"
+  },
+  {
+    "method": "POST",
+    "path": "/api/profile/erp-connections/:id/test"
+  },
+  {
+    "method": "GET",
+    "path": "/api/chat/sessions/:id/erp-actions/:actionId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/sessions/:id/erp-actions/:actionId"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings/rag-policy"
+  },
+  {
+    "method": "POST",
+    "path": "/api/settings/rag-policy/test"
+  },
+  {
+    "method": "POST",
+    "path": "/api/settings/rag-policy/documents"
   }
 ] as const;
 export type RouteDefinition = (typeof routeTable)[number];

@@ -17,6 +17,16 @@ export function selectProvider(services: HandlerServices, model?: string): Provi
   catch { throw new HandlerFailure(422, "The selected model is no longer configured. Choose a current model.", { code: "MODEL_NOT_CONFIGURED" }); }
 }
 
+/** Preserve the connection manager's live session getter when capturing a
+ * model. Spreading a deferred runtime alone snapshots undefined forever, even
+ * after ensureSession connects, hiding every reviewed ERP tool from synthesis. */
+export function withSelectedProvider(services: HandlerServices, provider: ProviderRuntime | undefined): HandlerServices {
+  const scoped: HandlerServices = { ...services, get erpbridgeSession() { return services.erpbridgeSession; } };
+  if (provider) scoped.providerRuntime = provider;
+  else delete scoped.providerRuntime;
+  return scoped;
+}
+
 /** Recheck after external awaits inside the same mutation as delivery. */
 export function assertActorAuthority(state: Readonly<RepositoryState>, user: CurrentUser) {
   const actor = state.users[user.id], role = actor && state.roles[actor.roleId];
@@ -28,10 +38,12 @@ export function assertActorAuthority(state: Readonly<RepositoryState>, user: Cur
   return permissions;
 }
 
+/** Authoring/worker authority is owner-only; administrative review is not
+ * permission to reply, rename, delete or act as another chat's owner. */
 export function assertChatAuthority(state: Readonly<RepositoryState>, user: CurrentUser, sessionId: string) {
   const permissions = assertActorAuthority(state, user);
   if (!permissions.some((value) => ["chat:use", "workflow:write"].includes(value))) throw new HandlerFailure(403, "Chat authority is no longer available");
   const chat = state.chats[sessionId];
-  if (!chat || (chat.ownerId !== user.id && !permissions.includes("workflow:write"))) throw new HandlerFailure(404, "Chat session not found");
+  if (!chat || chat.ownerId !== user.id) throw new HandlerFailure(404, "Chat session not found");
   return chat;
 }

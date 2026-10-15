@@ -30,7 +30,8 @@ export function assertProtectedRequestActor(state: Readonly<RepositoryState>, wo
 export function protectedAdmissionSeal(services: HandlerServices, run: Execution): string {
   const job = run.protectedJobSecret!, { admissionSeal: _seal, state: _state, lease: _lease, ...admission } = job;
   return createHmac("sha256", decodeEncryptionKey(services.config.storageEncryptionKey)).update("lcwe/protected-job-admission/v1\0")
-    .update(canonicalJSONBytes({ workspace: protectedPublicationWorkspaceBinding(services), id: run.id, workflowId: run.workflowId, startedBy: run.startedBy, snapshot: run.workflowSnapshot, identity: run.protectedInvocationSecret!.identity, admission })).digest("hex");
+    .update(canonicalJSONBytes({ workspace: protectedPublicationWorkspaceBinding(services), id: run.id, workflowId: run.workflowId, startedBy: run.startedBy, snapshot: run.workflowSnapshot, identity: run.protectedInvocationSecret!.identity, admission,
+      ...(run.erpCredentialSecret ? { erpCredentialBinding: run.erpCredentialSecret } : {}) })).digest("hex");
 }
 export function assertProtectedAdmission(services: HandlerServices, run: Execution): void {
   assertProtectedJobShape(run); if (!run.protectedJobSecret) throw new Error("Protected job admission is missing");

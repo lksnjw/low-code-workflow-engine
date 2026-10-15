@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { erpnextReceiptSchema, isErpnextWriteContract } from "../tools/erpnext-document-write.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import { toolSchema, type ToolDefinition } from "./schemas.js";
 import type { RegistryService } from "./service.js";
@@ -62,6 +63,8 @@ function supportedReadErrorReview(tool: ToolDefinition) {
   catch { throw new HandlerFailure(422, "Business error mappings require an explicit low-risk ERP read without effects", { code: "ADMISSION_REVIEW_UNSUPPORTED" }); }
 }
 export function supportedRead(tool: ToolDefinition) {
+  if (tool.bridge_contract?.selector === "digest-pinned-operation-alias" || tool.operation_contract?.receipt_profile)
+    throw new HandlerFailure(422, "An ERPNext operation profile cannot be admitted as a read", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
   supportedReadErrorReview(tool);
   if (!tool.tool_id.trim() || !tool.name.trim() || !tool.bridge_contract || !tool.allowed_roles.length ||
     !tool.is_read_only || tool.risk_level.toLowerCase() !== "low" || tool.side_effects.length || /^system\..*_test$/i.test(tool.name) || /^system\..*_test$/i.test(tool.mcp_tool_name))
@@ -72,13 +75,19 @@ export function supportedRead(tool: ToolDefinition) {
   }
 }
 export function supportedOperation(tool: ToolDefinition): void {
+  if (tool.bridge_contract?.selector === "digest-pinned-alias")
+    throw new HandlerFailure(422, "Digest-pinned serving aliases support reviewed read-only tools, not ERP writes", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
+  if (tool.operation_contract?.receipt_profile && tool.bridge_contract?.selector !== "digest-pinned-operation-alias")
+    throw new HandlerFailure(422, "The ERPNext receipt profile requires its exact operation-alias selector", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
+  if (tool.bridge_contract?.selector === "digest-pinned-operation-alias" && (!isErpnextWriteContract(tool) || tool.is_read_only || tool.risk_level.toLowerCase() !== "medium"))
+    throw new HandlerFailure(422, "ERPNext operation aliases require the exact reviewed receipt profile and medium-risk independent approval", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
   supportedReadErrorReview(tool);
   const contract = tool.operation_contract, output = tool.bridge_contract?.output_schema;
   if (!tool.tool_id.trim() || !tool.name.trim() || !tool.bridge_contract || !tool.allowed_roles.length || tool.is_read_only || !tool.side_effects.length ||
       !["low", "medium"].includes(tool.risk_level.toLowerCase()) || !contract || !output || output.type !== "object" ||
       validateToolSchemaProfile(tool.input_schema).length || validateToolSchemaProfile(output).length || /^system\..*_test$/i.test(tool.name))
     throw new HandlerFailure(422, "Operations require an explicit reviewed effect/result contract, supported schemas and low/medium risk; retry is never", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
-  let schema: unknown = output;
+  let schema: unknown = erpnextReceiptSchema(tool) ?? output;
   for (const part of contract.confirmation.path) schema = (schema as { properties?: Record<string, unknown> } | undefined)?.properties?.[part];
   const expectedType = typeof contract.confirmation.expected;
   if (!schema || ![expectedType, expectedType === "number" ? "integer" : expectedType].includes(String((schema as { type?: unknown }).type)))

@@ -24,14 +24,15 @@ function WorkflowListPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [relevance, setRelevance] = useState("relevant");
+  const [page, setPage] = useState(1);
   const debouncedQuery = useDebounce(query);
 /*******************************************************************************
  * Function: params
  *
  * Performs the params operation on the application for the WorkflowListPage module.
  ******************************************************************************/
-  const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined, relevance }), [debouncedQuery, status, relevance]);
-  const { workflows, loading, error, reload } = useWorkflows(params);
+  const params = useMemo(() => ({ q: debouncedQuery || undefined, status: status || undefined, relevance, page, limit: 20 }), [debouncedQuery, status, relevance, page]);
+  const { workflows, loading, error, reload, meta, refreshing } = useWorkflows(params);
 
   return (
     <div className="space-y-6">
@@ -50,9 +51,9 @@ function WorkflowListPage() {
           ...(canViewAll ? [{ id: "all", label: "All" }] : []),
         ]}
         active={relevance}
-        onChange={setRelevance}
+        onChange={value => { setPage(1); setRelevance(value); }}
       />
-      <WorkflowFilters query={query} status={status} onQueryChange={setQuery} onStatusChange={setStatus} />
+      <WorkflowFilters query={query} status={status} onQueryChange={value => { setPage(1); setQuery(value); }} onStatusChange={value => { setPage(1); setStatus(value); }} />
       {loading ? <LoadingState label="Loading workflows…" /> : null}
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
       {!loading && !error && workflows.length === 0 ? (
@@ -66,6 +67,10 @@ function WorkflowListPage() {
           <WorkflowTable workflows={workflows} onOpen={openWorkflow} />
         </>
       ) : null}
+      {meta?.total > 0 && <nav aria-label="Workflow pages" className="flex items-center justify-between gap-3 text-sm">
+        <p role="status">Page {meta.page} of {meta.totalPages} · {meta.total} workflows{refreshing ? " · Refreshing…" : ""}</p>
+        <div className="flex gap-2"><Button disabled={loading || refreshing || page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>Previous</Button><Button disabled={loading || refreshing || page >= meta.totalPages} onClick={() => setPage(value => value + 1)}>Next</Button></div>
+      </nav>}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import ExecutionApprovalReviewPage from "./ExecutionApprovalReviewPage";
 import ExecutionReconciliationPage from "./ExecutionReconciliationPage";
 import ExecutionReportPageResolutionPage from "./ExecutionReportPageResolutionPage";
@@ -38,6 +38,7 @@ function ExecutionDetailPage() {
 }
 
 function ExecutionRunDetail({ executionId }) {
+  const navigate = useNavigate();
   const { execution, logs, timeline, healingReport, loading, error, reload, monitor } = useExecution(executionId);
   const { hasAny } = usePermissions();
 
@@ -59,7 +60,7 @@ function ExecutionRunDetail({ executionId }) {
         </div>
         <ExecutionStatus status={execution.status} failure={execution.failure} />
       </section>
-      <ExecutionRunControls key={execution.id} execution={execution} monitor={monitor} canControl={hasAny(["workflow:run", "workflow:run_own"])} onChanged={reload} />
+      <ExecutionRunControls key={execution.id} execution={execution} monitor={monitor} canControl={hasAny(["workflow:run", "workflow:run_own"])} onChanged={reload} onRetried={run => navigate(`/executions/${encodeURIComponent(run.id)}`)} />
       {execution.hasOperationReconciliation === true && <OperationStatusQueries executionId={execution.id} onHistoryChanged={monitor.refresh} />}
       {execution.hasOperationReconciliation === true && execution.status === "RECONCILED" && <OperationRecoveryArtifacts executionId={execution.id} />}
       {execution.status === "AWAITING_APPROVAL" || execution.hasRuntimeApproval ? (

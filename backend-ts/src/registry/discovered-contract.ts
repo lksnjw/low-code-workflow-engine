@@ -4,6 +4,7 @@ import { toolSchema, type ToolDefinition } from "./schemas.js";
 import { matchesBridgeContract } from "../tools/erpbridge-contract.js";
 import type { ErpbridgeMcpSdkTool } from "../tools/erpbridge-mcp-client.js";
 import { validateToolSchemaProfile } from "../tools/tool-input-schema.js";
+import { erpnextWriteContract } from "../tools/erpnext-document-write.js";
 
 export const remoteContractHash = (remote: ErpbridgeMcpSdkTool) => `sha256:${createHash("sha256").update(canonicalJSONBytes(remote)).digest("hex")}`;
 
@@ -24,15 +25,25 @@ export function discoveredContract(remote: ErpbridgeMcpSdkTool, connectionId: st
   const meta = remote._meta ?? {}, version = meta["toolplane.resourceVersion"], digest = meta["toolplane.resourceDigest"];
   if (typeof version !== "string") throw new Error("A versioned ERPBridge contract is required");
   const suffix = `.rev_${Buffer.from(version).toString("base64url")}`;
-  if (!remote.name.endsWith(suffix)) throw new Error("An exact versioned ERPBridge tool name is required");
-  const baseName = remote.name.slice(0, -suffix.length), roles = meta["io.erpbridge/allowedRoles"] ?? [];
+  const qualified = remote.name.endsWith(suffix);
+  // A serving alias is not permission. It may only become an explicitly
+  // reviewed read; every dispatch still pins the actual server-owned digest.
+  const alias = !qualified && !remote.name.includes(".rev_") && meta["toolplane.serving"] === true &&
+    remote.annotations?.readOnlyHint === true && remote.annotations?.destructiveHint !== true && Boolean(remote.outputSchema);
+  const operationContract = !qualified && !remote.name.includes(".rev_") && meta["toolplane.serving"] === true &&
+    remote.annotations?.readOnlyHint === false && remote.outputSchema?.type === "object" ? erpnextWriteContract(remote.name) : undefined;
+  if (!qualified && !alias && !operationContract) throw new Error("An exact versioned ERPBridge tool name or supported digest-pinned alias is required");
+  const baseName = qualified ? remote.name.slice(0, -suffix.length) : remote.name, roles = meta["io.erpbridge/allowedRoles"] ?? [];
   const input = structuredClone(remote.inputSchema);
   if (Array.isArray(roles) && roles.length && input.properties && typeof input.properties === "object" && !Array.isArray(input.properties))
     delete (input.properties as Record<string, unknown>).role;
   const tool = toolSchema.parse({ ...discoveredToolIdentity(connectionId, baseName), connection_id: connectionId, mcp_tool_name: baseName,
     display_name: baseName, description: (remote.description ?? "").slice(0, 2000), input_schema: input, is_read_only: false,
     risk_level: "unreviewed", allowed_roles: [], required_parameters: Array.isArray(input.required) ? input.required : [],
+    ...(operationContract ? { operation_contract: operationContract } : {}),
     bridge_contract: { profile: "toolplane-v1", resource_version: version, resource_digest: digest, remote_roles: roles,
+      ...(alias ? { selector: "digest-pinned-alias" } : {}),
+      ...(operationContract ? { selector: "digest-pinned-operation-alias" } : {}),
       ...(remote.outputSchema ? { output_schema: remote.outputSchema } : {}) } });
   if (tool.input_schema.type !== "object" || validateToolSchemaProfile(tool.input_schema).length ||
       (tool.bridge_contract?.output_schema && validateToolSchemaProfile(tool.bridge_contract.output_schema).length) || !matchesBridgeContract(tool, remote))
@@ -46,5 +57,5 @@ export function discoveredCapabilityPreview(remote: ErpbridgeMcpSdkTool, connect
     return { ...identity, importable: true, definition: discoveredContract(remote, connectionId), hints: {
       readOnly: remote.annotations?.readOnlyHint === true, destructive: remote.annotations?.destructiveHint === true,
       advisoryOnly: true } };
-  } catch { return { ...identity, importable: false, unsupportedReason: "Exact versioned ERPBridge contract/schema review is required" }; }
+  } catch { return { ...identity, importable: false, unsupportedReason: "A supported exact version/digest contract and schema review are required" }; }
 }

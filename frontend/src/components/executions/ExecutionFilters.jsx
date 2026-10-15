@@ -9,15 +9,15 @@ import Select from "../shared/ui/Select";
 function ExecutionFilters({ query, status, range, onQueryChange, onStatusChange, onRangeChange }) {
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <Input className="md:max-w-md" placeholder="Search run id or workflow..." value={query} onChange={(event) => onQueryChange(event.target.value)} />
-      <div className="flex gap-2">
-        <Select value={range} onChange={(event) => onRangeChange(event.target.value)}>
+      <Input aria-label="Search executions" className="md:max-w-md" placeholder="Search run id or workflow..." value={query} onChange={(event) => onQueryChange(event.target.value)} />
+      <div className="grid min-w-0 gap-2 sm:flex">
+        <Select aria-label="Execution time range" className="min-w-0 w-full sm:w-auto" value={range} onChange={(event) => onRangeChange(event.target.value)}>
           <option value="">All time</option>
           <option value="24h">Last 24 hours</option>
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
         </Select>
-        <Select value={status} onChange={(event) => onStatusChange(event.target.value)}>
+        <Select aria-label="Execution status" className="min-w-0 w-full sm:w-auto" value={status} onChange={(event) => onStatusChange(event.target.value)}>
           <option value="">All statuses</option>
           <option value="DONE">Completed</option>
           <option value="FAILED">Failed</option>

@@ -1,16 +1,22 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import ProtectedPatchPreview from "./ProtectedPatchPreview";
 import MessageMarkdown from "./MessageMarkdown";
-import { saveWorkflowForCanvas, peekWorkflowForChatEdit, clearWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
-import { workflowService } from "../../services/workflow.service";
+import { saveWorkflowForCanvas } from "../../utils/workflowCanvas.utils";
 import PendingGenerationApprovalCard from "../workflows/PendingGenerationApprovalCard";
 import { workflowArtifactStatus } from "./workflowArtifactStatus";
 import { ReadableResult } from "./ReadableValue";
 import EmailDraftPreview from "./EmailDraftPreview";
 import { InlineSources, InlineVisualisation } from "./ChatMessageVisualisation";
 import ChatRequestRevision from "./ChatRequestRevision";
+import ChatRunRecovery from "./ChatRunRecovery";
+import ToolProposalChecks from "./ToolProposalChecks";
+import ChatErpActionCard from "./ChatErpActionCard";
+import EmailPreparationHelp from "./EmailPreparationHelp";
+import ChatWorkflowReview from "./ChatWorkflowReview";
+import WorkflowDraftHelp from "./WorkflowDraftHelp";
+import ChatAttachmentReview from "./ChatAttachmentReview";
 import { useChatWorkspace } from "./ChatWorkspaceContext";
 
 // ── Inline validation badge ─────────────────────────────────────────────────
@@ -77,68 +83,11 @@ function SavedToolResponses({ steps }) {
   return <details className="mt-3 border-t border-gray-100 pt-2 text-xs dark:border-gray-800">
     <summary className="cursor-pointer text-gray-500">Saved tool responses · {receipts.length}</summary>
     <div className="mt-3 space-y-3">{receipts.map((step, index) => <section key={index} className="border-l border-gray-200 pl-3 dark:border-gray-700">
-      <p className="mb-2 font-medium">{step.toolName || step.displayName || "Tool"} · {step.status === "FAILED" || step.error || step.result?.isError === true ? "Failure response" : step.status === "SUCCEEDED" ? "Confirmed read response" : "Recorded response"}</p>
+      <p className="mb-2 font-medium">{step.toolName || step.displayName || "Tool"} · {step.status === "NOT_FOUND" ? "ERP record not found" : step.status === "FAILED" || step.error || step.result?.isError === true ? "Failure response" : step.status === "SUCCEEDED" ? "Confirmed read response" : "Recorded response"}</p>
       <ReadableResult value={step.result} />
     </section>)}</div>
     {steps.filter(step => step.result !== null && step.result !== undefined).length > 64 && <p className="mt-2 text-gray-500">Additional responses exceed this display preview.</p>}
   </details>;
-}
-
-// ── Save button after WORKFLOW_MODIFY ──────────────────────────────────────
-/*******************************************************************************
- * Function: SaveModifiedWorkflowButton
- *
- * Saves modified workflow button for the ChatMessage module.
- ******************************************************************************/
-function SaveModifiedWorkflowButton({ yaml, workflowName }) {
-  const navigate = useNavigate();
-  const [status, setStatus] = useState("idle"); // idle | saving | saved | error
-  const [errorMsg, setErrorMsg] = useState(null);
-
-  const handleSave = useCallback(async () => {
-    if (!yaml || status === "saving" || status === "saved") return;
-    setStatus("saving");
-    setErrorMsg(null);
-    try {
-      const editCtx = peekWorkflowForChatEdit();
-      if (editCtx?.workflowId) {
-        await workflowService.saveYAML(editCtx.workflowId, yaml);
-      } else {
-        await workflowService.create({ name: workflowName || "Modified Workflow", description: "Modified via chat", yaml });
-      }
-      clearWorkflowForChatEdit();
-      setStatus("saved");
-    } catch (err) {
-      setErrorMsg(err?.response?.data?.message ?? err.message ?? "Save failed");
-      setStatus("error");
-    }
-  }, [yaml, workflowName, status]);
-
-  if (!yaml) return null;
-  return (
-    <div className="mt-3 flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={status === "saving" || status === "saved"}
-        className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300"
-      >
-        <Icon icon={status === "saved" ? "mdi:check" : status === "saving" ? "mdi:loading" : "mdi:content-save"} className={`h-3.5 w-3.5 shrink-0 ${status === "saving" ? "animate-spin" : ""}`} />
-        {status === "saved" ? "Saved" : status === "saving" ? "Saving…" : "Save Changes"}
-      </button>
-      {status === "saved" && (
-        <button
-          type="button"
-          onClick={() => { saveWorkflowForCanvas({ yaml, name: workflowName || "Modified Workflow" }); navigate("/workflows/canvas"); }}
-          className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800/40 dark:bg-indigo-900/20 dark:text-indigo-300"
-        >
-          <Icon icon="mdi:vector-square" className="h-3.5 w-3.5 shrink-0" />
-          View in Canvas
-        </button>
-      )}
-      {errorMsg && <p className="text-[10px] text-red-500">{errorMsg}</p>}
-    </div>
-  );
 }
 
 // ── Action agent step list (TOOL_CALL intent) ──────────────────────────────
@@ -299,7 +248,12 @@ function AutomationRequestBanner({ request, composition }) {
  *
  * Performs the Chat Message operation on message for the ChatMessage module.
  ******************************************************************************/
-function ChatMessage({ message, onChatChanged, onRevise, busy, draftStorageKey }) {
+function ErpAccessReviewButton({ busy, label = "Review ERP tool access" }) {
+  const navigate = useNavigate();
+  return <button type="button" disabled={busy} onClick={() => navigate("/registry/tools")} className="mt-2 rounded-lg border border-amber-400 px-3 py-1.5 font-semibold disabled:opacity-50">{label}</button>;
+}
+
+function ChatMessage({ message, indexedAttachment, onChatChanged, onRevise, onContinue, onUseDocumentForWorkflow, busy, draftStorageKey, canManageErpAccess = false, isLatestAssistant = false }) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const artifacts = message.artifacts;
@@ -333,8 +287,9 @@ function ChatMessage({ message, onChatChanged, onRevise, busy, draftStorageKey }
     return (
       <div id={`chat-message-${encodeURIComponent(message.id || "")}`} className="flex flex-col items-end gap-1">
         {message.requestRevision && <p className="text-xs text-gray-500">Revised request · <a className="underline" href={`#chat-message-${encodeURIComponent(message.requestRevision.messageId)}`}>original kept in history</a></p>}
-        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm leading-6 text-white">
+        <div className="min-w-0 max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm leading-6 text-white [overflow-wrap:anywhere]">
           <p className="whitespace-pre-wrap">{message.text}</p>
+          {artifacts?.attachment?.filename && <p className="mt-2 flex items-center gap-2 text-xs opacity-80"><Icon icon="mdi:paperclip" aria-hidden="true" />{artifacts.attachment.filename}</p>}
         </div>
         {message.createdAt && (
           <span className="px-1 text-[10px] text-gray-400">
@@ -352,7 +307,7 @@ function ChatMessage({ message, onChatChanged, onRevise, busy, draftStorageKey }
   const isToolCall = intent === "TOOL_CALL";
 
   return (
-    <div className="flex flex-col items-start gap-1 pl-1">
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-1 pl-1">
       {/* Avatar row */}
       <div className="mb-0.5 flex items-center gap-1.5">
         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10">
@@ -369,8 +324,27 @@ function ChatMessage({ message, onChatChanged, onRevise, busy, draftStorageKey }
       </div>
 
       {/* Message body — no bubble, flows like Claude Code */}
-      <div className="max-w-[92%]">
+      <div className="min-w-0 max-w-[92%] [overflow-wrap:anywhere]">
         <MessageMarkdown text={message.text} />
+        {artifacts?.chatAttachment && <ChatAttachmentReview attachment={artifacts.chatAttachment} indexed={indexedAttachment} busy={busy} onSaved={onChatChanged} onUseForWorkflow={onUseDocumentForWorkflow} />}
+        {artifacts?.code === "DOCUMENT_BRIDGE_REVIEW_REQUIRED" && <div role="note" aria-label="Document retrieval access" className="mt-3 space-y-2 border-l-2 border-amber-400 pl-3 text-xs">
+          <p className="font-semibold">Document stored · ERP retrieval needs review</p>
+          <p>No record creation or workflow execution is waiting for approval. The document tool contract must be ready first.</p>
+          {canManageErpAccess ? <ErpAccessReviewButton busy={busy} label="Review ERP document access" /> : <p>Ask your platform administrator to review document retrieval. Keep the original upload; do not enter service tokens in chat.</p>}
+        </div>}
+        {artifacts?.code === "NO_APPROVED_READ_TOOLS" && <div role="note" aria-label="ERP tool access" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <p className="font-semibold">ERP request not run · Tool access needs review</p>
+          <p className="mt-1">Connection access, role grants and the current tool contract must all match. No tool is approved automatically.</p>
+          {canManageErpAccess ? <ErpAccessReviewButton busy={busy} /> :
+            <p className="mt-2">Ask your platform administrator to review the required capability. Your ERP token may also limit access.</p>}
+        </div>}
+        <ToolProposalChecks corrections={artifacts?.proposalCorrections} />
+        {intent === "WORKFLOW_PATCH_PROPOSAL" && artifacts?.proposal?.scope === "workflow" && <ChatWorkflowReview proposal={artifacts.proposal} busy={busy} />}
+        {intent === "WORKFLOW_CONTROL" && artifacts?.workflowControl?.profile === "workflow-control-handoff/v1" && <ChatWorkflowReview control={artifacts.workflowControl} busy={busy} />}
+        {Array.isArray(artifacts?.erpActionProposals) && artifacts.erpActionProposals.filter(action => action?.profile === "erp-chat-action/v1").map(action => <ChatErpActionCard key={action.id} action={action} busy={busy} onSaved={onChatChanged} />)}
+        {artifacts?.discussion?.profile === "workflow-discussion/v1" && <p role="status" className="mt-2 text-xs text-gray-500">Workflow explanation · draft v{artifacts.discussion.draftVersion} · Explanation only</p>}
+        {artifacts?.conversationRecall?.profile === "chat-history-recall/v1" && <p role="status" className="mt-2 text-xs text-gray-500">Earlier messages recalled from this conversation · Historical context, not a new ERP lookup</p>}
+        {artifacts?.workspaceStatus?.profile === "chat-workspace-status/v1" && <ChatRunRecovery status={artifacts.workspaceStatus} selectedExecutionId={artifacts.recoveryGuidance?.executionId} />}
 
         {["erpbridge", "local_model"].includes(artifacts?.policyCheck?.source) && <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           <p role="status">Policy check · {artifacts.policyCheck.source === "erpbridge" ? "ERPBridge" : "Local JSON / model"} · {artifacts.policyCheck.failureCode ? "Check failed" : ({ allow: "Allowed", deny: "Denied", review: "Needs review", unavailable: "Unavailable" })[artifacts.policyCheck.decision] || "Not confirmed"}{artifacts.policyCheck.fallbackUsed ? " · Fallback used" : ""}</p>
@@ -381,7 +355,8 @@ function ChatMessage({ message, onChatChanged, onRevise, busy, draftStorageKey }
           Answered with backup model · {artifacts.modelRouting.model}
         </p>}
 
-        {intent === "EMAIL_DELIVERY" && artifacts?.emailDraft && <EmailDraftPreview draft={artifacts.emailDraft} emailDelivery={artifacts.emailDelivery} reportReason={artifacts.reportReason} superseded={artifacts.emailDraftSuperseded} onSaved={onChatChanged} />}
+        {intent === "EMAIL_DELIVERY" && artifacts?.emailDraft && <EmailDraftPreview draft={artifacts.emailDraft} emailDelivery={artifacts.emailDelivery} reportReason={artifacts.reportReason} superseded={artifacts.emailDraftSuperseded} onSaved={onChatChanged} onContinue={onContinue} busy={busy} />}
+        {isLatestAssistant && intent === "EMAIL_DELIVERY" && onContinue && !artifacts?.emailDraft && !artifacts?.erpActionProposals?.length && <EmailPreparationHelp onContinue={onContinue} busy={busy} />}
 
         {intent === "NODE_PATCH_PROPOSAL" && artifacts?.proposal && <p className="mt-2 text-xs text-gray-500">
           {artifacts.proposal.status === "APPLIED" ? `Applied to draft v${artifacts.proposal.appliedVersion} · not published or executed by this decision.` : artifacts.proposal.status === "DISCARDED" ? "Proposal discarded · workflow unchanged by this decision." : `Pending node proposal · ${artifacts.proposal.nodeId}. Review it in the workflow canvas.`}
@@ -421,13 +396,8 @@ function ChatMessage({ message, onChatChanged, onRevise, busy, draftStorageKey }
               </div>
             )}
             <ValidationBadge artifact={artifacts} failedRules={artifacts?.validation?.failed_rules ?? []} />
+            <WorkflowDraftHelp artifact={artifacts} busy={busy} />
             <InlineYamlPreview yaml={artifacts?.yaml || artifacts?.selected_workflow_yaml} />
-            {(artifacts?.yaml || artifacts?.selected_workflow_yaml) && peekWorkflowForChatEdit() && (
-              <SaveModifiedWorkflowButton
-                yaml={artifacts?.yaml || artifacts?.selected_workflow_yaml}
-                workflowName={peekWorkflowForChatEdit()?.workflowName}
-              />
-            )}
             {artifacts?.workflowId && <OpenWorkflowButton workflowId={artifacts.workflowId} />}
             {artifacts?.generationApproval && <PendingGenerationApprovalCard pending={artifacts.generationApproval} />}
           </>

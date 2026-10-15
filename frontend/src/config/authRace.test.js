@@ -37,6 +37,20 @@ function seedSession() {
   localStorage.setItem("workflow.refreshToken", "good-refresh-0");
   localStorage.setItem("workflow.user", JSON.stringify({ id: "usr_1" }));
 }
+
+test.each([429, 500, 503, 504])("a temporary refresh response %s preserves the existing session and does not replay business work", async status => {
+  seedSession();
+  const expired = jest.fn(); window.addEventListener("auth:expired", expired);
+  axios.defaults.adapter = config => httpError(config, status);
+  const requests = [];
+  apiClient.defaults.adapter = config => { requests.push(config.url); return httpError(config, 401); };
+  try {
+    await expect(apiClient.get("/auth/me")).rejects.toMatchObject({ response: { status } });
+    expect(localStorage.getItem("workflow.refreshToken")).toBe("good-refresh-0");
+    expect(localStorage.getItem("workflow.user")).not.toBeNull();
+    expect(expired).not.toHaveBeenCalled(); expect(requests).toEqual(["/auth/me"]);
+  } finally { window.removeEventListener("auth:expired", expired); }
+});
 function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });

@@ -40,8 +40,11 @@ const ChatWorkspaceLayout = forwardRef(function ChatWorkspaceLayout({ chat, canv
   const [toolsHost, setToolsHost] = useState(null);
   const [canvasToolsHost, setCanvasToolsHost] = useState(null);
   const [chatReviewHost, setChatReviewHost] = useState(null);
+  const [chatWorkflowHost, setChatWorkflowHost] = useState(null);
   const [reviewDialogHost, setReviewDialogHost] = useState(null);
   const [toolsTab, setToolsTab] = useState("chat");
+  const [composerRequest, setComposerRequest] = useState(null);
+  const acknowledgeComposerRequest = useCallback(id => setComposerRequest(current => current?.id === id ? null : current), []);
   const rootRef = useRef(null), fullScreenButtonRef = useRef(null), toolsButtonRef = useRef(null);
   const containerRef = useRef(null), chatRef = useRef(null), dragRef = useRef(null), launcherRef = useRef(null);
   const ids = useId();
@@ -95,12 +98,12 @@ const ChatWorkspaceLayout = forwardRef(function ChatWorkspaceLayout({ chat, canv
   };
 
   const focusChat = useCallback(() => {
+    setToolsOpen(false);
     setFloatingOpen(true);
     requestAnimationFrame(() => {
       chatRef.current?.querySelector('textarea[aria-label="Message to workflow assistant"]')?.focus({ preventScroll: true });
     });
   }, []);
-  useImperativeHandle(ref, () => ({ focusChat }), [focusChat]);
 
   const selectView = (value, focus = value === "split") => {
     setFullScreen(focus ? value : null); setFloatingOpen(false);
@@ -119,6 +122,12 @@ const ChatWorkspaceLayout = forwardRef(function ChatWorkspaceLayout({ chat, canv
     setFloatingOpen(false);
     requestAnimationFrame(() => launcherRef.current?.focus());
   };
+  const requestWorkflowHelp = useCallback((workflowId, text) => {
+    openWorkflow(workflowId);
+    setComposerRequest({ id: crypto.randomUUID(), workflowId, text });
+    focusChat();
+  }, [openWorkflow, focusChat]);
+  useImperativeHandle(ref, () => ({ focusChat, requestWorkflowHelp, continueChatOnly: () => { setFullScreen(current => current ? "chat" : null); setLayout(current => ({ ...current, mode: "chat" })); setComposerRequest(null); focusChat(); } }), [focusChat, requestWorkflowHelp]);
 
   const resize = value => setLayout(current => ({ ...current, ratio: Math.round(Math.min(bounds.max, Math.max(bounds.min, value)) * 100) / 100 }));
   const stopDragging = () => { dragRef.current = null; setDragging(false); };
@@ -131,7 +140,7 @@ const ChatWorkspaceLayout = forwardRef(function ChatWorkspaceLayout({ chat, canv
   };
 
   return (
-    <ChatWorkspaceContext.Provider value={{ fullScreen: Boolean(fullScreen), toolsHost, canvasToolsHost, chatReviewHost, reviewDialogHost, openCanvasTools, openChatTools, openWorkflow: onOpenWorkflow && showCanvas ? openWorkflow : undefined }}>
+    <ChatWorkspaceContext.Provider value={{ mode, fullScreen: Boolean(fullScreen), toolsHost, canvasToolsHost, chatReviewHost, chatWorkflowHost, reviewDialogHost, openCanvasTools, openChatTools, focusChat, composerRequest, acknowledgeComposerRequest, requestWorkflowHelp: onOpenWorkflow && showCanvas ? requestWorkflowHelp : undefined, openWorkflow: onOpenWorkflow && showCanvas ? openWorkflow : undefined }}>
     <div ref={rootRef} className={`${fullScreen ? "fixed inset-0 z-40 h-[100dvh]" : "relative h-full min-h-0"} flex min-w-0 bg-white dark:bg-darkBackgroundVery`} data-testid="chat-workspace-layout" data-view={mode} data-full-screen={String(Boolean(fullScreen))} data-floating-chat={floating ? "open" : "closed"}
       onKeyDown={event => {
         if (event.key !== "Escape" || event.defaultPrevented || event.target.closest('[role="dialog"], [role="menu"], [role="listbox"]')) return;
@@ -160,6 +169,7 @@ const ChatWorkspaceLayout = forwardRef(function ChatWorkspaceLayout({ chat, canv
               </button>
             </div>
           </div>}
+          <div ref={setChatWorkflowHost} className="max-h-[45%] shrink-0 overflow-y-auto" />
           <div ref={setChatReviewHost} className="shrink-0" />
           {chat}
         </div>

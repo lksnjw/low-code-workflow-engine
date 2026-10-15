@@ -1,0 +1,25 @@
+/** @jest-environment jsdom */
+import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import "@testing-library/jest-dom/jest-globals";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+const uploadDocument=jest.fn(),uploadCsv=jest.fn(),waitForJob=jest.fn(),notify=jest.fn();
+let user;
+jest.unstable_mockModule("../../services/pipeline.service",()=>({pipelineService:{uploadDocument,uploadCsv,waitForJob}}));
+jest.unstable_mockModule("../../context/NotificationContext",()=>({useNotifications:()=>({notify})}));
+jest.unstable_mockModule("../../components/datafeed/DocumentCatalog", () => ({ default: () => null }));
+jest.unstable_mockModule("../../components/datafeed/SmartDocumentIntake", () => ({ default: () => <div>Automatic document preparation</div> }));
+jest.unstable_mockModule("../../context/AuthContext", () => ({ useAuthContext: () => ({ user }) }));
+const {default:Page}=await import("./PipelineUploadPage");
+beforeEach(()=>{user={ id: "qa", role: "Admin", permissions: ["registry:write"] };[uploadDocument,uploadCsv,waitForJob,notify].forEach(fn=>fn.mockReset());});afterEach(cleanup);
+const choose=(name="certificate.png",text="image")=>fireEvent.change(screen.getByLabelText("Choose a PDF or image file"),{target:{files:[new File([text],name)]}});
+
+test("account changes hide legacy document ingestion and reset retained file state",()=>{const view=render(<Page/>);choose();user={id:"member",role:"Client",permissions:["pipeline:upload"]};view.rerender(<Page/>);expect(screen.queryByLabelText("Choose a PDF or image file")).toBeNull();user={id:"qa",role:"Admin",permissions:["registry:write"]};view.rerender(<Page/>);expect(screen.getByLabelText("Choose a PDF or image file").files).toHaveLength(0);});
+function identity(value="EMP-42"){for(const [label,text] of [["Source system ID"," hr "],["Source entity"," employees "],["Business key name"," employee_id "],["Related record value",value]])fireEvent.change(screen.getByLabelText(label,{exact:true}),{target:{value:text}});}
+test("file pickers are keyboard available and selects have exact accessible labels",()=>{render(<Page/>);expect(screen.getByLabelText("Choose a PDF or image file")).not.toHaveClass("hidden");expect(screen.getByRole("combobox",{name:"Document type"})).toBeTruthy();expect(screen.getByRole("combobox",{name:"Sensitivity"})).toBeTruthy();});
+test.each([["file.exe","content"],["empty.pdf",""],["unsupported.bmp","bitmap"]])("%s is rejected before any upload",(name,text)=>{render(<Page/>);choose(name,text);identity();expect(screen.getByRole("alert")).toBeTruthy();expect(screen.getAllByRole("button",{name:"Upload"})[1]).toBeDisabled();expect(uploadDocument).not.toHaveBeenCalled();});
+
+test("plain TXT is not advertised or sent to a pipeline that rejects it",()=>{render(<Page/>);const picker=screen.getByLabelText("Choose a CSV or TSV file");expect(picker.accept).toBe(".csv,.tsv");fireEvent.change(picker,{target:{files:[new File(["one\ttwo\n1\t2"],"unsupported.txt")]}});expect(screen.getByRole("alert")).toHaveTextContent("Choose a supported file: csv, tsv.");expect(screen.getAllByRole("button",{name:"Upload"})[0]).toBeDisabled();expect(uploadCsv).not.toHaveBeenCalled();});
+test("whitespace is not an exact related-record identity",()=>{render(<Page/>);choose();identity("   ");expect(screen.getAllByRole("button",{name:"Upload"})[1]).toBeDisabled();});
+test("metadata is trimmed and Clear stays disabled while indexing; navigation aborts polling",async()=>{uploadDocument.mockResolvedValue({upload_id:"one",index_job_id:"job",extraction_status:"extracted"});waitForJob.mockReturnValue(new Promise(()=>{}));const view=render(<Page/>);choose();identity(" EMP-42 ");fireEvent.click(screen.getAllByRole("button",{name:"Upload"})[1]);await waitFor(()=>expect(waitForJob).toHaveBeenCalled());expect(uploadDocument.mock.calls[0][1]).toMatchObject({source_system_id:"hr",business_key_value:"EMP-42"});expect(screen.getByRole("button",{name:"Clear"})).toBeDisabled();const signal=waitForJob.mock.calls[0][1].signal;view.unmount();expect(signal.aborted).toBe(true);});
+test.each(["failed","partial","interrupted"])("indexing %s is not shown as a searchable success",async status=>{uploadDocument.mockResolvedValue({upload_id:"one",index_job_id:"job"});waitForJob.mockResolvedValue({status});render(<Page/>);choose();identity();fireEvent.click(screen.getAllByRole("button",{name:"Upload"})[1]);expect(await screen.findByRole("alert")).toHaveTextContent(/not confirmed fully searchable/);expect(screen.getByRole("button",{name:"Clear"})).not.toBeDisabled();});
+test("successful indexing retains the upload receipt",async()=>{uploadDocument.mockResolvedValue({upload_id:"one",index_job_id:"job",ocr_used:true});waitForJob.mockResolvedValue({status:"succeeded"});render(<Page/>);choose();identity();fireEvent.click(screen.getAllByRole("button",{name:"Upload"})[1]);await screen.findByText("succeeded");expect(screen.getByText("one")).toBeTruthy();expect(screen.queryByRole("alert")).toBeNull();});

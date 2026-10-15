@@ -10,7 +10,8 @@ const stages = {
   DRAFT_SAVED: "Saving the workflow draft",
   VERIFYING: "Checking the ERP request",
   GENERATING_NODE_PROPOSAL: "Preparing the selected step change",
-  PROPOSAL_SAVED: "Saving the step change for review",
+  GENERATING_WORKFLOW_PROPOSAL: "Preparing the workflow change",
+  PROPOSAL_SAVED: "Saving the proposed change for review",
   READING: "Waiting for the approved ERP tool",
   READ_SAVED: "ERP result received",
   READ_STOPPED: "ERP request stopped",
@@ -37,6 +38,7 @@ const progressIndex = {
   DRAFT_SAVED: 2,
   VERIFYING: 2,
   GENERATING_NODE_PROPOSAL: 2,
+  GENERATING_WORKFLOW_PROPOSAL: 2,
   PROPOSAL_SAVED: 2,
   READING: 2,
   READ_SAVED: 2,
@@ -80,7 +82,7 @@ function ProgressRail({ stage, active }) {
   </ol>;
 }
 
-export default function ChatOperationProgress({ operation, events = [], error, reconnecting, onCancel, cancelling, onRefresh }) {
+export default function ChatOperationProgress({ operation, answerIntent, events = [], error, reconnecting, onCancel, cancelling, onRefresh }) {
   if (!operation && !error) return null;
   const active = operation && isActiveChatOperation(operation.status);
   const policyStop = operation?.status === "FAILED" && Object.hasOwn(policyStops, operation.reason) ? policyStops[operation.reason] : null;
@@ -113,8 +115,8 @@ export default function ChatOperationProgress({ operation, events = [], error, r
     {operation?.cancellationRequested && <p className="mt-3">Cancellation does not prove that remote work was rolled back.</p>}
     {operation?.status === "RECOVERY_REQUIRED" && <p className="mt-3">Processing stopped with an uncertain or interrupted outcome. Review saved evidence before starting a new request; nothing will be replayed automatically.</p>}
     {operation?.status === "FAILED" && <p className="mt-3">{policyStop ? `${policyStop} This attempted read was not dispatched. Nothing will be retried automatically.` : operation.reason === "DRAFT_REVISION_CONFLICT" ? "The workflow draft changed while this proposal was being prepared. No proposal was saved. Reload and review the current node before submitting a new edit." : operation.reason === "NODE_PROPOSAL_INVALID" ? "A supported node patch could not be prepared. No proposal was saved and the workflow was not changed. Review the prompt and model configuration before a new request." : "The request stopped before a response could be saved. Check connection and permissions before submitting a new request."}</p>}
-    {operation?.status === "ANSWERED" && <p className="mt-3">A saved response is not proof of email delivery, workflow execution or scheduling.</p>}
-    {operation?.artifactRefs?.map(reference => <p key={reference.id} className="mt-3">{reference.type === "node-proposal" ? `Node proposal saved · ${reference.id}. Its current review status is shown beside the workflow.` : `Workflow draft saved · ${reference.id}. This preparation step did not publish or execute it. Check its current status in Workflows.`}</p>)}
+    {operation?.status === "ANSWERED" && <p className="mt-3">{answerIntent === "CONVERSATION" ? "Reply saved." : answerIntent === "WORKFLOW_DISCUSSION" ? "Explanation saved. No workflow changes were applied." : "A saved response is not proof of email delivery, workflow execution or scheduling."}</p>}
+    {operation?.artifactRefs?.map(reference => <p key={reference.id} className="mt-3">{reference.type === "workflow-proposal" ? `Workflow change proposed · ${reference.id}. Review and apply it to save a new draft; nothing was published or run.` : reference.type === "node-proposal" ? `Node proposal saved · ${reference.id}. Its current review status is shown beside the workflow.` : `Workflow draft saved · ${reference.id}. This preparation step did not publish or execute it. Check its current status in Workflows.`}</p>)}
 
     {operation?.attempts?.length > 0 && <details className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
       <summary className="cursor-pointer font-medium text-gray-700 dark:text-gray-200">ERP tool results · {operation.attempts.length}</summary>

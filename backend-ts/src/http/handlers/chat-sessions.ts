@@ -1,8 +1,12 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import type { ChatSessionRecord, RepositoryState, StoredRecord } from "../../repository/store.js";
 import { ChatCreationFailure, createSavedChat } from "../../repository/chat-creation.js";
 import { activeChatStatus } from "../../agent/chat-jobs.js";
 import { chatRequestSourceHash } from "../../agent/chat-request-revisions.js";
 import { ok } from "../../models/schemas.js";
+import { chatWorkflowCatalog } from "../../agent/chat-workflow-catalog.js";
+import { canReviewChat, chatAccess } from "../chat-scope.js";
+import { chatTitle } from "./chat-session-input.js";
 import { assertChatAuthority, requestedModel, selectProvider } from "./model-selection.js";
 import { bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, now, numberValue, paginate, queryRecord, requestParam, stringValue } from "./common.js";
 
@@ -11,11 +15,9 @@ import { bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isR
  *
  * Returns chat metadata without the messages array.
  ******************************************************************************/
-export function chatSummary(chat: { messages: unknown[] } & Record<string, unknown>): Record<string, unknown> { const { messages: _messages, ...summary } = chat; return summary; }
-function chatTitle(body: Record<string, unknown>): string {
-  if (!Object.hasOwn(body, "title")) return "New conversation";
-  if (typeof body.title !== "string" || body.title.length > 200) throw new HandlerFailure(400, "Invalid chat title");
-  return body.title.trim() === "" ? "New conversation" : body.title;
+export function chatSummary(chat: { messages: unknown[] } & Record<string, unknown>): Record<string, unknown> {
+  const { messages: _messages, readSummary, ...summary } = chat;
+  return { ...summary, ...(isRecord(readSummary) && typeof readSummary.preview === "string" ? { summary: readSummary.preview } : {}) };
 }
 // The frontend only ever reads `artifacts.retrieval` off the LAST message
 // that has one (see useChat.js: `[...messages].reverse().find(...)`) — so
@@ -48,7 +50,7 @@ function trimRedundantRetrieval(messages: Array<Record<string, unknown>>): Array
  *
  * Returns chat sessions visible to the current user.
  ******************************************************************************/
-export async function listChats(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { const chats = await services.repository.read((state) => Object.values(state.chats).filter((item) => user.permissions.includes("workflow:read") || item.ownerId === user.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((item) => chatSummary(item))); const page = paginate(chats, request); return reply.send(ok(page.items, "OK", page.meta)); }
+export async function listChats(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: { repository: Pick<HandlerServices["repository"], "read"> }): Promise<unknown> { const chats = await services.repository.read((state) => Object.values(state.chats).filter((item) => canReviewChat(user, item)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((item) => ({ ...chatSummary(item), access: chatAccess(user, item) }))); const page = paginate(chats, request); return reply.send(ok(page.items, "OK", page.meta)); }
 /*******************************************************************************
  * Function: createChat
  *
@@ -79,13 +81,53 @@ export async function createChat(request: FastifyRequest, reply: FastifyReply, u
  * to page further back in history.
  ******************************************************************************/
 export async function getChat(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: { repository: Pick<HandlerServices["repository"], "read"> }): Promise<unknown> {
+  const query = queryRecord(request);
+  const limit = Math.max(1, Math.min(200, Math.trunc(numberValue(query.limit, 20))));
+  if (query.before !== undefined && (typeof query.before !== "string" || !query.before.trim() || query.before.length > 128))
+    throw new HandlerFailure(400, "Invalid earlier-message cursor. Reload this conversation before loading older messages.", { code: "CHAT_HISTORY_CURSOR_INVALID" });
+  const beforeId = typeof query.before === "string" ? query.before : "";
   const chat = await services.repository.read((state) => {
     const value = state.chats[requestParam(request, "id")];
-    if (value === undefined || (!user.permissions.includes("workflow:read") && value.ownerId !== user.id)) return null;
-    const copy = structuredClone(value);
+    if (value === undefined || !canReviewChat(user, value)) return null;
+    let endIndex = value.messages.length;
+    if (beforeId) {
+      endIndex = value.messages.findIndex(message => message.id === beforeId);
+      if (endIndex < 0) throw new HandlerFailure(400, "The earlier-message cursor is not in this conversation. Reload before loading older messages.", { code: "CHAT_HISTORY_CURSOR_INVALID" });
+    }
+    const startIndex = Math.max(0, endIndex - limit);
+    // Page BEFORE cloning/converting large artifacts. Scan only metadata to
+    // retain older-workflow choices and global supersession semantics.
+    return projectChatMessagePage(state, value, user, value.messages.slice(startIndex,endIndex), startIndex, value.messages.length);
+  });
+  if (chat === null) throw new HandlerFailure(404, "Chat session not found");
+  return reply.send(ok(chat, "OK", null));
+}
+
+/** Shared public projection for both aggregate compatibility and true scoped
+ * message reads. Stored summary metadata preserves workflows/supersession
+ * without loading historical message bodies on every page. */
+export function projectChatMessagePage(state: Readonly<RepositoryState>, value: ChatSessionRecord, user: CurrentUser,
+  messages: StoredRecord[], startIndex: number, totalMessageCount: number) {
+    const copy = { ...structuredClone(chatSummary(value)), messages: structuredClone(messages) };
+    const workflowCatalog = chatWorkflowCatalog(state, value, user);
+    let lastRetrievalId: unknown = value.readSummary?.latestRetrievalId;
+    const latestEmailDraftMessages = new Map<string, unknown>(Object.entries(value.readSummary?.emailDraftMessages ?? {}));
+    for (const message of value.readSummary ? [] : value.messages) if (isRecord(message.artifacts)) {
+      if (message.artifacts.retrieval !== undefined) lastRetrievalId = message.id;
+      if (isRecord(message.artifacts.emailDraft)) latestEmailDraftMessages.set(stringValue(message.artifacts.emailDraft.id), message.id);
+    }
     copy.messages = copy.messages.map(message => {
+      if (isRecord(message.artifacts)) {
+        let artifacts: Record<string, unknown> = message.artifacts;
+        if (artifacts.retrieval !== undefined && message.id !== lastRetrievalId) {
+          const { retrieval: _retrieval, ...rest } = artifacts; artifacts = rest;
+        }
+        if (isRecord(artifacts.emailDraft)) artifacts = { ...artifacts,
+          emailDraftSuperseded: latestEmailDraftMessages.get(stringValue(artifacts.emailDraft.id)) !== message.id };
+        message.artifacts = artifacts;
+      }
       const operation = state.chatOperations[stringValue(message.operationId)];
-      return message.role === "user" && value.ownerId === user.id && operation?.actorId === user.id && operation.sessionId === value.id && operation.userMessageId === message.id && operation.revisionContextCiphertext
+      return message.role === "user" && value.ownerId === user.id && operation?.actorId === user.id && operation.sessionId === value.id && operation.userMessageId === message.id && (operation.revisionContextCiphertext || operation.revisionContextFields)
         ? { ...message, revisionSource: { messageId: message.id, sourceHash: chatRequestSourceHash(message), nodeContext: operation.nodeContext ?? null } }
         : message;
     });
@@ -96,35 +138,7 @@ export async function getChat(request: FastifyRequest, reply: FastifyReply, user
         bridgeDispatched: Object.values(execution.operationSecret?.intents ?? {}).some(intent => ["DISPATCH_INTENT", "ACKNOWLEDGED", "UNKNOWN"].includes(intent.state)),
         deliveryVerified: false };
     }
-    return copy;
-  });
-  if (chat === null) throw new HandlerFailure(404, "Chat session not found");
-
-  const latestEmailDraftMessages = new Map<string, unknown>();
-  for (const message of chat.messages) if (isRecord(message.artifacts) && isRecord(message.artifacts.emailDraft)) latestEmailDraftMessages.set(stringValue(message.artifacts.emailDraft.id), message.id);
-  const allMessages = trimRedundantRetrieval(chat.messages as Array<Record<string, unknown>>).map((message) => {
-    if (!isRecord(message.artifacts) || !isRecord(message.artifacts.emailDraft)) return message;
-    return { ...message, artifacts: { ...message.artifacts, emailDraftSuperseded: latestEmailDraftMessages.get(stringValue(message.artifacts.emailDraft.id)) !== message.id } };
-  });
-  const query = queryRecord(request);
-  const limit = Math.max(1, Math.min(200, Math.trunc(numberValue(query.limit, 30))));
-  const beforeId = typeof query.before === "string" ? query.before : "";
-
-  let endIndex = allMessages.length;
-  if (beforeId !== "") {
-    const idx = allMessages.findIndex((m) => m.id === beforeId);
-    if (idx !== -1) endIndex = idx;
-  }
-  const startIndex = Math.max(0, endIndex - limit);
-  const pageMessages = allMessages.slice(startIndex, endIndex);
-
-  const trimmed = {
-    ...chat,
-    messages: pageMessages,
-    hasMoreMessages: startIndex > 0,
-    totalMessageCount: allMessages.length,
-  };
-  return reply.send(ok(trimmed, "OK", null));
+    return { ...copy, workflowCatalog, access: chatAccess(user, value), hasMoreMessages: startIndex > 0, totalMessageCount };
 }
 /*******************************************************************************
  * Function: updateChat
@@ -134,10 +148,11 @@ export async function getChat(request: FastifyRequest, reply: FastifyReply, user
 export async function updateChat(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const body = bodyRecord(request);
   if (body === null) throw new HandlerFailure(400, "Invalid request body");
+  const title = Object.hasOwn(body, "title") ? chatTitle(body) : undefined;
   const provider = Object.hasOwn(body, "selectedModel") ? selectProvider(services, requestedModel(body.selectedModel)) : undefined;
   const chat = await services.repository.mutate((state) => {
     const value = assertChatAuthority(state, user, requestParam(request, "id"));
-    if (Object.hasOwn(body, "title")) value.title = stringValue(body.title);
+    if (title !== undefined) value.title = title;
     if (provider?.binding) value.selectedModel = provider.binding.model;
     value.updatedAt = now(); return structuredClone(value);
   });
@@ -148,7 +163,7 @@ export async function updateChat(request: FastifyRequest, reply: FastifyReply, u
  *
  * Deletes a chat session after checking the user's authority.
  ******************************************************************************/
-export async function deleteChat(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { await services.repository.mutate((state) => { const value = state.chats[requestParam(request, "id")]; if (value === undefined || (!user.permissions.includes("workflow:write") && value.ownerId !== user.id)) throw new HandlerFailure(404, "Chat session not found");
+export async function deleteChat(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> { await services.repository.mutate((state) => { const value = assertChatAuthority(state, user, requestParam(request, "id"));
   if (Object.values(state.chatOperations).some(op => op.sessionId === value.id && activeChatStatus(op.status))) throw new HandlerFailure(409, "Cancel or wait for the active chat operation before deleting this conversation", { code: "CHAT_OPERATION_ACTIVE" });
   if (Object.values(state.emailDeliveryAdmissions).some(admission => admission.sessionId === value.id)) throw new HandlerFailure(409, "A conversation linked to an immutable email approval execution cannot be deleted", { code: "EMAIL_DELIVERY_CHAT_IMMUTABLE" });
   delete state.chats[value.id]; }); return reply.send(ok({ deleted: true }, "Chat session deleted", null)); }

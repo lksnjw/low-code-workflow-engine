@@ -10,6 +10,7 @@ import { staticProviderConfiguration } from "../src/providers/static-configurati
 
 const readers = vi.hoisted(() => ({ open: vi.fn(), snapshot: vi.fn(), close: vi.fn(), invoke: vi.fn() }));
 vi.mock("../src/storage/firestore-progress-reader.js", () => ({ openFirestoreProgressReader: readers.open }));
+vi.mock("../src/firebase/progress-reader-pool.js", () => ({ borrowProgressReader: readers.open }));
 vi.mock("../src/firebase/invocation.js", () => ({ withFunctionRuntime: readers.invoke }));
 beforeEach(() => vi.resetAllMocks());
 function setup() {

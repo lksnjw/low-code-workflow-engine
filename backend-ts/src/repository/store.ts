@@ -6,6 +6,7 @@ import type { ReadCompilationReceipt } from "../workflows/compiled-read.js";
 import { assertProtectedContinuation, type ProtectedContinuation } from "./protected-continuation-record.js";
 import { assertProtectedInvocationExecution, type ProtectedInvocationLedgerSnapshot } from "./protected-invocation-records.js";
 import { assertReadTaskOutbox, type ReadTaskOutbox } from "../runner/read-task-outbox.js";
+import { refreshChatReadSummaries } from "../storage/chat-read-summary.js";
 
 export type Role = { id: string; name: string; description: string; permissions: string[]; createdAt: string };
 export type User = {
@@ -28,6 +29,7 @@ export type User = {
 };
 
 export type Execution = {
+  erpCredentialSecret?: import("../tools/user-mcp-credentials.js").UserCredentialBinding;
   id: string;
   workflowId: string;
   workflowName: string;
@@ -72,9 +74,13 @@ export type Execution = {
   /** Versioned private agent dialogue DATA; never a broker or model permit. */
   protectedAgentSecret?: import("./protected-agent-records.js").ProtectedAgentRecords;
   recoverySource?: { profile: "operation-recovery-source/v1"; sourceExecutionId: string; artifactId: string; artifactHash: string };
+  retrySource?: { profile: "execution-retry-source/v1"; sourceExecutionId: string; sourceVersion: number; sourceHash: string; acknowledgedUnconfirmedReads: boolean };
   emailDeliverySource?: { profile: "email-delivery-source/v1"; admissionId: string; sessionId: string; draftId: string; draftVersion: number; draftHash: string };
   scheduleSource?: { profile: "workflow-schedule-source/v1"; scheduleId: string; scheduleRevision: number; occurrenceId: string; scheduledFor: string;
     scheduleHash: string; reportWindow: ReportWindow; reportWindowBinding: ReportWindowInputBinding; inputHash: string };
+  /** A bounded current-state read, not evidence of complete date-range coverage. */
+  snapshotScheduleSource?: { profile: "workflow-snapshot-schedule-source/v1"; scheduleId: string; scheduleRevision: number; occurrenceId: string;
+    scheduledFor: string; scheduleHash: string; inputHash: string };
   /** Connector-attested complete coverage for the immutable schedule window.
    * This is evidence, not permission to dispatch the later effect. */
   reportCoverage?: import("../tools/report-coverage-contract.js").ReportCoverageReceipt;
@@ -113,22 +119,23 @@ export type ReadRunProgress = { profile: "read-progress-v1"; epoch: number; next
   cancellation?: { requestedAt: string; requestedBy: Principal }; recoveryReason?: string };
 export type ExecutionEvent = { version: 1; executionId: string; workflowId: string; sequence: number; timestamp: string; type: string;
   traceId?: string; nodeId?: string; attemptId?: string; payload: Record<string, unknown> };
-// Private worker inputs are encrypted and never placed on public executions.
+// Worker inputs never enter public executions; native mode seals only credentials.
 export type ReadJob = { version: 1; executionId: string; actorId: string; admittedRole: string; state: "QUEUED" | "CLAIMED" | "FINISHED" | "RECOVERY_REQUIRED";
   /** Private queue dispatch DATA, not a lease or permission to call ERP. */
   taskDispatchSecret?: ReadTaskOutbox;
-  inputCiphertext?: string; requestFingerprint: string; idempotencyScope: string; connectionFingerprint: string; createdAt: string; queueSequence?: number; claimedAt?: string; finishedAt?: string; workerId?: string;
+  inputCiphertext?: string; inputFields?: {version:1;executionId:string;input:Record<string,unknown>}; requestFingerprint: string; idempotencyScope: string; connectionFingerprint: string; createdAt: string; queueSequence?: number; claimedAt?: string; finishedAt?: string; workerId?: string;
   lease?: import("../runner/read-worker-lease.js").ReadWorkerLease };
 
 export type Permission = { key: string; name: string; description: string; group: string };
 export type ChatAttempt = { id: string; toolName: string; argumentHash: string; status: "PREPARING" | "DISPATCH_INTENT" | "DONE" | "FAILED" | "UNKNOWN"; startedAt: string; completedAt?: string; output?: Record<string, unknown> };
-/** Private model receipts stay in encrypted storage and outside public chat projections. */
+/** Model receipts stay outside public DTOs; native mode does not encrypt normal response text. */
 export type ChatModelAttempt = { id: string; taskId: string; workerId: string; epoch: number; expiresAt: string;
   ordinal: number; requestHash: string; configurationFingerprint: string; configurationRevision: string;
   model: string; promptTemplateVersion: string; egress: import("../providers/egress-policy.js").ModelEgressDeclaration;
   status: "DISPATCH_INTENT" | "DONE" | "FAILED" | "UNKNOWN"; startedAt: string; completedAt?: string;
-  resultCiphertext?: string; provenanceId: string; purpose?: "QUERY" | "SYNTHESIS" | "NODE_PROPOSAL" | "POLICY_PREFLIGHT" };
+  resultCiphertext?: string; resultFields?: Record<string,unknown>; provenanceId: string; purpose?: "QUERY" | "SYNTHESIS" | "NODE_PROPOSAL" | "POLICY_PREFLIGHT" };
 export type ChatOperation = { version: 1; id: string; sessionId: string; actorId: string; userMessageId: string; assistantMessageId?: string;
+  erpCredentialSecret?: import("../tools/user-mcp-credentials.js").UserCredentialBinding;
   status: "QUEUED" | "RUNNING" | "ANSWERED" | "FAILED" | "CANCELLED" | "RECOVERY_REQUIRED"; stage: string; epoch: number; lastSequence: number;
   createdAt: string; updatedAt: string; finishedAt?: string; traceId: string; persistence: "memory-only" | "durable";
   inputCiphertext?: string; idempotencyScope: string; requestFingerprint: string; connectionFingerprint: string; contractFingerprint: string; authorityFingerprint: string;
@@ -137,10 +144,15 @@ export type ChatOperation = { version: 1; id: string; sessionId: string; actorId
   nodeContext?: { workflowId: string; nodeId: string; baseVersion: number; baseHash: string };
   requestRevision?: import("../agent/chat-request-revisions.js").ChatRequestRevision;
   revisionContextCiphertext?: string;
+  // Native business inputs stay readable; credential members are sealed by the
+  // record codec. These private inputs never enter public operation DTOs.
+  inputFields?: Record<string, unknown>;
+  revisionContextFields?: Record<string, unknown>;
+  contentStorageProfile?: "native-business-content/v1";
   modelAttemptsSecret?: ChatModelAttempt[];
   taskDispatchSecret?: import("../agent/chat-task-outbox.js").ChatTaskOutbox;
   taskLeaseSecret?: { profile: "chat-task-lease/v1"; workerId: string; epoch: number; claimedAt: string; expiresAt: string };
-  artifactRefs?: Array<{ type: "workflow-draft" | "node-proposal"; id: string }> };
+  artifactRefs?: Array<{ type: "workflow-draft" | "node-proposal" | "workflow-proposal"; id: string }> };
 export type ChatOperationEvent = { version: 1; operationId: string; sessionId: string; sequence: number; timestamp: string; stage: string; type: string; attemptId?: string; status?: string };
 export type StoredRecord = Record<string, unknown>;
 export type ChatSessionRecord = {
@@ -152,10 +164,11 @@ export type ChatSessionRecord = {
   messageCount: number;
   selectedModel?: string;
   messages: StoredRecord[];
+  readSummary?: import("../storage/chat-read-summary.js").ChatReadSummary;
 };
 
 export type WorkflowSchedule = {
-  profile: "workflow-daily-schedule/v1" | "workflow-calendar-schedule/v2";
+  profile: "workflow-daily-schedule/v1" | "workflow-calendar-schedule/v2" | "workflow-snapshot-schedule/v1";
   id: string;
   workflowId: string;
   workflowVersion: number;
@@ -170,7 +183,7 @@ export type WorkflowSchedule = {
   dayOfWeek?: number;
   /** Restricted to 1..28 so every calendar month has an occurrence. */
   dayOfMonth?: number;
-  reportingPeriod: "previous-calendar-day" | "previous-calendar-week" | "previous-calendar-month";
+  reportingPeriod: "previous-calendar-day" | "previous-calendar-week" | "previous-calendar-month" | "snapshot";
   misfirePolicy: "SKIP" | "FIRE_ONCE";
   misfireGraceSeconds: number;
   servicePrincipalId: string;
@@ -224,6 +237,7 @@ export type ScheduleOccurrence = {
 
 export type InvocationProvenanceRecord = {
   id: string;
+  inferenceProfile?: "openrouter-deepseek-interactive-fast/v1" | "openrouter-qwen-interactive-fast/v1" | "openrouter-gemini-bounded-low/v1";
   promptTemplateVersion: string;
   promptSha256: string;
   provider: string;
@@ -292,6 +306,7 @@ export type RepositoryState = {
   capabilityAdmissions: Record<string, StoredRecord>;
   mcpConnections: Record<string, StoredRecord>;
   mcpConnectionOperations: Record<string, StoredRecord>;
+  userMcpCredentials: Record<string, StoredRecord>;
   webhooks: Record<string, StoredRecord>;
   refreshSessions: Record<string, { userId: string; expiresAt: string }>;
   auditLogs: Record<string, unknown>[];
@@ -439,6 +454,7 @@ export class Repository {
       let persistenceAttempted = false;
       try {
         const result = await mutation(this.#state);
+        refreshChatReadSummaries(before.chats, this.#state.chats);
         this.assertPersistenceAuthority();
         if (this.persistence !== null) {
           const bytes = Buffer.from(JSON.stringify(this.#state), "utf8");
@@ -585,7 +601,7 @@ export function restoreState(payload: Uint8Array): RepositoryState {
     if (typeof restored[key] !== "object" || restored[key] === null || Array.isArray(restored[key])) restored[key] = defaults[key] as never;
   }
   if (restored.governancePolicy !== null && (typeof restored.governancePolicy !== "object" || Array.isArray(restored.governancePolicy))) restored.governancePolicy = null;
-  for (const key of ["capabilityObservations", "capabilityRevisions", "capabilityAdmissions", "mcpConnections", "mcpConnectionOperations"] as const)
+  for (const key of ["capabilityObservations", "capabilityRevisions", "capabilityAdmissions", "mcpConnections", "mcpConnectionOperations", "userMcpCredentials"] as const)
     if (typeof restored[key] !== "object" || restored[key] === null || Array.isArray(restored[key])) throw new Error(`Invalid stored ${key}; admission recovery requires repair`);
   if (!restored.readContinuations || typeof restored.readContinuations !== "object" || Array.isArray(restored.readContinuations)) throw new Error("Invalid private read continuation map");
   for (const [id, record] of Object.entries(restored.readContinuations)) { assertReadContinuation(record, id); if (!Object.hasOwn(restored.executions, id)) throw new Error("Orphan private read continuation"); }
@@ -605,7 +621,9 @@ export function restoreState(payload: Uint8Array): RepositoryState {
   for (const permission of defaults.permissions) if (!knownPermissions.has(permission.key)) restored.permissions.push(permission);
   const defaultAdmin = defaults.roles.role_admin;
   const restoredAdmin = restored.roles.role_admin;
-  if (defaultAdmin?.permissions.includes("pipeline:upload") && restoredAdmin && !restoredAdmin.permissions.includes("pipeline:upload"))
+  // Grant only when introducing the permission to a legacy snapshot. Once the
+  // permission exists, an administrator's explicit revocation must survive reload.
+  if (!knownPermissions.has("pipeline:upload") && defaultAdmin?.permissions.includes("pipeline:upload") && restoredAdmin && !restoredAdmin.permissions.includes("pipeline:upload"))
     restoredAdmin.permissions = [...restoredAdmin.permissions, "pipeline:upload"];
   restored.counter = Math.max(0, Number.isInteger(restored.counter) ? restored.counter : 0);
   return restored;
@@ -654,6 +672,7 @@ export function initialState(): RepositoryState {
     capabilityAdmissions: {},
     mcpConnections: {},
     mcpConnectionOperations: {},
+    userMcpCredentials: {},
     webhooks: {},
     auditLogs: [],
     settings: { general: {}, llm: {}, rbac: {} },

@@ -31,8 +31,8 @@ async function serviceFor(fetcher: typeof fetch) {
   return { repository, service: new SynthesisService(provider, registries, validator) };
 }
 
-test("active generation contract is immutable v20 with the requested-versus-context distinction", () => {
-  expect(CANDIDATE_PROMPT_VERSION).toBe("prompt/candidate/v20");
+test("active v21 generation preserves historical requested-versus-context contracts", () => {
+  expect(CANDIDATE_PROMPT_VERSION).toBe("prompt/candidate/v22");
   expect(createHash("sha256").update(systemInstructionsFor("prompt/candidate/v18")).digest("hex"))
     .toBe("d1a47db8c7fb1cb4a9bdae5be32ab00226a2e8adc867b372a9d3955107480c81");
   expect(createHash("sha256").update(systemInstructionsFor("prompt/candidate/v19")).digest("hex"))
@@ -61,7 +61,7 @@ test("opaque flat read keeps the exact proposal while context caveats do not bec
   const flatRead = await service.synthesize({ prompt: "Read the offered departments capability as a local QA sample", userRole: "Platform Admin" });
   expect(flatRead.yaml).toBe(contextOnly.trim());
   expect(flatRead.validation.passed).toBe(true);
-  expect(flatRead.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v20");
+  expect(flatRead.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v22");
   expect(fetcher).toHaveBeenCalledTimes(2);
   const state = await repository.snapshot();
   expect(state.workflows).toEqual({});

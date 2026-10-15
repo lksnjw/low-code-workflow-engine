@@ -126,15 +126,10 @@ function describeType(value: unknown): string {
 /*******************************************************************************
  * Function: normalizeToolArguments
  *
- * Silently fixes the one argument shape mistake the LLM makes often: wrapping
- * a single scalar value in an array (e.g. an email "to" field sent as
- * ["user@example.com"] instead of "user@example.com"). Live MCP-discovered
- * tools frequently have no usable input schema (or one whose declared types
- * can't be trusted), so this doesn't wait for a schema to confirm the field
- * is a scalar — it unwraps any single-element array of a primitive value
- * unconditionally, UNLESS the schema explicitly says that field really is
- * an array. That's the one case where fixing it could break something real
- * (e.g. a genuine multi-recipient list that happens to have one item today).
+ * Legacy authoring helper: unwrap only a single primitive whose type exactly
+ * matches an explicitly declared scalar field. Unknown fields/schemas and
+ * genuine arrays remain unchanged. Interactive execution instead asks the
+ * model for a corrected proposal and validates it before dispatch.
  ******************************************************************************/
 export function normalizeToolArguments(
   args: Record<string, unknown>,
@@ -149,7 +144,8 @@ export function normalizeToolArguments(
     if (!Array.isArray(value) || value.length !== 1) continue;
     const [only] = value;
     if (typeof only !== "string" && typeof only !== "number" && typeof only !== "boolean") continue;
-    if (properties[key]?.type === "array") continue; // schema explicitly wants a list — leave it alone
+    const expected = properties[key]?.type;
+    if (!expected || !["string", "number", "integer", "boolean"].includes(expected) || !TYPE_CHECKERS[expected]?.(only)) continue;
     normalized[key] = only;
     corrections.push(`"${key}": unwrapped a single-element array — the tool expects a plain ${typeof only}, not a list`);
   }
@@ -167,7 +163,7 @@ export function normalizeToolArguments(
 export function validateToolArguments(
   toolName: string,
   args: Record<string, unknown>,
-  toolDef: ToolDefinition | undefined,
+  toolDef: Pick<ToolDefinition, "input_schema"> | undefined,
 ): RuntimeArgIssue {
   if (toolDef === undefined) return { toolName, missing: [], invalid: [`Tool "${toolName}" not found in registry`] };
 
@@ -179,12 +175,28 @@ export function validateToolArguments(
 
   // Detect placeholder values — LLM sometimes passes these instead of real values
   const PLACEHOLDER_RE = /^\s*(\[.*\]|<.*>|\{.*\}|xxx|none|null|undefined|todo|placeholder|example|your_.+|insert_here)\s*$/i;
+  const properties = schema.properties ?? {};
+  const concreteJsonString = (value: string): boolean => {
+    if (value.length > 64_000) return false;
+    let parsed: unknown;
+    try { parsed = JSON.parse(value); } catch { return false; }
+    if (!parsed || typeof parsed !== "object") return false;
+    let nodes = 0;
+    const concrete = (item: unknown, depth: number): boolean => {
+      if (++nodes > 4096 || depth > 16) return false;
+      if (typeof item === "string") return !PLACEHOLDER_RE.test(item);
+      if (item && typeof item === "object") return Object.entries(item).every(([key, child]) =>
+        !["__proto__", "prototype", "constructor"].includes(key) && concrete(child, depth + 1));
+      return true;
+    };
+    return concrete(parsed, 0);
+  };
   const invalid = Object.entries(args)
-    .filter(([, v]) => typeof v === "string" && PLACEHOLDER_RE.test(v))
+    .filter(([key, value]) => typeof value === "string" && PLACEHOLDER_RE.test(value) &&
+      !(properties[key]?.type === "string" && concreteJsonString(value)))
     .map(([k]) => `"${k}" contains a placeholder value — must be a real value from prior step results`);
 
   // Type mismatches against the tool's real schema.
-  const properties = schema.properties ?? {};
   for (const [key, value] of Object.entries(args)) {
     const expectedType = properties[key]?.type;
     if (typeof expectedType !== "string") continue;

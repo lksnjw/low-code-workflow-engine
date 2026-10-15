@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "effective_date": "2026-08-28",
+  "version": "1.1.0",
+  "effective_date": "2026-10-18",
   "description": "Deterministic read-only offline fallback when external governance and valid cache are unavailable. Model decisions cannot override denials. Write operations and listed human-review tools remain blocked regardless of legacy role allow_write_operations values.",
   "globally_blocked_tools": [],
   "tools_requiring_human_review": [
@@ -11,6 +11,34 @@
     "reset_inventory"
   ],
   "role_access": {
+    "Manager": {
+      "allowed_domains": ["erp", "inventory", "orders", "reporting"],
+      "blocked_tools": [],
+      "allowed_tools": [
+        "discovered.erpbridge-default.list_companies_1d237fc511041738",
+        "discovered.erpbridge-default.list_departments_0be89304c3636d1a",
+        "discovered.erpbridge-default.list_customers_57b3e830f8ec55c6",
+        "discovered.erpbridge-default.list_customer_groups_8ffc122c652f1450",
+        "discovered.erpbridge-default.list_territories_af99682d04185575",
+        "discovered.erpbridge-default.list_warehouses_fb43397699c0e70e",
+        "discovered.erpbridge-default.list_items_8e4808b331015b2d",
+        "discovered.erpbridge-default.list_item_groups_26b16a418bf31f84",
+        "discovered.erpbridge-default.list_uoms_cef4eb5491a56c55",
+        "discovered.erpbridge-default.list_bins_8d725a04314726e8",
+        "discovered.erpbridge-default.list_sales_orders_02a382b3a0701511",
+        "discovered.erpbridge-default.list_sales_invoices_7c37526683eccd60",
+        "discovered.erpbridge-default.list_suppliers_f4f5e5e2ef567af1",
+        "discovered.erpbridge-default.list_purchase_orders_132faf1223c49298",
+        "discovered.erpbridge-default.list_purchase_invoices_0a1d030bc24f7ae8",
+        "discovered.erpbridge-default.get_item_53c6cd68519f0875",
+        "discovered.erpbridge-default.get_customer_fca755411ca718b3",
+        "discovered.erpbridge-default.get_warehouse_e8eeecea087cce8d",
+        "discovered.erpbridge-default.run_report_1dd3730c077bfcb3"
+      ],
+      "max_risk_level": "low",
+      "allow_write_operations": false,
+      "notes": "Only the reviewed Manager read pack. Registry role grants, exact contracts and the user's ERP token are independently enforced. No offline email or ERP writes."
+    },
     "Platform Admin": {
       "allowed_domains": ["*"],
       "blocked_tools": [],

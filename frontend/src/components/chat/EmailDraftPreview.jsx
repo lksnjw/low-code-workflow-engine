@@ -7,7 +7,7 @@ const reasonLabels = { ERPBRIDGE_NOT_CONNECTED: "ERPBridge is not connected. No 
 
 // This is a draft editor, not a send/approval control. Server revisions and
 // ownership remain authoritative; uncertain saves require a conversation reload.
-export default function EmailDraftPreview({ draft: initialDraft, emailDelivery: initialDelivery, reportReason, superseded = false, onSaved }) {
+export default function EmailDraftPreview({ draft: initialDraft, emailDelivery: initialDelivery, reportReason, superseded = false, onSaved, onContinue, busy = false }) {
   const { user } = useAuth();
   const id = useId();
   const savingRef = useRef(false);
@@ -20,10 +20,21 @@ export default function EmailDraftPreview({ draft: initialDraft, emailDelivery: 
   const shownDraft = superseded ? initialDraft : draft;
   const shownFields = superseded ? initialDraft : fields;
   const canEdit = !superseded && !delivery && user?.id === draft.ownerId && draft.profile === "email-draft-v1" && draft.state === "DRAFT_NOT_SENT";
-  const locked = !canEdit || status === "saving" || status === "uncertain" || status === "conflict";
+  const locked = !canEdit || busy || ["saving", "preparing", "requesting", "uncertain", "conflict"].includes(status);
   const exactSavedDraft = fields.to === draft.to && fields.subject === draft.subject && fields.body === draft.body;
   const canRequest = canEdit && !draft.recurring && exactSavedDraft && Boolean(draft.to && draft.subject.trim() && draft.body.trim()) && sharingConfirmed &&
-    !["saving", "requesting", "uncertain", "conflict"].includes(status);
+    !busy && !["saving", "preparing", "requesting", "uncertain", "conflict"].includes(status);
+  const continueInChat = async () => {
+    if (locked || !exactSavedDraft || !onContinue || savingRef.current) return;
+    savingRef.current = true; setStatus("preparing"); setNotice("");
+    try {
+      const result = await onContinue(`Help me prepare this email: ${draft.originalRequest || "Retrieve the details needed for this email."}\nUse the current recipient${draft.to ? ` ${draft.to}` : " once I confirm their address"}, not a different address from an earlier draft. Prepare the details and show the exact email for my confirmation. Do not send it yet.`);
+      if (!result) throw new Error("Chat admission not confirmed");
+      setStatus("preparation-requested"); setNotice("Preparation requested in chat. Check its progress and answer any missing-detail question. Nothing was sent by this button.");
+    } catch {
+      setStatus("uncertain"); setNotice("Preparation acknowledgement is unconfirmed. Check this conversation's saved progress before requesting it again.");
+    } finally { savingRef.current = false; }
+  };
   const save = async (event) => {
     event.preventDefault();
     if (locked || savingRef.current) return;
@@ -45,8 +56,8 @@ export default function EmailDraftPreview({ draft: initialDraft, emailDelivery: 
     } finally { savingRef.current = false; }
   };
   const requestApproval = async () => {
-    if (!canRequest) return;
-    setStatus("requesting"); setNotice("");
+    if (!canRequest || savingRef.current) return;
+    savingRef.current = true; setStatus("requesting"); setNotice("");
     try {
       const result = await chatService.sendMessage(draft.sessionId, "Request independent approval for this exact email draft", { emailDeliveryCommand: {
         profile: "email-delivery-admission-command/v1", draftId: draft.id, baseVersion: draft.version, baseHash: draft.contentHash,
@@ -63,7 +74,7 @@ export default function EmailDraftPreview({ draft: initialDraft, emailDelivery: 
       if (error?.response?.status === 409) { setStatus("conflict"); setNotice("This draft or its approval request changed. Reload the conversation before taking another action."); }
       else if (!error?.response || error.response.status >= 500) { setStatus("uncertain"); setNotice("Approval-request confirmation is uncertain. Reload the conversation; do not create a new request."); }
       else { setStatus("error"); setNotice(error?.response?.data?.message ?? "Approval was not requested. Check connector readiness, access and the exact saved draft."); }
-    }
+    } finally { savingRef.current = false; }
   };
   return <section aria-label="Email draft" className="mt-4 min-w-0 border-t border-gray-200 pt-3 dark:border-gray-700">
     <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -78,6 +89,11 @@ export default function EmailDraftPreview({ draft: initialDraft, emailDelivery: 
       Could not safely resolve “{shownDraft.recipientReference}”: {shownDraft.recipientResolution?.reason ?? "confirm one exact address."}
     </p>}
     {shownDraft.reportStatus === "NOT_PREPARED" && reasonLabels[reportReason] && <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{reasonLabels[reportReason]}</p>}
+    {canEdit && !shownDraft.recurring && onContinue && <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs">
+      <p>The assistant can retrieve the missing details and prepare the message here. If the order type or another required detail is unclear, answer its question in chat.</p>
+      <button type="button" disabled={locked || !exactSavedDraft} onClick={continueInChat} className="mt-2 rounded-md bg-primary px-3 py-2 font-semibold text-white disabled:opacity-50">{status === "preparing" ? "Preparing in chat…" : "Prepare email with assistant"}</button>
+      {!exactSavedDraft && <p className="mt-2">Save your edits before continuing in chat.</p>}
+    </div>}
     <form onSubmit={save} className="mt-3 space-y-3">
       <div><label htmlFor={`${id}-to`} className="text-xs font-medium text-gray-600 dark:text-gray-300">Recipient email</label>
         <input id={`${id}-to`} type="email" maxLength={254} value={shownFields.to} disabled={locked} placeholder="Confirm one exact address"
@@ -105,7 +121,7 @@ export default function EmailDraftPreview({ draft: initialDraft, emailDelivery: 
         <p className="mt-1 text-gray-600 dark:text-gray-300">Current saved state: {delivery.status}. ERPBridge acceptance, if it later occurs, is not an email delivery receipt.</p>
         <a className="mt-2 inline-block font-semibold text-primary hover:underline" href={`/executions/${encodeURIComponent(delivery.executionId)}`}>Open governed execution</a>
       </div>}
-      {notice && <p role={["saved", "requested"].includes(status) ? "status" : "alert"} className="text-xs text-gray-600 dark:text-gray-300">{notice}</p>}
+      {notice && <p role={["saved", "requested", "preparation-requested"].includes(status) ? "status" : "alert"} className="text-xs text-gray-600 dark:text-gray-300">{notice}</p>}
     </form>
     <details className="mt-3 text-xs text-gray-600 dark:text-gray-300">
       <summary className="cursor-pointer py-1">Before sending · {shownDraft.sourceEvidence?.length ?? 0} confirmed reads</summary>

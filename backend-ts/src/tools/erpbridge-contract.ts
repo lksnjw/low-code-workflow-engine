@@ -2,10 +2,12 @@ import { canonicalJSONBytes } from "../core/canonical-json.js";
 import type { ToolDefinition } from "../registry/schemas.js";
 import type { ErpbridgeMcpSdkTool } from "./erpbridge-mcp-client.js";
 import { validateToolSchemaProfile } from "./tool-input-schema.js";
+import { isErpnextWriteContract } from "./erpnext-document-write.js";
 
 export function exactBridgeName(tool: ToolDefinition): string {
   const name = tool.mcp_tool_name.trim();
-  return tool.bridge_contract ? `${name}.rev_${Buffer.from(tool.bridge_contract.resource_version).toString("base64url")}` : name;
+  return tool.bridge_contract && !tool.bridge_contract.selector
+    ? `${name}.rev_${Buffer.from(tool.bridge_contract.resource_version).toString("base64url")}` : name;
 }
 export function hasReservedBridgeRole(tool: ToolDefinition): boolean {
   return tool.bridge_contract ? tool.bridge_contract.remote_roles.length > 0 : tool.allowed_roles.length > 0;
@@ -27,6 +29,10 @@ export function matchesBridgeContract(tool: ToolDefinition, remote: ErpbridgeMcp
   if (!tool.mcp_tool_name.trim() || tool.mcp_tool_name.includes(".rev_") || validateToolSchemaProfile(tool.input_schema).length ||
       (contract.output_schema && validateToolSchemaProfile(contract.output_schema).length)) return false;
   const meta = remote._meta;
+  if (contract.selector === "digest-pinned-alias" && (meta?.["toolplane.serving"] !== true ||
+      remote.annotations?.readOnlyHint !== true || remote.annotations?.destructiveHint === true || !remote.outputSchema)) return false;
+  if (contract.selector === "digest-pinned-operation-alias" && (meta?.["toolplane.serving"] !== true ||
+      remote.annotations?.readOnlyHint !== false || tool.is_read_only || !isErpnextWriteContract(tool) || !remote.outputSchema)) return false;
   const roles = meta?.["io.erpbridge/allowedRoles"] ?? [];
   if (!Array.isArray(roles) || roles.some(role => typeof role !== "string") || new Set(roles).size !== roles.length ||
       !same([...roles].sort(), [...contract.remote_roles].sort()) ||

@@ -11,7 +11,9 @@ import { ToolRegistry } from "../src/tools/registry.js";
 import { ProviderRuntime } from "../src/providers/runtime.js";
 import { SynthesisService } from "../src/synthesis/service.js";
 import { createErpbridgeMcpSession, ErpbridgeMcpToolError } from "../src/tools/erpbridge-mcp-client.js";
-import { chatJobQueue } from "../src/agent/chat-jobs.js";
+import { chatJobQueue, decodePrivateChatInput } from "../src/agent/chat-jobs.js";
+import { FirestoreRecordCodec } from "../src/storage/firestore-record-codec.js";
+import { migrateNativeChatContent } from "../src/storage/chat-native-content.js";
 import { workflowContentHash, parseWorkflowYAMLStrict } from "../src/parser/workflow.js";
 import { stringify } from "yaml";
 import type { Workflow } from "../src/models/schemas.js";
@@ -22,6 +24,84 @@ import { dispatchReadTool } from "../src/tools/read-tool-broker.js";
 const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())); });
 const yaml = 'name: Report\ndescription: Read\ntrigger:\n  type: manual\nsteps:\n  - id: echo\n    action: demo.echo\n    parameters:\n      value: fixture';
+
+test.each(["role_builder", "role_client", "role_admin"])("private chat scope and read-only administrative review: %s", async roleId => {
+  const s = await setup();
+  await s.repository.mutate(state => { state.users.other!.roleId = roleId; });
+  const listing = await s.app.inject({ method: "GET", url: "/api/chat/sessions", headers: s.headers("other") });
+  expect(listing.statusCode).toBe(200);
+  expect(listing.json().data.some((chat: { id: string }) => chat.id === s.sessionId)).toBe(roleId === "role_admin");
+  const view = await s.app.inject({ method: "GET", url: `/api/chat/sessions/${s.sessionId}`, headers: s.headers("other") });
+  expect(view.statusCode).toBe(roleId === "role_admin" ? 200 : 404);
+  if (roleId === "role_admin") expect(view.json().data.access).toEqual({ canReply: false, canManage: false, reviewOnly: true });
+  for (const [method, suffix, payload] of [["PATCH", "", { title: "Not mine" }], ["DELETE", "", undefined],
+    ["POST", "/messages", { content: "Hello" }], ["POST", "/messages", { content: "Hello", delivery: "async-chat", idempotencyKey: "private-owner-test-000001" }]] as const) {
+    const response = await s.app.inject({ method, url: `/api/chat/sessions/${s.sessionId}${suffix}`, headers: s.headers("other"), ...(payload ? { payload } : {}) });
+    expect(response.statusCode, `${method} ${suffix}: ${response.body}`).toBe(404);
+  }
+  expect(s.fetchImplementation).not.toHaveBeenCalled(); expect(s.callTool).not.toHaveBeenCalled();
+  const admitted = await s.send(); await s.terminal(admitted.json().data.operation.id);
+  const op = admitted.json().data.operation.id;
+  expect((await s.get(op, "other")).statusCode).toBe(404);
+  const operations = await s.app.inject({ method: "GET", url: `/api/chat/sessions/${s.sessionId}/operations`, headers: s.headers("other") });
+  expect(operations.statusCode).toBe(roleId === "role_admin" ? 200 : 404);
+  if (roleId === "role_admin") expect(operations.json().data).toEqual([]);
+  expect((await s.app.inject({ method: "POST", url: `/api/chat/operations/${op}/cancel`, headers: s.headers("other"), payload: {} })).statusCode).toBe(404);
+});
+
+test("ordinary queued conversations work without ERPBridge and never fabricate a no-data failure", async () => {
+  const s = await setup({ noBridge: true });
+  s.fetchImplementation.mockImplementation(async (_url, init) => {
+    const wire = JSON.parse(String(init?.body)); expect(wire.tools).toBeUndefined(); expect(wire.messages[0].content).toContain("prompt/conversation/v1");
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: "Hello! I can help with questions and planning." } }], usage: { prompt_tokens: 6, completion_tokens: 8 } });
+  });
+  const receipt = await s.send("Hello, how are you?"); expect(receipt.statusCode, receipt.body).toBe(202);
+  const operation = await s.terminal(receipt.json().data.operation.id); expect(operation.status).toBe("ANSWERED"); expect(operation.attempts).toEqual([]);
+  const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+  expect(message.text).toBe("Hello! I can help with questions and planning."); expect(message.artifacts).toMatchObject({ intent: "CONVERSATION", toolsDispatched: false });
+  expect(s.callTool).not.toHaveBeenCalled(); expect(s.fetchImplementation).toHaveBeenCalledOnce();
+});
+
+test("selected workflow questions and same-chat follow-ups use saved context without changing or executing it", async () => {
+  const s = await nodeSetup({ noBridge: true });
+  const reference = { workflowId: "report", baseVersion: 1, baseHash: workflowContentHash(yaml) };
+  s.fetchImplementation.mockImplementation(async (_url, init) => {
+    const wire = JSON.parse(String(init?.body)); expect(wire.tools).toBeUndefined(); expect(wire.messages[0].content).toContain("prompt/workflow-discussion/v1");
+    const current = JSON.parse(wire.messages.at(-1).content).CURRENT_WORKFLOW_JSON;
+    expect(current).toMatchObject({ workflowId: "report", name: "Report", nodeCount: 1, draftVersion: 1 });
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: "This workflow reads the reference value in one step. You can inspect that step before changing it." } }] });
+  });
+  const before = await s.repository.snapshot();
+  for (const [index, content] of ["what is this work flow", "What does it do?"].entries()) {
+    const receipt = await s.send(content, { workflowContext: reference, idempotencyKey: `workflow-discussion-followup-${index}` });
+    expect(receipt.statusCode, receipt.body).toBe(202); expect((await s.terminal(receipt.json().data.operation.id)).status).toBe("ANSWERED");
+    const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+    expect(message.artifacts).toMatchObject({ intent: "WORKFLOW_DISCUSSION", discussion: { workflowId: "report", nodeCount: 1 }, toolsDispatched: false });
+    expect(message.text).not.toContain("No confirmed ERP data"); expect(message.text).toContain("This workflow reads");
+  }
+  const after = await s.repository.snapshot(); expect(after.workflows).toEqual(before.workflows); expect(after.executions).toEqual(before.executions);
+  expect(s.callTool).not.toHaveBeenCalled(); expect(s.fetchImplementation).toHaveBeenCalledTimes(2);
+});
+
+test("a stale selected workflow reference is rejected before admitting or sending conversational context", async () => {
+  const s = await nodeSetup();
+  const response = await s.send("what is this workflow", { workflowContext: { workflowId: "report", baseVersion: 2, baseHash: workflowContentHash(yaml) } });
+  expect(response.statusCode).toBe(409); expect(s.fetchImplementation).not.toHaveBeenCalled(); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test("chat rename validates the same title contract as creation, preserving old metadata on invalid input", async () => {
+  const s = await setup();
+  const initial = (await s.repository.snapshot()).chats[s.sessionId]!;
+  for (const title of [42, null, {}, "x".repeat(201)]) {
+    const response = await s.app.inject({ method: "PATCH", url: `/api/chat/sessions/${s.sessionId}`, headers: s.headers(), payload: { title } });
+    expect(response.statusCode).toBe(400); expect((await s.repository.snapshot()).chats[s.sessionId]!.title).toBe(initial.title);
+  }
+  const renamed = await s.app.inject({ method: "PATCH", url: `/api/chat/sessions/${s.sessionId}`, headers: s.headers(), payload: { title: "  Renamed safely  " } });
+  expect(renamed.statusCode).toBe(200); expect(renamed.json().data.title).toBe("Renamed safely");
+  const blank = await s.app.inject({ method: "PATCH", url: `/api/chat/sessions/${s.sessionId}`, headers: s.headers(), payload: { title: "  " } });
+  expect(blank.statusCode).toBe(200); expect(blank.json().data.title).toBe("New conversation");
+  expect(s.fetchImplementation).not.toHaveBeenCalled(); expect(s.callTool).not.toHaveBeenCalled();
+});
 function barrier() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 class Persistence implements PersistenceBackend {
   readonly readQueueDurability = "encrypted-single-writer" as const;
@@ -34,8 +114,8 @@ class Persistence implements PersistenceBackend {
   }
   async close() {} async probe() {}
 }
-async function setup(options: { persistence?: PersistenceBackend; timeoutMs?: number; noBridge?: boolean; toolFile?: string } = {}) {
-  const config = { ...loadConfig({ APP_ENV: "test", JWT_SECRET: "chat-job-secret-at-least-32-bytes", STORAGE_DRIVER: "memory", MCP_MODE: "mock" }), storageEncryptionKey: "x".repeat(32), erpbridgeRoleMap: { "Platform Admin": "admin" } };
+async function setup(options: { persistence?: PersistenceBackend; timeoutMs?: number; noBridge?: boolean; toolFile?: string; nativeFields?: boolean } = {}) {
+  const config = { ...loadConfig({ APP_ENV: "test", JWT_SECRET: "chat-job-secret-at-least-32-bytes", STORAGE_DRIVER: "memory", MCP_MODE: "mock" }), storageEncryptionKey: "x".repeat(32), erpbridgeRoleMap: { "Platform Admin": "admin" }, ...(options.nativeFields ? {firestoreContentFormat:"native-fields/v1" as const} : {}) };
   const repository = await Repository.open(options.persistence ?? null);
   await repository.mutate(state => { for (const id of ["owner", "other"]) state.users[id] = { id, name: id, email: `${id}@example.test`, roleId: "role_admin", permissionOverrides: [], status: "Active", initials: "U", departmentId: null, lastLoginAt: null, createdAt: new Date().toISOString() }; });
   const registries = await RegistryService.load(resolve("tests/fixtures", options.toolFile ?? "chat-read-tools.json"), resolve("tests/fixtures/rules.json"));
@@ -78,6 +158,203 @@ async function nodeSetup(options: Parameters<typeof setup>[0] = {}) {
   return { ...s, nodeContext };
 }
 
+async function workflowEditSetup(result: unknown = { kind: "proposal", yaml: yaml.replace("description: Read", "description: Show the directory here"), summary: "Show the directory in this workspace." }) {
+  const s = await nodeSetup({ noBridge: true }); s.services.config.chatIntentRouting = "agent";
+  const context = { workflowId: "report", baseVersion: 1, baseHash: workflowContentHash(yaml) };
+  s.fetchImplementation.mockImplementation(async (_url, init) => {
+    const wire = JSON.parse(String(init?.body));
+    if (wire.messages[0].content.includes("prompt/intent-routing/v4")) return Response.json({ choices: [{ finish_reason: "stop", message: { content: '{"intent":"WORKFLOW_MODIFY","needsClarification":false}' } }] });
+    expect(wire.messages[0].content).toContain("prompt/workflow-modifier/v4");
+    const data = JSON.parse(wire.messages.at(-1).content);
+    expect(data.currentYaml).toBe(yaml); expect(data.tools[0]).toHaveProperty("inputSchema");
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }] });
+  });
+  return { ...s, context };
+}
+
+test("ordinary whole-workflow edit becomes an exact saved proposal, not a duplicate workflow or an automatic change", async () => {
+  const s = await workflowEditSetup(), before = await s.repository.snapshot();
+  const receipt = await s.send("Edit the above workflow so it shows the directory here", { workflowContext: s.context });
+  expect(receipt.statusCode).toBe(202); const op = await s.terminal(receipt.json().data.operation.id);
+  expect(op.status).toBe("ANSWERED"); expect(op.attempts).toEqual([]);
+  let state = await s.repository.snapshot(); const message = state.chats[s.sessionId]!.messages.at(-1)!, proposal = (message.artifacts as any).proposal;
+  expect(message.artifacts).toMatchObject({ intent: "WORKFLOW_PATCH_PROPOSAL", workflowId: "report", toolsDispatched: false,
+    proposal: { scope: "workflow", ...s.context, status: "PROPOSED", command: { type: "restoreDraft" } } });
+  expect(op.artifactRefs).toEqual([{ type: "workflow-proposal", id: proposal.id }]);
+  expect(state.workflows).toEqual(before.workflows); expect(state.executions).toEqual({}); expect(state.schedules).toEqual({});
+  const apply = (command = proposal.command, actor = "owner") => s.app.inject({ method: "POST", url: "/api/workflows/report/commands", headers: s.headers(actor), payload: { baseVersion: 1, baseHash: s.context.baseHash, proposalId: proposal.id, command } });
+  expect((await apply({ ...proposal.command, yaml: yaml.replace("Read", "Tampered") })).statusCode).toBe(409);
+  expect((await apply(proposal.command, "other")).statusCode).toBe(404);
+  const saved = await apply(); expect(saved.statusCode, saved.body).toBe(200); expect(saved.json().data).toMatchObject({ version: 2, publishedVersion: 1, canRun: false });
+  state = await s.repository.snapshot(); expect(Object.keys(state.workflows)).toEqual(["report"]);
+  expect(parseWorkflowYAMLStrict(state.workflows.report!.yaml).description).toBe("Show the directory here");
+  expect((state.chats[s.sessionId]!.messages.at(-1)!.artifacts as any).proposal.status).toBe("APPLIED");
+  expect((await apply()).statusCode).toBe(409); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test.each(["ambiguous", "missing fields", "malformed"])("whole-workflow %s result asks or stops without creating/saving/executing a plan", async mode => {
+  const s = await workflowEditSetup(mode === "malformed" ? { kind: "proposal", yaml: "steps: []", summary: "Invalid" } : { kind: "clarification", question: "Which department should this report include?" });
+  if (mode === "ambiguous") await s.repository.mutate(state => { state.workflows.report!.chatSessionId = s.sessionId; state.workflows.second = { ...state.workflows.report!, id: "second" }; });
+  const before = await s.repository.snapshot();
+  const receipt = await s.send("Change the workflow", mode === "ambiguous" ? {} : { workflowContext: s.context });
+  expect((await s.terminal(receipt.json().data.operation.id)).status).toBe("ANSWERED");
+  const state = await s.repository.snapshot(), artifact = state.chats[s.sessionId]!.messages.at(-1)!.artifacts as any;
+  expect(artifact.intent).toBe(mode === "malformed" ? "WORKFLOW_MODIFY_ERROR" : "CONVERSATION");
+  expect(artifact.proposal).toBeUndefined(); expect(state.workflows).toEqual(before.workflows);
+  expect(state.executions).toEqual({}); expect(s.callTool).not.toHaveBeenCalled();
+  expect(s.fetchImplementation).toHaveBeenCalledTimes(mode === "ambiguous" ? 1 : 2);
+});
+
+test.each(["revision", "authority"])("a whole-workflow proposal cannot survive changed %s during model inference", async change => {
+  const s = await workflowEditSetup(), original = s.fetchImplementation.getMockImplementation()!;
+  s.fetchImplementation.mockImplementation(async (url, init) => {
+    if (JSON.parse(String(init?.body)).messages[0].content.includes("prompt/workflow-modifier/v4")) await s.repository.mutate(state => {
+      if (change === "revision") { state.workflows.report!.draftVersion = 2; state.workflows.report!.yaml = yaml.replace("Read", "Another saved edit"); }
+      else state.users.owner!.roleId = "role_client";
+    });
+    return original(url, init);
+  });
+  const receipt = await s.send("Change the workflow", { workflowContext: s.context });
+  const op = await s.terminal(receipt.json().data.operation.id); expect(op.status).toBe("FAILED");
+  const state = await s.repository.snapshot(); expect(state.chats[s.sessionId]!.messages.some(message => (message.artifacts as any)?.proposal)).toBe(false);
+  expect(state.executions).toEqual({}); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test("missing mandatory input types remain a visibly blocked proposal, never automatic ERP dispatch", async () => {
+  const s = await workflowEditSetup({ kind: "proposal", yaml: yaml.replace("value: fixture", "value: []"), summary: "Proposed input change." });
+  const receipt = await s.send("Change the workflow", { workflowContext: s.context });
+  expect((await s.terminal(receipt.json().data.operation.id)).status).toBe("ANSWERED");
+  const state = await s.repository.snapshot(), proposal = (state.chats[s.sessionId]!.messages.at(-1)!.artifacts as any).proposal;
+  expect(proposal.validation.passed).toBe(false); expect(state.workflows.report!.yaml).toBe(yaml); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test.each(["run", "schedule", "pause", "publish", "review"])("agent-selected saved workflow %s exposes review controls without YAML generation or execution", async action => {
+  const s = await nodeSetup({ noBridge: true }); s.services.config.chatIntentRouting = "agent";
+  s.fetchImplementation.mockImplementation(async () => Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ intent: "WORKFLOW_CONTROL", needsClarification: false, workflowControl: action }) } }] }));
+  const before = await s.repository.snapshot();
+  const response = await s.send(action === "schedule" ? "Run the directory workflow every morning at 9" : `${action} this workflow`, { workflowContext: { workflowId: "report" } });
+  expect((await s.terminal(response.json().data.operation.id)).status).toBe("ANSWERED");
+  const state = await s.repository.snapshot(), message = state.chats[s.sessionId]!.messages.at(-1)!;
+  expect(message.artifacts).toMatchObject({ intent: "WORKFLOW_CONTROL", toolsDispatched: false,
+    workflowControl: { action, workflowId: "report", scheduleSupported: false } });
+  if (action === "schedule") expect(message.text).toMatch(/Automatic runs (?:are not available|need a current reviewed)/);
+  expect(state.workflows).toEqual(before.workflows); expect(state.executions).toEqual({}); expect(state.schedules).toEqual({});
+  expect(s.fetchImplementation).toHaveBeenCalledOnce(); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test("agent identifies indirect/general intent in the same selected-node chat, without treating every message as an edit", async () => {
+  const s = await nodeSetup({ noBridge: true }); s.services.config.chatIntentRouting = "agent";
+  const decisions = ["CONVERSATION", "WORKFLOW_DISCUSSION", "CONVERSATION"];
+  let index = 0;
+  s.fetchImplementation.mockImplementation(async (_url, init) => {
+    const wire = JSON.parse(String(init?.body)); expect(wire.tools).toBeUndefined();
+    const routing = wire.messages[0].content.includes("prompt/intent-routing/v4");
+    const answer = routing ? JSON.stringify({ intent: decisions[index++], needsClarification: false }) :
+      wire.messages[0].content.includes("prompt/workflow-discussion/v1") ? "The selected plan has one reference-read step." : "Hello! An invoice is a request for payment.";
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: answer } }] });
+  });
+  const before = await s.repository.snapshot();
+  for (const [i, content] of ["Hey friend", "Walk me through what I'm looking at", "What is an invoice?"].entries()) {
+    const response = await s.send(content, { nodeContext: s.nodeContext, idempotencyKey: `agent-intent-followup-${i}` });
+    expect(response.statusCode, response.body).toBe(202); expect((await s.terminal(response.json().data.operation.id)).status).toBe("ANSWERED");
+    const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+    expect(message.artifacts).toMatchObject({ intent: decisions[i], intentRouting: { source: "agent", toolsDispatched: false } });
+    expect(message.artifacts).not.toHaveProperty("nodeProposal");
+  }
+  const after = await s.repository.snapshot(); expect(after.workflows).toEqual(before.workflows); expect(after.executions).toEqual(before.executions);
+  expect(s.callTool).not.toHaveBeenCalled(); expect(s.fetchImplementation).toHaveBeenCalledTimes(6);
+});
+
+test("agent routing can recognize an indirect live ERP read without granting write authority", async () => {
+  const s = await setup(); s.services.config.chatIntentRouting = "agent";
+  const original = s.fetchImplementation.getMockImplementation()!;
+  s.fetchImplementation.mockImplementation(async (url, init) => {
+    const wire = JSON.parse(String(init?.body));
+    if (wire.messages[0].content.includes("prompt/intent-routing/v4")) return Response.json({ choices: [{ finish_reason: "stop", message: {
+      content: JSON.stringify({ intent: "QUERY", needsClarification: false }) } }] });
+    return original(url, init);
+  });
+  const receipt = await s.send("Could you pull up the latest fixture value for me?");
+  expect(receipt.statusCode).toBe(202); const operation = await s.terminal(receipt.json().data.operation.id);
+  const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+  expect(s.callTool, JSON.stringify({ status: operation.status, artifacts: message.artifacts })).toHaveBeenCalledOnce();
+  expect(operation.status).toBe("ANSWERED"); expect(operation.attempts).toHaveLength(1); expect(operation.attempts[0]!.status).toBe("DONE");
+  expect(message.artifacts).toMatchObject({ intent: "QUERY", intentRouting: { source: "agent" } });
+});
+
+test("invalid agent routing asks for clarification and dispatches no ERP or edit proposal", async () => {
+  const s = await nodeSetup(); s.services.config.chatIntentRouting = "agent";
+  s.fetchImplementation.mockImplementation(async () => Response.json({ choices: [{ finish_reason: "stop", message: { content: '{"intent":"EXECUTE_ANYTHING","needsClarification":false}' } }] }));
+  const response = await s.send("yes do that", { nodeContext: s.nodeContext });
+  expect(response.statusCode).toBe(202); expect((await s.terminal(response.json().data.operation.id)).status).toBe("ANSWERED");
+  const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+  expect(message.artifacts).toMatchObject({ intent: "CONVERSATION", intentRouting: { source: "unavailable", needsClarification: true }, toolsDispatched: false });
+  expect(s.callTool).not.toHaveBeenCalled(); expect(s.fetchImplementation).toHaveBeenCalledOnce();
+});
+
+test("agent-selected older chat recall supplies server-scoped saved text without ERP dispatch", async () => {
+  const s = await setup({ noBridge: true }); s.services.config.chatIntentRouting = "agent";
+  await s.repository.mutate(state => { state.chats[s.sessionId]!.messages.push({ id: "old-first", role: "user", text: "What is an invoice?" },
+    ...Array.from({ length: 30 }, (_, index) => ({ id: `ordinary-${index}`, role: "assistant", text: `Later discussion ${index}` }))); });
+  s.fetchImplementation.mockImplementation(async (_url, init) => {
+    const wire = JSON.parse(String(init?.body)); expect(wire.tools).toBeUndefined();
+    if (wire.messages[0].content.includes("prompt/intent-routing/v4")) return Response.json({ choices: [{ finish_reason: "stop", message: {
+      content: '{"intent":"CONVERSATION","needsClarification":false,"historyRecall":{"mode":"start"}}' } }] });
+    const recalled = JSON.parse(wire.messages.at(-1).content).HISTORY_REFERENCE_JSON;
+    expect(recalled.messages[0]).toMatchObject({ id: "old-first", text: "What is an invoice?" });
+    expect(recalled).toMatchObject({ freshBusinessEvidence: false, executionAuthority: false });
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: 'Your first question was: "What is an invoice?"' } }] });
+  });
+  const response = await s.send("What was my first question?"); expect(response.statusCode).toBe(202);
+  const operation = await s.terminal(response.json().data.operation.id); expect(operation.attempts).toEqual([]);
+  const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+  expect(message.artifacts).toMatchObject({ intent: "CONVERSATION", toolsDispatched: false, conversationRecall: { profile: "chat-history-recall/v1" } });
+  expect(message.text).toContain("What is an invoice?"); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test("Client capability listing and ERP read denial agree with the actual role grant, without inference or dispatch", async () => {
+  const s = await setup(); await s.repository.mutate(state => { state.users.owner!.roleId = "role_client"; });
+  const cap = await s.send("List available tools", { idempotencyKey: "client-capability-list-0001" });
+  expect(cap.statusCode).toBe(202); await s.terminal(cap.json().data.operation.id);
+  let message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+  expect(message.artifacts).toMatchObject({ intent: "CAPABILITIES", capabilities: { offeredCount: 0, readOnlyCount: 0 } });
+  expect(message.text).toContain("for your role"); expect(message.text).not.toContain("demo.echo");
+  const read = await s.send("Show me invoices", { idempotencyKey: "client-capability-read-0001" });
+  expect(read.statusCode).toBe(202); const operation = await s.terminal(read.json().data.operation.id); expect(operation.attempts).toEqual([]);
+  message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+  expect(message.artifacts).toMatchObject({ intent: "QUERY", code: "NO_APPROVED_READ_TOOLS", toolsDispatched: false });
+  expect(s.fetchImplementation).not.toHaveBeenCalled(); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test("an administrator without reviewed reads gets actionable review guidance, never an implicit tool grant", async () => {
+  const s = await setup();
+  const snapshot = s.services.registries.snapshot();
+  vi.spyOn(s.services.registries, "snapshot").mockReturnValue({ ...snapshot, tools: [] });
+  const read = await s.send("Show me invoices", { idempotencyKey: "admin-capability-read-0001" });
+  expect(read.statusCode).toBe(202); await s.terminal(read.json().data.operation.id);
+  const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+  expect(message.text).toContain("You have tool-review permission");
+  expect(message.text).not.toContain("Ask an administrator");
+  expect(message.artifacts).toMatchObject({ code: "NO_APPROVED_READ_TOOLS", toolsDispatched: false,
+    accessRecovery: { profile: "erp-read-access-recovery/v1", canReview: true, automaticGrant: false } });
+  expect(s.fetchImplementation).not.toHaveBeenCalled(); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test("a semantic route change is rechecked by policy before an ERP read can dispatch", async () => {
+  const s = await setup(); s.services.config.chatIntentRouting = "agent";
+  const spy = vi.spyOn(optionalPolicy, "evaluateOptionalPolicy").mockImplementation(async (_services, _user, request) =>
+    request.context?.intent === "QUERY" ? { source: "erpbridge", decision: "deny", reason: "Read requires review" } : { source: "skipped", decision: "allow", reason: "Initial classification allowed" });
+  s.fetchImplementation.mockImplementation(async () => Response.json({ choices: [{ finish_reason: "stop", message: {
+    content: '{"intent":"QUERY","needsClarification":false}' } }] }));
+  try {
+    const response = await s.send("Please pull that latest value for me"); expect(response.statusCode).toBe(202);
+    expect((await s.terminal(response.json().data.operation.id)).status).toBe("ANSWERED");
+    const message = (await s.repository.snapshot()).chats[s.sessionId]!.messages.at(-1)!;
+    expect(message.artifacts).toMatchObject({ intent: "POLICY_DENIAL", intentRouting: { intent: "QUERY" } });
+    expect(s.callTool).not.toHaveBeenCalled(); expect(spy).toHaveBeenCalledTimes(2);
+  } finally { spy.mockRestore(); }
+});
+
 test("queued read uses saved publication/run facts rather than old chat and re-samples state after model wait", async () => {
   const s = await setup(), timestamp = "2026-10-12T08:00:00.000Z";
   await s.repository.mutate(state => {
@@ -102,7 +379,7 @@ test("queued read uses saved publication/run facts rather than old chat and re-s
   const admitted = (await s.send("List the invoices. Do not create or change ERP records or send email.")).json().data;
   expect((await s.terminal(admitted.operation.id)).status).toBe("ANSWERED");
   const request = JSON.parse(String(s.fetchImplementation.mock.calls[0]![1]?.body)), latestUser = request.messages.findLast((message: any) => message.role === "user");
-  expect(request.messages[0].content).toContain("prompt/query/v4");
+  expect(request.messages[0].content).toContain("prompt/query/v6");
   expect(JSON.parse(latestUser.content).CURRENT_WORKSPACE_STATUS_JSON.workflows).toEqual([{ id: "report", draftVersion: 3, publishedVersion: 2,
     latestRun: { id: "prior_run", status: "DONE", publishedVersion: 2 } }]);
   const saved = await s.repository.snapshot(), answer = saved.chats[s.sessionId]!.messages.at(-1)!;
@@ -171,6 +448,100 @@ async function savedRevisionSource(s: Awaited<ReturnType<typeof setup>>, sourceM
   const session = await s.app.inject({ method: "GET", url: `/api/chat/sessions/${s.sessionId}`, headers: s.headers() });
   return session.json().data.messages.find((message: { id: string }) => message.id === sourceMessageId).revisionSource;
 }
+test("native chat jobs store readable business fields, seal only captured credentials and expose neither in progress DTOs", async () => {
+  const s = await setup({ persistence: new Persistence(), nativeFields: true });
+  const queue = chatJobQueue(s.services), kick = vi.spyOn(queue, "kick").mockImplementation(() => {});
+  const receipt = (await s.send("Show invoices NATIVE-724")).json().data, id = receipt.operation.id;
+  const operation = (await s.repository.snapshot()).chatOperations[id]!;
+  expect(operation.inputCiphertext).toBeUndefined(); expect(operation.revisionContextCiphertext).toBeUndefined();
+  expect(operation.inputFields).toMatchObject({content:"Show invoices NATIVE-724",provider:{apiKey:"private-fixture-key"}});
+  expect(operation.revisionContextFields).toMatchObject({content:"Show invoices NATIVE-724",operationId:id});
+  expect(decodePrivateChatInput(operation,s.services.config.storageEncryptionKey).body.content).toBe("Show invoices NATIVE-724");
+  const codec = new FirestoreRecordCodec(s.services.config.storageEncryptionKey,{projectId:"demo-lcwe-native",databaseId:"(default)",workspaceId:"plain_jobs"},"native-fields/v1");
+  const raw = codec.encodeRecord({profile:"runtime-record/v1",path:["domain","chatOperations",id],value:operation});
+  expect(raw.chunks.every(chunk=>chunk.document.profile==="firestore-native/v1")).toBe(true);
+  const serialized=JSON.stringify(raw.chunks.map(chunk=>chunk.document.data));
+  expect(serialized).toContain("Show invoices NATIVE-724"); expect(serialized).toContain("credential-field/v1"); expect(serialized).not.toContain("private-fixture-key");
+  expect(JSON.stringify((await s.get(id)).json())).not.toMatch(/inputFields|revisionContextFields|private-fixture-key|Ciphertext/);
+  kick.mockRestore(); queue.kick(); await s.terminal(id);
+  const terminal = (await s.repository.snapshot()).chatOperations[id]!;
+  expect(terminal.inputFields).toBeUndefined(); expect(terminal.inputCiphertext).toBeUndefined();
+  expect(terminal.revisionContextFields).toMatchObject({content:"Show invoices NATIVE-724"});
+  expect(JSON.stringify(terminal.revisionContextFields)).not.toMatch(/private-fixture-key|egressPolicy/);
+});
+
+test("native saved requests can be revised after reopening without replaying their original operation", async () => {
+  const persistence = new Persistence(), first = await setup({persistence,nativeFields:true});
+  const receipt=(await first.send("Show invoices ORIGINAL-NATIVE")).json().data; await first.terminal(receipt.operation.id);
+  const source=await savedRevisionSource(first,receipt.userMessage.id);
+  await first.app.close(); apps.splice(apps.indexOf(first.app),1);
+  const next=await setup({persistence,nativeFields:true});
+  const response=await next.app.inject({method:"POST",url:`/api/chat/sessions/${first.sessionId}/messages`,headers:next.headers(),payload:{
+    content:"Show purchase orders REVISED-NATIVE",delivery:"async-chat",idempotencyKey:"native-reopen-revision-0001",requestRevision:{messageId:source.messageId,sourceHash:source.sourceHash}}});
+  expect(response.statusCode,response.body).toBe(202); const revised=await next.terminal(response.json().data.operation.id);
+  expect(revised.revisionContextCiphertext).toBeUndefined(); expect(revised.revisionContextFields).toMatchObject({content:"Show purchase orders REVISED-NATIVE"});
+  expect(next.callTool).toHaveBeenCalledOnce();
+});
+
+test.each(["body","content","actor"])("native job identity still rejects tampering with %s before ERP dispatch", async damage=>{
+  const s=await setup({persistence:new Persistence(),nativeFields:true}),queue=chatJobQueue(s.services),kick=vi.spyOn(queue,"kick").mockImplementation(()=>{});
+  const id=(await s.send()).json().data.operation.id;
+  const original=(await s.repository.snapshot()).chatOperations[id]!;
+  const changed=structuredClone(original),input=changed.inputFields as any;
+  if(damage==="body")input.body.content="Different request";
+  if(damage==="content")input.content="Different source";
+  if(damage==="actor")input.user.id="other";
+  expect(()=>decodePrivateChatInput(changed,s.services.config.storageEncryptionKey)).toThrow();
+  await s.repository.mutate(state=>{state.chatOperations[id]=changed;});
+  kick.mockRestore();queue.kick(); expect((await s.terminal(id)).status).toBe("FAILED"); expect(s.callTool).not.toHaveBeenCalled();
+  expect((await s.repository.snapshot()).chatOperations[id]!.inputFields).toBeUndefined();
+});
+
+test("native queued cancellation erases captured provider input, while retaining readable revision context",async()=>{
+  const s=await setup({persistence:new Persistence(),nativeFields:true}),queue=chatJobQueue(s.services),kick=vi.spyOn(queue,"kick").mockImplementation(()=>{});
+  const id=(await s.send()).json().data.operation.id;
+  const cancelled=await s.app.inject({method:"POST",url:`/api/chat/operations/${id}/cancel`,headers:s.headers(),payload:{}});
+  expect(cancelled.statusCode,cancelled.body).toBe(200);
+  const saved=(await s.repository.snapshot()).chatOperations[id]!;
+  expect(saved).toMatchObject({status:"CANCELLED",revisionContextFields:{content:"Show me invoices"}}); expect(saved.inputFields).toBeUndefined();
+  expect(s.fetchImplementation).not.toHaveBeenCalled();expect(s.callTool).not.toHaveBeenCalled();kick.mockRestore();
+});
+
+test("explicit legacy-content migration preserves evidence and permits revisions without whole-request encryption",async()=>{
+  const s=await setup({persistence:new Persistence()}),receipt=(await s.send()).json().data; await s.terminal(receipt.operation.id);
+  const before=await s.repository.snapshot();
+  const expected=JSON.parse(new AESGCMCodec(s.services.config.storageEncryptionKey).decode(Buffer.from(before.chatOperations[receipt.operation.id]!.revisionContextCiphertext!,"base64")).toString("utf8"));
+  const result=await s.repository.mutate(state=>migrateNativeChatContent(state,s.services.config.storageEncryptionKey));
+  expect(result).toEqual({changedOperations:1,readableRevisionContexts:1,erasedTerminalInputs:0,readableModelReceipts:0});
+  const after=await s.repository.snapshot(); expect(after.chats).toEqual(before.chats); expect(after.executions).toEqual(before.executions);
+  expect(after.chatOperations[receipt.operation.id]!.revisionContextFields).toEqual(expected); expect(after.chatOperations[receipt.operation.id]!.revisionContextCiphertext).toBeUndefined();
+  const source=await savedRevisionSource(s,receipt.userMessage.id);s.services.config.firestoreContentFormat="native-fields/v1";
+  const revised=await s.send("Show purchase orders after migration",{idempotencyKey:"native-migrated-revision-0001",requestRevision:{messageId:source.messageId,sourceHash:source.sourceHash}});
+  expect(revised.statusCode,revised.body).toBe(202);await s.terminal(revised.json().data.operation.id);
+  expect((await s.repository.snapshot()).chatOperations[revised.json().data.operation.id]!.revisionContextCiphertext).toBeUndefined();
+  expect(s.callTool).toHaveBeenCalledTimes(2);
+});
+
+test("content migration is all-or-nothing for invalid context and refuses active jobs",async()=>{
+  const s=await setup({persistence:new Persistence()}),receipt=(await s.send()).json().data; await s.terminal(receipt.operation.id);
+  const before=await s.repository.snapshot(),damaged=structuredClone(before),original=damaged.chatOperations[receipt.operation.id]!;
+  damaged.chatOperations.corrupt={...original,id:"corrupt",revisionContextCiphertext:"tampered"};
+  const unchanged=structuredClone(damaged);
+  expect(()=>migrateNativeChatContent(damaged,s.services.config.storageEncryptionKey)).toThrow();expect(damaged).toEqual(unchanged);
+  original.status="QUEUED";
+  expect(()=>migrateNativeChatContent(damaged,s.services.config.storageEncryptionKey)).toThrow("Active chat work");
+  expect(damaged.chatOperations[receipt.operation.id]!.revisionContextCiphertext).toBeTruthy();
+});
+
+test("migration converts retained model replies without altering their outcome or provenance",async()=>{
+ const s=await setup({persistence:new Persistence()}),receipt=(await s.send()).json().data;await s.terminal(receipt.operation.id);
+ const state=await s.repository.snapshot(),op=state.chatOperations[receipt.operation.id]!,response={text:"Inventory quantity is 12",toolCalls:[]};
+ op.modelAttemptsSecret=[{id:"retained-receipt",status:"DONE",provenanceId:"original-provenance",resultCiphertext:new AESGCMCodec(s.services.config.storageEncryptionKey).encode(Buffer.from(JSON.stringify(response))).toString("base64")} as import("../src/repository/store.js").ChatModelAttempt];
+ expect(migrateNativeChatContent(state,s.services.config.storageEncryptionKey).readableModelReceipts).toBe(1);
+ expect(op.modelAttemptsSecret[0]).toMatchObject({id:"retained-receipt",status:"DONE",provenanceId:"original-provenance",resultFields:response});
+ expect(op.modelAttemptsSecret[0]!.resultCiphertext).toBeUndefined();expect(migrateNativeChatContent(state,s.services.config.storageEncryptionKey).changedOperations).toBe(0);
+});
+
 test("explicit request revision keeps original evidence, removes later answers from context and has one idempotent admission", async () => {
   const s = await setup({ persistence: new Persistence() });
   const first = (await s.send("Show me invoices ORIGINAL-724")).json().data;
@@ -762,4 +1133,20 @@ test("saved draft reference survives a lost artifact acknowledgement without reg
   expect(state.workflows[draftId]).toMatchObject({ canRun: false, publishedVersion: 0, chatSessionId: first.sessionId });
   expect(second.fetchImplementation).not.toHaveBeenCalled(); expect(second.callTool).not.toHaveBeenCalled();
   expect((await second.get(id)).json().data.operation.artifactRefs).toEqual(recovered.artifactRefs);
+});
+
+test("reviewed document identity is admitted for normal asynchronous workflow chat", async () => {
+  const s = await setup(); const kick = vi.spyOn(chatJobQueue(s.services), "kick").mockImplementation(() => {});
+  try {
+    const result = await s.send("Create employee workflow", { documentContext: { uploadId: "upload-one", documentId: "doc-one", version: 1, purpose: "erp_record_proposal" } });
+    expect(result.statusCode).toBe(202);
+    expect(s.callTool).not.toHaveBeenCalled();
+    expect(s.fetchImplementation).not.toHaveBeenCalled();
+  } finally { kick.mockRestore(); }
+});
+
+test.each([{ ownerId: "forged" }, { version: 0 }, { purpose: "execute_erp_write" }])("forged document authority is rejected at chat admission: %s", async (extra) => {
+  const s = await setup();
+  const result = await s.send("Create employee workflow", { documentContext: { uploadId: "upload-one", documentId: "doc-one", version: 1, purpose: "erp_record_proposal", ...extra } });
+  expect(result.statusCode).toBe(422); expect(s.callTool).not.toHaveBeenCalled();
 });

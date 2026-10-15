@@ -9,6 +9,7 @@ import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type Handler
 import { capabilityAdmissionCatalog, DEFAULT_BRIDGE_CONNECTION, disableCapability, observeCapabilities, reviewCapability } from "../../registry/capability-admission.js";
 import { residentExecutionAllowed } from "../../runner/execution-host.js";
 import { importDiscoveredCapability } from "../../registry/capability-import.js";
+import { liveErpTools } from "../../registry/live-erp-tools.js";
 
 export const REGISTRY_UNHANDLED = Symbol("registry-unhandled");
 
@@ -23,6 +24,15 @@ const importDrafts = new Map<string, ImportDraft>();
 export async function handleRegistryRoute(route: RouteDefinition, request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown | typeof REGISTRY_UNHANDLED> {
   const base = services.config.apiBasePath;
   try {
+    if (route.path === `${base}/registry/tools` && route.method === "GET" &&
+        (queryRecord(request).source === "erpbridge" || services.config.mcpTransport === "erpbridge-mcp")) {
+      reply.header("Cache-Control", "no-store");
+      return reply.send(ok(await liveErpTools(services, user, queryRecord(request), request.signal), "Latest ERPBridge inventory loaded; discovery does not grant execution", null));
+    }
+    // Legacy bridge-v1 fixtures retain their typed validation definitions;
+    // modern ERPBridge inventory never falls back to this snapshot.
+    if (route.path === `${base}/registry/tools` && route.method === "GET") return reply.send(ok(services.registries.snapshot().tools,
+      "Tool registry loaded", { count: services.registries.snapshot().tools.length, registryHash: services.registries.hash() }));
     if (route.path.startsWith(`${base}/registry/capabilities`)) {
       const selected = capabilityConnection(request, services);
       if (route.path === `${base}/registry/capabilities` && route.method === "GET") { const query = queryRecord(request); return reply.send(ok(await capabilityAdmissionCatalog(services.repository, Number(query.offset ?? 0), Number(query.limit ?? 10), { registries: services.registries, session: selected.session, connectionId: selected.id, connections: selected.connections }), "Connection-scoped review records loaded; discovery is not permission", null)); }

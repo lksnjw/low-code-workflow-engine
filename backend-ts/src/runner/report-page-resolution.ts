@@ -11,7 +11,7 @@ import { toolSchema } from "../registry/schemas.js";
 import type { Execution, Repository, RepositoryState } from "../repository/store.js";
 import { withoutSecretFields } from "../redact/secrets.js";
 import { exactBridgeName } from "../tools/erpbridge-contract.js";
-import { safeMcpResult } from "../tools/mcp-result.js";
+import { safeMcpToolResult } from "../tools/mcp-result.js";
 import {
   assertReportCursorProgress,
   assertReportPageProgress,
@@ -245,7 +245,7 @@ export async function resolveReportPage(repository: Repository, executionId: str
         deny("Evidence must have been observed after this page intent and not in the future", 422);
       let output: Record<string, unknown> | undefined, outputHash: string | undefined;
       if (command.outcome === "PAGE_CONFIRMED") {
-        try { output = safeMcpResult(command.output, value.tool.bridge_contract!.output_schema); }
+        try { output = safeMcpToolResult(command.output, value.tool); }
         catch (error) { deny(error instanceof Error ? error.message : "Captured report output is malformed", 422); }
         outputHash = digest(output);
       }

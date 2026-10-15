@@ -34,3 +34,18 @@ test("reviewed output schema is validated before redaction; tool failures retain
   for (const value of [{ content: [] }, { content: [], structuredContent: { id: 1, token: "private" } }]) expect(() => safeMcpResult(value, schema)).toThrow(/reviewed output schema/);
   expect(safeMcpResult({ content: [], isError: true }, schema)).toEqual({ content: [], isError: true });
 });
+
+test("explicit read-only text JSON compatibility validates original arrays without relabelling their schema", () => {
+  const schema = { type: "array", items: { type: "object", properties: { name: { type: "string" }, token: { type: "string" } }, required: ["name", "token"] } };
+  const response = { content: [{ type: "text", text: '[{"name":"Company A","token":"private"}]' }] };
+  expect(() => safeMcpResult(response, schema)).toThrow(/reviewed output schema/);
+  expect(safeMcpResult(response, schema, { allowReadJsonText: true })).toEqual({ content: [{ type: "text", text: '[{"name":"Company A"}]' }], jsonContent: [{ name: "Company A" }] });
+  for (const input of [
+    { content: [{ type: "text", text: "not JSON" }] },
+    { content: [{ type: "text", text: '[{"name":7,"token":"private"}]' }] },
+    { content: [{ type: "text", text: '[{"name":"Company A"}]' }] },
+    { content: [{ type: "text", text: "[]" }, { type: "text", text: "another result" }] },
+    { content: [], structuredContent: {} },
+  ]) expect(() => safeMcpResult(input, schema, { allowReadJsonText: true })).toThrow(/reviewed output schema/);
+  expect(safeMcpResult({ content: [{ type: "text", text: "Not found" }], isError: true }, schema, { allowReadJsonText: true })).toMatchObject({ isError: true });
+});

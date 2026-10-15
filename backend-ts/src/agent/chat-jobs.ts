@@ -1,12 +1,16 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
+import { captureUserMcpBinding, withUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import { setTimeout as pause } from "node:timers/promises";
 import { assertChatCancellationIntent, chatCancellationIntent, chatCancellationReader, type ChatCancellationIntent } from "./chat-cancellation.js";
 import type { ChatAttempt, ChatOperation, Repository, RepositoryState, StoredRecord } from "../repository/store.js";
 import { AESGCMCodec, decodeEncryptionKey } from "../storage/aes-gcm.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
+import { documentContextSchema } from "../documents/chat-document-context.js";
+import { readAttachmentTicket } from "../documents/chat-attachment.js";
 import { HandlerFailure, isRecord, nextID, now, stringValue, type CurrentUser, type HandlerServices } from "../http/handlers/common.js";
-import { assertChatAuthority, requestedModel, selectProvider } from "../http/handlers/model-selection.js";
+import { assertChatAuthority, requestedModel, selectProvider, withSelectedProvider } from "../http/handlers/model-selection.js";
 import { processStoredChat } from "../http/handlers/chat.js";
+import { selectedDiscussionWorkflow } from "./workflow-discussion.js";
 import type { RuntimeProviderConfiguration } from "../providers/runtime.js";
 import { ProviderRuntime } from "../providers/runtime.js";
 import { acknowledgedReadToolFailure, observedReadPolicyFailure } from "../tools/read-tool-broker.js";
@@ -43,9 +47,12 @@ function audit(state: RepositoryState, op: ChatOperation, action: string) {
     before: null, after: { status: op.status, stage: op.stage, epoch: op.epoch } });
 }
 export { event as appendChatOperationEvent, audit as appendChatOperationAudit };
+function revisionContextSource(op: ChatOperation): string | undefined {
+  return op.revisionContextFields ? canonicalJSONBytes(op.revisionContextFields).toString("base64") : op.revisionContextCiphertext;
+}
 
 export function decodePrivateChatInput(op: ChatOperation, key: string): PrivateChatInput {
-  const codec = new AESGCMCodec(key), input: PrivateChatInput = JSON.parse(codec.decode(Buffer.from(op.inputCiphertext!, "base64")).toString("utf8"));
+  const codec = new AESGCMCodec(key), input: PrivateChatInput = op.inputFields ? structuredClone(op.inputFields) as PrivateChatInput : JSON.parse(codec.decode(Buffer.from(op.inputCiphertext!, "base64")).toString("utf8"));
   const fingerprint = createHmac("sha256", decodeEncryptionKey(key)).update(canonicalJSONBytes(input.body)).digest("hex");
   if (input.version !== 1 || input.operationId !== op.id || input.user.id !== op.actorId || input.stored.userMessage.id !== op.userMessageId || !isRecord(input.body) ||
       fingerprint !== op.requestFingerprint || authorityFingerprint(input.user) !== op.authorityFingerprint || input.content !== input.stored.userMessage.text)
@@ -62,7 +69,7 @@ export function reconcileChatOperation(state: RepositoryState, op: ChatOperation
   for (const attempt of op.modelAttemptsSecret ?? []) if (attempt.status === "DISPATCH_INTENT") {
     attempt.status = "UNKNOWN"; attempt.completedAt = now(); event(state, op, "model.interrupted", attempt.id);
   }
-  delete op.inputCiphertext; delete op.taskLeaseSecret; event(state, op, "operation.recovery_required"); audit(state, op, "chat.operation.recovery_required");
+  delete op.inputCiphertext; delete op.inputFields; delete op.taskLeaseSecret; event(state, op, "operation.recovery_required"); audit(state, op, "chat.operation.recovery_required");
 }
 
 export function chatTaskReceipt(state: Readonly<RepositoryState>, command: ChatTaskCommand) {
@@ -71,7 +78,7 @@ export function chatTaskReceipt(state: Readonly<RepositoryState>, command: ChatT
     (op.modelAttemptsSecret ?? []).every(attempt => attempt.status !== "UNKNOWN" || Boolean(attempt.completedAt));
   const unresolvedModelAttempt = (op?.modelAttemptsSecret ?? []).some(attempt => attempt.status === "DISPATCH_INTENT" ||
     attempt.status === "UNKNOWN" && !privateCancelledModelReceipt);
-  if (!op || assertChatTaskOutbox(op).taskId !== command.taskId || !["ANSWERED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(op.status) || op.inputCiphertext || op.taskLeaseSecret ||
+  if (!op || assertChatTaskOutbox(op).taskId !== command.taskId || !["ANSWERED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(op.status) || op.inputCiphertext || op.inputFields || op.taskLeaseSecret ||
       entries.length !== op.lastSequence || entries.some((entry, index) => entry.sequence !== index + 1 || entry.version !== 1 || entry.operationId !== op.id || entry.sessionId !== op.sessionId) ||
       op.status !== "RECOVERY_REQUIRED" && (op.attempts.some(a => ["PREPARING", "DISPATCH_INTENT", "UNKNOWN"].includes(a.status)) ||
         unresolvedModelAttempt) ||
@@ -81,7 +88,8 @@ export function chatTaskReceipt(state: Readonly<RepositoryState>, command: ChatT
   return publicChatOperation(op);
 }
 
-/** Encrypted, locked single-owner queue. Claimed jobs never restart/replay.
+/** Locked single-owner queue; native mode seals credentials, not chat content.
+ * Legacy encrypted inputs remain readable. Claimed jobs never restart/replay.
  * Every visible stage is committed, and effects still use the governed broker. */
 export class ChatJobQueue {
   readonly #codec: AESGCMCodec;
@@ -103,7 +111,7 @@ export class ChatJobQueue {
     } });
   }
   private fingerprint(data: unknown) { return createHmac("sha256", this.#key).update(canonicalJSONBytes(data)).digest("hex"); }
-  private connection() { return this.fingerprint({ binding: this.services.erpbridgeSession?.admissionBinding ?? null, roles: this.services.config.erpbridgeRoleMap }); }
+  private connection() { return this.fingerprint({ binding: this.services.mcpConnectionRuntime?.admissionConfigurationBinding ?? this.services.erpbridgeSession?.admissionBinding ?? null, roles: this.services.config.erpbridgeRoleMap }); }
   private contracts() { return this.fingerprint(this.services.registries.snapshot().tools); }
   async admit(sessionId: string, user: CurrentUser, raw: Record<string, unknown>, traceId: string) {
     requireChatTaskAdmission(this.services.repository);
@@ -112,19 +120,24 @@ export class ChatJobQueue {
     if (!/^[A-Za-z0-9_-]{16,128}$/.test(key)) throw new HandlerFailure(400, "Provide a 16–128 character chat idempotency key", { code: "CHAT_JOB_KEY_REQUIRED" });
     const content = (stringValue(raw.content) || stringValue(raw.message)).trim();
     if (!content) throw new HandlerFailure(400, "message is required");
-    if (Object.keys(raw).some(k => !["content", "message", "model", "mode", "workflowContext", "nodeContext", "requestRevision", "delivery", "idempotencyKey"].includes(k))) throw new HandlerFailure(400, "Unsupported asynchronous chat input");
+    if (Object.keys(raw).some(k => !["content", "message", "model", "mode", "workflowContext", "nodeContext", "documentContext", "attachmentTicket", "requestRevision", "delivery", "idempotencyKey"].includes(k))) throw new HandlerFailure(400, "Unsupported asynchronous chat input");
+    const attachment = raw.attachmentTicket === undefined ? undefined : readAttachmentTicket(this.services, user, sessionId, raw.attachmentTicket);
+    if (attachment && [raw.nodeContext, raw.workflowContext, raw.documentContext, raw.requestRevision].some(value => value !== undefined))
+      throw new HandlerFailure(422, "Send a new attachment as a normal message without another workflow, node or revision scope");
+    if (raw.documentContext !== undefined && (!documentContextSchema.safeParse(raw.documentContext).success || raw.nodeContext !== undefined || raw.workflowContext !== undefined))
+      throw new HandlerFailure(422, "Document ERP proposals require an exact reviewed document identity and a single chat scope");
     const parsedRevision = raw.requestRevision === undefined ? undefined : chatRequestRevisionSchema.safeParse(raw.requestRevision);
     if (parsedRevision && !parsedRevision.success) throw new HandlerFailure(400, "Invalid saved request revision");
     const requestRevision = parsedRevision?.success ? parsedRevision.data : undefined;
     const body = structuredClone(raw); delete body.idempotencyKey; delete body.delivery;
     let sourceCiphertext: string | undefined;
     if (requestRevision) {
-      if (raw.workflowContext !== undefined || raw.mode !== undefined) throw new HandlerFailure(400, "A revision preserves the original request scope; it cannot replace workflow context or mode");
+      if (raw.workflowContext !== undefined || raw.mode !== undefined || raw.documentContext !== undefined || raw.attachmentTicket !== undefined) throw new HandlerFailure(400, "A revision preserves the original request scope; it cannot replace workflow or document context or mode");
       const original = await this.services.repository.readAuthoritative(state => {
         const { source, operation } = assertChatRevisionSource(state, user, sessionId, requestRevision);
-        sourceCiphertext = operation.revisionContextCiphertext;
+        sourceCiphertext = revisionContextSource(operation);
         try {
-          const input = JSON.parse(this.#codec.decode(Buffer.from(operation.revisionContextCiphertext!, "base64")).toString("utf8")) as { version: number; operationId: string; userMessageId: string; body: Record<string, unknown>; content: string };
+          const input = (operation.revisionContextFields ?? JSON.parse(this.#codec.decode(Buffer.from(operation.revisionContextCiphertext!, "base64")).toString("utf8"))) as { version: number; operationId: string; userMessageId: string; body: Record<string, unknown>; content: string };
           if (input.version !== 1 || input.operationId !== operation.id || input.userMessageId !== source.id || input.content !== source.text ||
               !isRecord(input.body) || this.fingerprint(input.body) !== operation.requestFingerprint) throw new Error("Invalid context");
           return input.body;
@@ -132,12 +145,12 @@ export class ChatJobQueue {
       });
       if (!canonicalJSONBytes(raw.nodeContext ?? null).equals(canonicalJSONBytes(original.nodeContext ?? null)))
         throw new HandlerFailure(409, "A revision must retain the exact original node scope", { code: "CHAT_REVISION_SCOPE_CHANGED" });
-      for (const field of ["workflowContext", "mode", "nodeContext"] as const) if (original[field] !== undefined) body[field] = structuredClone(original[field]);
+      for (const field of ["workflowContext", "mode", "nodeContext", "documentContext"] as const) if (original[field] !== undefined) body[field] = structuredClone(original[field]);
     }
     const parsedContext = body.nodeContext === undefined ? undefined : nodeContextSchema.safeParse(body.nodeContext);
     if (parsedContext && !parsedContext.success) throw new HandlerFailure(400, "Invalid selected node context");
     const nodeContext = parsedContext?.success ? parsedContext.data : undefined;
-    if (nodeContext && (content.length > 4000 || body.workflowContext !== undefined || body.mode !== undefined)) throw new HandlerFailure(400, "A node prompt must contain at most 4000 characters and a single node scope");
+    if (nodeContext && (content.length > 4000 || body.workflowContext !== undefined || body.mode !== undefined || body.documentContext !== undefined)) throw new HandlerFailure(400, "A node prompt must contain at most 4000 characters and a single node scope");
     const bytes = JSON.stringify(body);
     if (Buffer.byteLength(bytes) > 200_000) throw new HandlerFailure(413, "Chat request exceeds 200 KB");
     const scope = this.fingerprint([user.id, sessionId, key]);
@@ -149,6 +162,8 @@ export class ChatJobQueue {
       return op ? this.receipt(authorizeChatOperation(state, op, user), fingerprint, user, state) : undefined;
     });
     if (existing) return this.dispatchReceipt(existing);
+    if (isRecord(body.workflowContext) && Object.hasOwn(body.workflowContext, "workflowId"))
+      await this.services.repository.readAuthoritative(state => selectedDiscussionWorkflow(state, user, sessionId, body.workflowContext));
     if (nodeContext) await this.services.repository.read(state => assertNodeContext(state, nodeContext, user));
     const previousModel = await this.services.repository.read(state => state.chats[sessionId]?.selectedModel);
     const provider = selectProvider(this.services, requestedModel(body.model) ?? previousModel);
@@ -157,10 +172,11 @@ export class ChatJobQueue {
     const connection = this.connection(), contracts = this.contracts();
     const admitted = await this.services.repository.mutate(state => {
       const chat = assertChatAuthority(state, user, sessionId);
+      if (isRecord(body.workflowContext) && Object.hasOwn(body.workflowContext, "workflowId")) selectedDiscussionWorkflow(state, user, sessionId, body.workflowContext);
       if (chat.ownerId !== user.id) throw new HandlerFailure(404, "Chat session not found");
       const duplicate = Object.values(state.chatOperations).find(op => op.idempotencyScope === scope);
       if (duplicate) return this.receipt(authorizeChatOperation(state, duplicate, user), fingerprint, user, state);
-      if (requestRevision && assertChatRevisionSource(state, user, sessionId, requestRevision).operation.revisionContextCiphertext !== sourceCiphertext)
+      if (requestRevision && revisionContextSource(assertChatRevisionSource(state, user, sessionId, requestRevision).operation) !== sourceCiphertext)
         throw new HandlerFailure(409, "Saved request context changed. Reload before revising", { code: "CHAT_REVISION_SOURCE_CHANGED" });
       if (nodeContext) assertNodeContext(state, nodeContext, user);
       const pending = Object.values(state.chatOperations).filter(op => activeChatStatus(op.status));
@@ -169,7 +185,7 @@ export class ChatJobQueue {
       const id = nextID(state, "chatop"), timestamp = now();
       const userMessage = { id: nextID(state, "msg"), role: "user", text: content, createdAt: timestamp, traceId, operationId: id, ...(binding ? { modelBinding: binding } : {}),
         ...(requestRevision ? { requestRevision } : {}),
-        ...(nodeContext ? { artifacts: { intent: "NODE_EDIT_REQUEST", ...nodeContext } } : {}) };
+        ...(nodeContext ? { artifacts: { intent: "NODE_EDIT_REQUEST", ...nodeContext } } : attachment ? { artifacts: { attachment: { filename: attachment.filename, sourceHash: attachment.sourceHash } } } : {}) };
       const stored = { session: { id: chat.id, title: chat.title, selectedModel: binding?.model ?? chat.selectedModel }, userMessage,
         priorMessages: revisionPriorContext(chat, requestRevision) };
       const privateInput: PrivateInput = { version: 1, operationId: id, body, content, user: structuredClone(user), stored, provider: configuration };
@@ -177,10 +193,14 @@ export class ChatJobQueue {
       if (privateBytes.length > 500_000) throw new HandlerFailure(413, "Chat context exceeds 500 KB; shorten the workflow context or start a new conversation");
       // Retain only authenticated request context for explicit future revisions,
       // never the provider credentials/configuration erased at job completion.
-      const revisionContextCiphertext = this.#codec.encode(Buffer.from(JSON.stringify({ version: 1, operationId: id, userMessageId: userMessage.id, body, content }))).toString("base64");
+      const revisionContext = { version: 1, operationId: id, userMessageId: userMessage.id, body, content };
+      const inputStorage = this.services.config.firestoreContentFormat === "native-fields/v1"
+        ? { inputFields: JSON.parse(privateBytes.toString("utf8")) as Record<string, unknown>, revisionContextFields: revisionContext, contentStorageProfile:"native-business-content/v1" as const }
+        : { inputCiphertext: this.#codec.encode(privateBytes).toString("base64"), revisionContextCiphertext: this.#codec.encode(Buffer.from(JSON.stringify(revisionContext))).toString("base64") };
       const op: ChatOperation = { version: 1, id, sessionId, actorId: user.id, userMessageId: userMessage.id, status: "QUEUED", stage: "QUEUED", epoch: 1, lastSequence: 0,
+        ...(this.services.userMcpCredentials ? { erpCredentialSecret: captureUserMcpBinding(this.services, state, user.id)! } : {}),
         createdAt: timestamp, updatedAt: timestamp, traceId, persistence: this.services.repository.persistence === null ? "memory-only" : "durable", modelBinding: binding,
-        inputCiphertext: this.#codec.encode(privateBytes).toString("base64"), revisionContextCiphertext, idempotencyScope: scope, requestFingerprint: fingerprint, connectionFingerprint: connection, contractFingerprint: contracts, authorityFingerprint: authorityFingerprint(user), attempts: [], ...(nodeContext ? { nodeContext } : {}), ...(requestRevision ? { requestRevision } : {}) };
+        ...inputStorage, idempotencyScope: scope, requestFingerprint: fingerprint, connectionFingerprint: connection, contractFingerprint: contracts, authorityFingerprint: authorityFingerprint(user), attempts: [], ...(nodeContext ? { nodeContext } : {}), ...(requestRevision ? { requestRevision } : {}) };
       if (!residentExecutionAllowed(this.services.repository)) op.taskDispatchSecret = newChatTaskOutbox(op);
       state.chatOperations[id] = op;
       chat.messages.push(userMessage); chat.messageCount = chat.messages.length; chat.updatedAt = timestamp;
@@ -274,6 +294,10 @@ export class ChatJobQueue {
     finally { this.#pumping = false; }
   }
   private async process(id: string, task?: { command: ChatTaskCommand; deadlineAt: number; controller: AbortController }) {
+    const original = await this.services.repository.readAuthoritative(state => state.chatOperations[id]);
+    return withUserMcpBinding(this.services, original?.actorId ?? "", original?.erpCredentialSecret, () => this.processBound(id, task));
+  }
+  private async processBound(id: string, task?: { command: ChatTaskCommand; deadlineAt: number; controller: AbortController }) {
     let op: ChatOperation | undefined;
     let closeControl = async () => {};
     const controller = task?.controller ?? new AbortController(); this.#controller = controller; this.#activeId = id;
@@ -312,7 +336,7 @@ export class ChatJobQueue {
         })();
         closeControl = async () => { observing.abort(); await watch; };
       }
-      const input: PrivateInput = JSON.parse(this.#codec.decode(Buffer.from(op.inputCiphertext!, "base64")).toString("utf8"));
+      const input: PrivateInput = op.inputFields ? structuredClone(op.inputFields) as PrivateInput : JSON.parse(this.#codec.decode(Buffer.from(op.inputCiphertext!, "base64")).toString("utf8"));
       if (input.version !== 1 || input.operationId !== id || input.user.id !== op.actorId || input.stored.userMessage.id !== op.userMessageId || !isRecord(input.body) ||
           this.fingerprint(input.body) !== op.requestFingerprint || authorityFingerprint(input.user) !== op.authorityFingerprint || input.content !== input.stored.userMessage.text) throw new Error("Private chat identity is not authentic");
       const hooks = this.hooks(op, input.user, controller.signal, synchronize);
@@ -320,7 +344,7 @@ export class ChatJobQueue {
       if (op.connectionFingerprint !== this.connection() || op.contractFingerprint !== this.contracts()) throw new Error("Chat connection or contracts changed");
       let provider: ProviderRuntime | undefined;
       if (input.provider) provider = (this.services.providerRuntime ?? new ProviderRuntime(this.services.repository, this.services.executor)).restoreCaptured(input.provider, op.modelBinding!.configurationRevision);
-      const services = { ...this.services, ...(provider ? { providerRuntime: provider } : {}) };
+      const services = withSelectedProvider(this.services, provider);
       // A job admitted without a model does not silently adopt a later default.
       if (!input.provider) delete services.providerRuntime;
       await processStoredChat({ body: input.body, content: input.content, sessionId: op.sessionId, traceId: op.traceId, stored: input.stored, user: input.user, services, signal: controller.signal, hooks });
@@ -338,7 +362,7 @@ export class ChatJobQueue {
         const uncertain = current.attempts.some(a => a.status === "UNKNOWN");
         current.status = uncertain ? "RECOVERY_REQUIRED" : current.cancellationRequested || controller.signal.aborted ? "CANCELLED" : "FAILED";
         const knownReason = error instanceof HandlerFailure && isRecord(error.meta) && ["DRAFT_REVISION_CONFLICT", "NODE_PROPOSAL_INVALID"].includes(String(error.meta.code)) ? String(error.meta.code) : "PROCESSING_STOPPED";
-        current.stage = current.status; current.reason = uncertain ? "TOOL_OUTCOME_UNKNOWN" : current.status === "CANCELLED" ? "PROCESSING_STOPPED" : knownReason; current.finishedAt = now(); delete current.inputCiphertext; delete current.taskLeaseSecret;
+        current.stage = current.status; current.reason = uncertain ? "TOOL_OUTCOME_UNKNOWN" : current.status === "CANCELLED" ? "PROCESSING_STOPPED" : knownReason; current.finishedAt = now(); delete current.inputCiphertext; delete current.inputFields; delete current.taskLeaseSecret;
         event(state, current, "operation.stopped"); audit(state, current, "chat.operation.stopped");
       }); } catch { /* Storage acknowledgement uncertain: restart reconciles, never replay. */ }
     } finally { await closeControl(); if (this.#controller === controller) { this.#activeId = undefined; this.#controller = undefined; } }
@@ -369,7 +393,7 @@ export class ChatJobQueue {
       assertCurrent: current,
       stage: async stage => { await synchronize(); await this.services.repository.mutate(state => { const op = current(state); op.stage = stage; event(state, op, "operation.stage"); }); },
       artifact: (state, reference) => {
-        const op = current(state); (op.artifactRefs ??= []).push(reference); op.stage = reference.type === "node-proposal" ? "PROPOSAL_SAVED" : "DRAFT_SAVED";
+        const op = current(state); (op.artifactRefs ??= []).push(reference); op.stage = reference.type === "workflow-draft" ? "DRAFT_SAVED" : "PROPOSAL_SAVED";
         event(state, op, "artifact.saved"); audit(state, op, "chat.artifact.saved");
       },
       saved: (state, message) => {
@@ -377,7 +401,7 @@ export class ChatJobQueue {
           throw new Error("Chat cannot publish an answer with an unresolved model intention");
         const op = current(state); message.operationId = op.id; op.assistantMessageId = stringValue(message.id);
         op.status = op.attempts.some(a => a.status === "UNKNOWN") ? "RECOVERY_REQUIRED" : "ANSWERED";
-        op.stage = op.status; op.finishedAt = now(); delete op.inputCiphertext; delete op.taskLeaseSecret;
+        op.stage = op.status; op.finishedAt = now(); delete op.inputCiphertext; delete op.inputFields; delete op.taskLeaseSecret;
         if (op.status === "RECOVERY_REQUIRED") op.reason = "TOOL_OUTCOME_UNKNOWN";
         event(state, op, "answer.saved"); audit(state, op, "chat.answer.saved");
       },
@@ -448,7 +472,7 @@ export class ChatJobQueue {
       if (expected) assertChatCancellationIntent(op, expected);
       if (!activeChatStatus(op.status)) return structuredClone(op);
       if (!op.cancellationRequested) { op.cancellationRequested = true; event(state, op, "operation.cancel_requested"); audit(state, op, "chat.operation.cancel_requested"); }
-      if (op.status === "QUEUED") { op.status = "CANCELLED"; op.stage = "CANCELLED"; op.finishedAt = now(); delete op.inputCiphertext; delete op.taskLeaseSecret; event(state, op, "operation.cancelled"); }
+      if (op.status === "QUEUED") { op.status = "CANCELLED"; op.stage = "CANCELLED"; op.finishedAt = now(); delete op.inputCiphertext; delete op.inputFields; delete op.taskLeaseSecret; event(state, op, "operation.cancelled"); }
       return structuredClone(op);
     });
     if (this.#activeId === id) this.#controller?.abort();

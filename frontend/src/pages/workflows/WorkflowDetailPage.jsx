@@ -11,11 +11,13 @@ import PendingGenerationApprovalCard from "../../components/workflows/PendingGen
 import Button from "../../components/shared/ui/Button";
 import { Icon } from "@iconify/react";
 import WorkflowSchedulePanel from "../../components/workflows/WorkflowSchedulePanel";
-import WorkflowRunReceipt from "../../components/workflows/WorkflowRunReceipt";
+import WorkflowResults from "../../components/workflows/WorkflowResults";
+import WorkflowRunDialog from "../../components/workflows/WorkflowRunDialog";
 import { useWorkflowDetailRun } from "../../hooks/useWorkflowDetailRun";
 import RunAdmissionRecoveryPanel from "../../components/executions/RunAdmissionRecoveryPanel";
 import { useNavigate } from "react-router-dom";
 import { saveWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
+import { useState } from "react";
 
 /*******************************************************************************
  * Function: WorkflowDetailPage
@@ -33,6 +35,17 @@ function WorkflowDetailPage() {
   const hasPendingGenerationApproval = Boolean(workflow?.pendingGenerationApproval?.steps?.length);
 
   const { state: runState, run: handleRun, dismiss: dismissRun, recovery } = useWorkflowDetailRun(workflow?.id, refetch, actorId);
+  const [inputWorkflowId, setInputWorkflowId] = useState(null);
+  const runDisabled = runState.loading || Boolean(runState.result) || runState.unconfirmed || hasPendingGenerationApproval;
+
+  const submitRun = async input => {
+    if (!canRun || runDisabled || inputWorkflowId !== workflow?.id) return;
+    return handleRun(input);
+  };
+  const openRunHelp = text => {
+    setInputWorkflowId(null);
+    navigate(`/chat?workflow=${encodeURIComponent(workflow.id)}`, { state: { workflowRunHelp: { id: crypto.randomUUID(), workflowId: workflow.id, text } } });
+  };
 
   if (!selectedWorkflowId) return <EmptyState title="No workflow selected" description="Choose a workflow from the workflow list." />;
   if (isLoading) return <LoadingState label="Loading workflow…" />;
@@ -51,8 +64,8 @@ function WorkflowDetailPage() {
           {canRun ? (
             <Button
               variant="primary"
-              onClick={() => handleRun({})}
-              disabled={runState.loading || Boolean(runState.result) || runState.unconfirmed || hasPendingGenerationApproval}
+              onClick={() => setInputWorkflowId(workflow.id)}
+              disabled={runDisabled}
               title={hasPendingGenerationApproval ? "Resolve the pending approval below before running" : undefined}
             >
               {runState.loading ? (
@@ -75,9 +88,11 @@ function WorkflowDetailPage() {
               navigate(`/chat?new=1&creation=${crypto.randomUUID()}&workflow=${encodeURIComponent(workflow.id)}`);
           }}>Edit in chat</Button> : null}
           {canWrite ? <Button variant="secondary" onClick={() => navigateTo("workflows", "builder")}>Preview canvas</Button> : null}
-          <WorkflowActions workflow={workflow} onChanged={refetch} />
+          <WorkflowActions workflow={workflow} onChanged={refetch} showRun={false} />
         </div>
       </div>
+
+      <WorkflowRunDialog key={`inputs:${actorId}:${workflow.id}`} open={canRun && inputWorkflowId === workflow.id} workflowId={workflow.id} onClose={() => setInputWorkflowId(null)} onRun={submitRun} disabled={runDisabled} error={runState.error} onHelp={has("chat:use") ? openRunHelp : undefined} onReview={canEditInChat ? () => { setInputWorkflowId(null); navigate(`/chat?workflow=${encodeURIComponent(workflow.id)}`); } : undefined} />
 
       {hasPendingGenerationApproval && (
         <PendingGenerationApprovalCard
@@ -88,8 +103,7 @@ function WorkflowDetailPage() {
 
       {/* Run result banner */}
       <RunAdmissionRecoveryPanel recovery={recovery} execution={runState.result} allowRelease={false} />
-      {runState.result && <WorkflowRunReceipt key={runState.result.id} initialExecution={runState.result}
-        onDismiss={dismissRun} />}
+      <WorkflowResults key={`results:${actorId}:${workflow.id}`} workflowId={workflow.id} execution={runState.result} loading={runState.loading || recovery.checking} onDismiss={dismissRun} />
       {runState.error && (
         <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <Icon icon="mdi:alert-circle" className="h-5 w-5 shrink-0" />

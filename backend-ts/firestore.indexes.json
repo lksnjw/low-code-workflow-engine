@@ -1,0 +1,8 @@
+{
+  "indexes": [
+    {"collectionGroup":"lcwe_private_records","queryScope":"COLLECTION","fields":[{"fieldPath":"index.kind","order":"ASCENDING"},{"fieldPath":"index.updatedAt","order":"DESCENDING"},{"fieldPath":"index.entityId","order":"ASCENDING"}]},
+    {"collectionGroup":"lcwe_private_records","queryScope":"COLLECTION","fields":[{"fieldPath":"index.kind","order":"ASCENDING"},{"fieldPath":"index.ownerId","order":"ASCENDING"},{"fieldPath":"index.updatedAt","order":"DESCENDING"},{"fieldPath":"index.entityId","order":"ASCENDING"}]},
+    {"collectionGroup":"lcwe_private_records","queryScope":"COLLECTION","fields":[{"fieldPath":"index.kind","order":"ASCENDING"},{"fieldPath":"index.chatId","order":"ASCENDING"},{"fieldPath":"index.sequence","order":"DESCENDING"}]}
+  ],
+  "fieldOverrides": [{"collectionGroup":"lcwe_record_chunks","fieldPath":"data","indexes":[]}]
+}

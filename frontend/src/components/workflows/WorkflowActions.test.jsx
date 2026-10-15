@@ -36,6 +36,24 @@ afterEach(() => {
   localStorage.clear(); delete navigator.locks;
 });
 
+test("the detail page can hide the duplicate run control", () => {
+  render(<WorkflowActions workflow={{ id: "wf_1", name: "Client echo" }} showRun={false} />);
+  expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+});
+
+test("queued admission is not described as finished, even when refreshing the list fails", async () => {
+  const post = jest.spyOn(apiClient, "post").mockResolvedValue({ data: { success: true, data: { id: "exec_queued", workflowId: "wf_queued", status: "QUEUED" } } });
+  const onChanged = jest.fn().mockRejectedValue(new Error("List refresh unavailable"));
+  render(<WorkflowActions workflow={{ id: "wf_queued", name: "Queued report" }} onChanged={onChanged} />);
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith("Execution exec_queued was recorded, but this list could not refresh. Open Execution History to review it.", "warning"));
+  expect(notify).toHaveBeenCalledWith("Execution exec_queued accepted with status QUEUED. Open Execution History to follow its progress.", "info");
+  expect(notify.mock.calls.some(([message]) => /finished|Workflow run failed/.test(message))).toBe(false);
+  expect(post).toHaveBeenCalledTimes(1);
+});
+
 test("validates runtime JSON and sends the parsed object to the execution endpoint", async () => {
   const post = jest.spyOn(apiClient, "post").mockResolvedValue({
     data: {

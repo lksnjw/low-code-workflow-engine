@@ -73,12 +73,29 @@ export function updateRuntimeApprovalPolicy(state: RepositoryState, user: Curren
     resource: { type: "runtime-approval-policy", id: "workspace" }, before: previous?.success ? { revision } : null, after: { revision: policy.revision, hash: digest(policy), enabled: policy.enabled }, createdAt: new Date().toISOString() });
   return policy;
 }
-function currentPolicy(state: Readonly<RepositoryState>): RuntimeApprovalPolicy {
-  const policy = policySchema.safeParse((state.settings.rbac as Record<string, unknown> | undefined)?.runtimeApprovalPolicy);
+/** Code-owned exception for the canonical administrator, never a model-supplied
+ * role label or permission override. This permits an explicit exact decision,
+ * not automatic approval, ERP access or retry authority. */
+function superAdministrator(state: Readonly<RepositoryState>, actorId?: string): boolean {
+  const actor = actorId ? state.users[actorId] : undefined, role = actor && state.roles[actor.roleId];
+  return !!actor && actor.status.toLowerCase() === "active" && actor.roleId === "role_admin" && role?.id === "role_admin" &&
+    role.name === "Platform Admin" && role.permissions.includes("execution:approve");
+}
+function currentPolicy(state: Readonly<RepositoryState>, requesterId?: string): RuntimeApprovalPolicy {
+  const raw = (state.settings.rbac as Record<string, unknown> | undefined)?.runtimeApprovalPolicy;
+  // An absent workspace policy must not prevent the canonical Super Admin
+  // reviewing their own transaction. Do not persist a global reviewer grant;
+  // a disabled or malformed saved policy still fails closed for everyone.
+  if (raw === undefined && superAdministrator(state, requesterId)) return { profile: "runtime-approval-policy/v1", enabled: true,
+    approverRoleIds: ["role_admin"], ttlSeconds: 900, separationOfDuties: true, revision: 1 };
+  const policy = policySchema.safeParse(raw);
   if (!policy.success || !policy.data.enabled) deny("A current enabled exact runtime approval policy is required", 503);
   return policy.data;
 }
-export const runtimeApprovalPolicyHash = (state: Readonly<RepositoryState>) => digest(currentPolicy(state));
+export const runtimeApprovalPolicyHash = (state: Readonly<RepositoryState>, requesterId?: string) => {
+  const policy = currentPolicy(state, requesterId);
+  return digest(superAdministrator(state, requesterId) ? { policy, selfApprovalProfile: "super-administrator-exact/v1" } : policy);
+};
 /** Minimum settings projection. Role discovery never grants role permissions. */
 export function runtimeApprovalAdministration(state: Readonly<RepositoryState>, user: CurrentUser) {
   const actor = state.users[user.id], role = actor && state.roles[actor.roleId];
@@ -134,13 +151,17 @@ function active(execution: Execution): RuntimeApprovalRecord { return runtimeApp
 export function runtimeApprovalInboxAuthority(state: Readonly<RepositoryState>, actorId: string): boolean {
   const actor = state.users[actorId], role = actor && state.roles[actor.roleId];
   const policy = policySchema.safeParse((state.settings.rbac as Record<string, unknown> | undefined)?.runtimeApprovalPolicy);
+  const raw = (state.settings.rbac as Record<string, unknown> | undefined)?.runtimeApprovalPolicy;
+  if (superAdministrator(state, actorId) && (raw === undefined || policy.success && policy.data.enabled)) return true;
   return !!actor && actor.status.toLowerCase() === "active" && !!role && policy.success && policy.data.enabled &&
     policy.data.approverRoleIds.includes(role.id) && [...role.permissions, ...actor.permissionOverrides].includes("execution:approve");
 }
 function approver(state: Readonly<RepositoryState>, record: RuntimeApprovalRecord, actorId: string) {
-  const actor = state.users[actorId], role = actor && state.roles[actor.roleId], policy = currentPolicy(state);
-  if (!actor || actor.status.toLowerCase() !== "active" || !role || actorId === record.binding.requesterId ||
-      !policy.approverRoleIds.includes(role.id) || ![...role.permissions, ...actor.permissionOverrides].includes("execution:approve")) deny("Current independent transaction approver authority is required", 403);
+  const actor = state.users[actorId], role = actor && state.roles[actor.roleId], policy = currentPolicy(state, record.binding.requesterId);
+  const ownAdministratorDecision = actorId === record.binding.requesterId && superAdministrator(state, actorId);
+  const scopedFallback = (state.settings.rbac as Record<string, unknown> | undefined)?.runtimeApprovalPolicy === undefined;
+  if (!actor || actor.status.toLowerCase() !== "active" || !role || !ownAdministratorDecision && (scopedFallback || actorId === record.binding.requesterId ||
+      !policy.approverRoleIds.includes(role.id)) || ![...role.permissions, ...actor.permissionOverrides].includes("execution:approve")) deny("An independent transaction reviewer or the requesting Super Admin is required", 403);
   return { actor, role };
 }
 function assertBinding(state: RepositoryState, execution: Execution, record: RuntimeApprovalRecord, now: number, consumedIntent = false) {
@@ -184,7 +205,7 @@ function assertBinding(state: RepositoryState, execution: Execution, record: Run
       !(revision.definition as ToolDefinition).allowed_roles.includes(state.roles[b.requesterRoleId]!.name) ||
       ![(revision.definition as ToolDefinition).name, (revision.definition as ToolDefinition).mcp_tool_name].includes(step.action ?? "") ||
       validateToolInput((revision.definition as Record<string, unknown>).input_schema, record.arguments).length) deny("Approval capability revision, availability or arguments changed");
-  if (digest(currentPolicy(state)) !== b.policyHash) deny("Approval policy changed; a new exact review is required");
+  if (runtimeApprovalPolicyHash(state, b.requesterId) !== b.policyHash) deny("Approval policy changed; a new exact review is required");
   if (!Number.isFinite(now) || now < Date.parse(record.requestedAt) || now >= Date.parse(record.expiresAt)) deny("Runtime approval expired or its clock is invalid");
 }
 function event(state: RepositoryState, execution: Execution, record: RuntimeApprovalRecord, type: string) {
@@ -205,7 +226,7 @@ export async function requestRuntimeApproval(repository: Repository, executionId
     const previous = execution.runtimeApprovalSecret;
     if (previous && active(execution).state !== "CONSUMED") deny("A prior approval still owns this checkpoint");
     if (previous && (Object.keys(previous.records).length >= 1000 || Object.values(previous.records).some(record => record.binding.operationKey === captured.operationKey || record.binding.invocationId === captured.invocationId))) deny("Approval operation or invocation cannot be reused");
-    const requestedAt = new Date().toISOString(), policy = currentPolicy(state), approvalId = `approval-${randomBytes(16).toString("hex")}`;
+    const requestedAt = new Date().toISOString(), policy = currentPolicy(state, captured.requesterId), approvalId = `approval-${randomBytes(16).toString("hex")}`;
     const record = recordSchema.parse({ id: approvalId, profile: "runtime-approval/v1", version: 1, state: "PENDING", binding: captured,
       arguments: capturedArgs, reason, requestedAt, expiresAt: new Date(Date.parse(requestedAt) + policy.ttlSeconds * 1000).toISOString(), reviewHash: digest({}) });
     record.reviewHash = reviewHash(record); assertBinding(state, execution, record, Date.now());
@@ -217,7 +238,9 @@ export async function requestRuntimeApproval(repository: Repository, executionId
     execution.pendingApproval = { stepId: captured.nodeId, description: reason, requestedAt };
     const entry = state.timelines[executionId]?.find(item => item.attemptId === captured.invocationId);
     if (entry) { entry.status = "AWAITING_APPROVAL"; entry.phase = "PREPARING"; }
-    execution.agentSummary = "Waiting for an independent decision on exact transaction details. Nothing has been dispatched by this approval checkpoint.";
+    execution.agentSummary = superAdministrator(state, captured.requesterId)
+      ? "Waiting for explicit confirmation of the exact transaction. The requesting Super Admin may confirm it. Nothing has been dispatched by this checkpoint."
+      : "Waiting for an independent decision on exact transaction details. Nothing has been dispatched by this approval checkpoint.";
     event(state, execution, record, "approval.requested"); return approvalId;
   });
 }
@@ -303,7 +326,6 @@ export function assertConsumedRuntimeApproval(state: RepositoryState, executionI
 /** Minimum review projection. The private journal is excluded by the common
  * secret redactor on every existing execution/trace/chat serialization path. */
 export function runtimeApprovalView(state: RepositoryState, executionId: string, actorId: string, approvalId?: string) {
-  currentPolicy(state);
   if (!runtimeApprovalInboxAuthority(state, actorId)) deny("Current independent transaction approver authority is required", 403);
   const execution = state.executions[executionId]; if (!execution) deny("Approval execution not found", 404);
   const record = approvalId ? runtimeApprovalEvidence(execution, approvalId) : active(execution); const { role } = approver(state, record, actorId);
@@ -322,7 +344,8 @@ export function runtimeApprovalView(state: RepositoryState, executionId: string,
       nodeId: record.binding.nodeId, invocationId: record.binding.invocationId, connectionId: record.binding.connectionId, capabilityRevision: record.binding.capabilityRevision,
       toolName: definition.success ? definition.data.name : null, remoteToolName: definition.success ? exactBridgeName(definition.data) : null,
       sourceHash: record.binding.sourceHash, semanticHash: record.binding.semanticHash, reason: record.reason, requestedAt: record.requestedAt, expiresAt: record.expiresAt,
-      requesterId: record.binding.requesterId, arguments: withoutSecretFields(record.arguments), canDecide: !unavailable && record.id === execution.runtimeApprovalSecret!.activeId && execution.status === "AWAITING_APPROVAL" && record.state === "PENDING",
+      requesterId: record.binding.requesterId, selfApprovalAllowed: actorId === record.binding.requesterId && superAdministrator(state, actorId),
+      arguments: withoutSecretFields(record.arguments), canDecide: !unavailable && record.id === execution.runtimeApprovalSecret!.activeId && execution.status === "AWAITING_APPROVAL" && record.state === "PENDING",
       operationManaged: execution.workflowSnapshot?.executionProfile === "sequential-operation-v1",
       unavailable, approverRole: role.name, decision: record.decision ? { outcome: record.decision.outcome, actorId: record.decision.actorId, decidedAt: record.decision.decidedAt } : null,
       canResume: false, resumeReason: execution.workflowSnapshot?.executionProfile === "sequential-operation-v1" ? "An approved operation is queued automatically for fresh authorization. This decision is not execution or delivery confirmation." : "Safe effect resume/outbox dispatch is not connected yet. Approval alone does not execute or send." } };

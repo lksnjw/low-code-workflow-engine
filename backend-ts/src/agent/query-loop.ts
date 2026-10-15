@@ -8,7 +8,8 @@ import {
 import type { ToolDefinition } from "../registry/schemas.js";
 import type { QueryMessage, QueryModelRouting, QueryToolDefinition, QueryProvider } from "../analysisprovider/query-types.js";
 import { assistantToolCallMessage, type ProviderContinuationSecret } from "../analysisprovider/provider-continuation.js";
-import { CLARIFYING_QUERY_SYSTEM_PROMPT, promptData } from "../prompts/contracts.js";
+import { ERP_QUERY_SYSTEM_PROMPT, promptData } from "../prompts/contracts.js";
+import { parseQueryRecoveryGuidance, recoveryGuidanceText, type QueryRecoveryGuidance } from "./query-recovery-guidance.js";
 import type { ChatWorkspaceStatus } from "./chat-workspace-status.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { hasReservedBridgeRole } from "../tools/erpbridge-contract.js";
@@ -16,6 +17,9 @@ import { mcpResultForModel } from "../tools/mcp-result.js";
 import { acknowledgedReadToolFailure } from "../tools/read-tool-broker.js";
 import { combinedAgentSignal, piBridgeAssistantMessage, piBridgeModel, piJsonObject, piTranscriptMessages } from "./pi-provider-bridge.js";
 import { z } from "zod";
+import { libraryModelInputSchema } from "../documents/library-client.js";
+import { ToolProposalCorrector, type ToolProposalCorrection } from "./tool-proposal-correction.js";
+import { userMcpFailureCode, userMcpFailureNotice, type UserMcpFailureCode } from "../tools/user-mcp-failure.js";
 
 export type VisualisationSpec = {
   type: "bar" | "line" | "table" | "pie";
@@ -34,6 +38,7 @@ export type ToolStep = {
   arguments: Record<string, unknown>;
   result: unknown;
   status?: "SUCCEEDED" | "FAILED";
+  credentialFailure?: UserMcpFailureCode;
 };
 
 export type QueryLoopInput = {
@@ -62,6 +67,8 @@ export type QueryLoopResult = {
   stopReason?: "COMPLETED" | "LIMIT_REACHED" | "PROVIDER_FAILED" | "CANCELLED";
   modelRouting?: QueryModelRouting;
   clarification?: ValidatedQueryClarification;
+  recoveryGuidance?: QueryRecoveryGuidance;
+  proposalCorrections?: ToolProposalCorrection[];
 };
 
 type ValidatedQueryClarification = { kind: "clarification"; questions: string[] };
@@ -72,7 +79,7 @@ const TIMEOUT_MS = parseInt(process.env.QUERY_AGENT_TIMEOUT_MS ?? "30000", 10);
 const TOKEN_BUDGET = parseInt(process.env.QUERY_AGENT_TOKEN_BUDGET ?? "4000", 10);
 const PI_QUERY_MODEL = piBridgeModel("lcwe-governed-query", "LCWE governed query provider", TOKEN_BUDGET);
 
-const SYSTEM_PROMPT = CLARIFYING_QUERY_SYSTEM_PROMPT;
+const SYSTEM_PROMPT = ERP_QUERY_SYSTEM_PROMPT;
 
 /*******************************************************************************
  * Function: runQueryLoop
@@ -108,9 +115,10 @@ async function runPiQueryLoop(
   const definitions: QueryToolDefinition[] = readOnlyTools.map(tool => ({ type: "function", function: {
     name: tool.mcp_tool_name.trim() || tool.name,
     description: tool.description,
-    parameters: (tool.input_schema as Record<string, unknown>) ?? { type: "object", properties: {} },
+    parameters: libraryModelInputSchema(tool),
   } }));
   const toolCallLog: ToolCallLogEntry[] = [], toolSteps: ToolStep[] = [];
+  const corrector = new ToolProposalCorrector(readOnlyTools);
   const seen = new Set<string>(), handledCallIds = new Set<string>(), continuationByCall = new Map<string, ProviderContinuationSecret>();
   const totalTokens = { input: 0, output: 0, measured: true };
   const deadline = Date.now() + TIMEOUT_MS;
@@ -144,8 +152,9 @@ async function runPiQueryLoop(
         return { content: [{ type: "text", text: promptData({ source: "untrusted_tool_result", callId: toolCallId, toolName: name,
           status: "SUCCEEDED", data: mcpResultForModel(raw) }) }], details: { status: "SUCCEEDED" } };
       } catch (error) {
+        const credentialFailure = userMcpFailureCode(error);
         const result = acknowledgedReadToolFailure(error)?.result ?? { error: errorText(error) };
-        toolSteps.push({ toolName: name, arguments: redactCredentials(args), result, status: "FAILED" });
+        toolSteps.push({ toolName: name, arguments: redactCredentials(args), result, status: "FAILED", ...(credentialFailure ? { credentialFailure } : {}) });
         halt = "TOOL_FAILED";
         return { content: [{ type: "text", text: promptData({ source: "untrusted_tool_result", callId: toolCallId, toolName: name,
           status: "FAILED", error: "Read request failed or was denied" }) }], details: { status: "FAILED" }, isError: true, terminate: true };
@@ -159,6 +168,8 @@ async function runPiQueryLoop(
       const pending = piBridgeAssistantMessage(PI_QUERY_MODEL, [], "pending", attempts, totalTokens);
       stream.push({ type: "start", partial: pending });
       try {
+        let messages = piTranscriptMessages(context, continuationByCall);
+        for (;;) {
         if (input.signal?.aborted) { halt = "CANCELLED"; throw new Error("cancelled"); }
         if (attempts >= MAX_ITERATIONS || Date.now() > deadline || totalTokens.output >= TOKEN_BUDGET) {
           halt = "LIMIT_REACHED"; throw new Error("limit reached");
@@ -166,10 +177,10 @@ async function runPiQueryLoop(
         const iteration = attempts++;
         await input.onTurn?.(iteration);
         const signal = combinedAgentSignal(input.signal, options?.signal, deadline);
-        const turn = await provider.queryWithTools(piTranscriptMessages(context, continuationByCall), definitions, {
+        const turn = await provider.queryWithTools(messages, definitions, {
           allowFallback: true,
           maxOutputTokens: Math.max(1, TOKEN_BUDGET - totalTokens.output),
-          promptTemplateVersion: "prompt/query/v4",
+          promptTemplateVersion: "prompt/query/v6",
           context: { sessionId: input.sessionId, actor: { id: input.actorId, role: input.actorRole }, ...(input.traceId ? { traceId: input.traceId } : {}),
             egress: { purpose: "interactive", dataClass: "restricted" } },
           signal,
@@ -178,6 +189,9 @@ async function runPiQueryLoop(
         totalTokens.input += turn.inputTokens; totalTokens.output += turn.outputTokens;
         totalTokens.measured = totalTokens.measured && turn.measured === true;
         if (input.signal?.aborted) halt = "CANCELLED";
+        const feedback = !halt ? corrector.feedback(turn, Date.now() <= deadline && totalTokens.output < TOKEN_BUDGET && attempts < MAX_ITERATIONS) : undefined;
+        if (corrector.blocked) { halt = "TOOL_FAILED"; throw new Error("Proposal correction changed concrete values or scope"); }
+        if (feedback) { messages = [...messages, ...feedback]; continue; }
         const validToolTurn = !halt && turn.stopReason === "tool_calls" && turn.toolCalls.length > 0;
         if (validToolTurn && turn.providerContinuationSecret)
           for (const call of turn.toolCalls) continuationByCall.set(call.id, turn.providerContinuationSecret);
@@ -189,6 +203,8 @@ async function runPiQueryLoop(
         const message = piBridgeAssistantMessage(PI_QUERY_MODEL, content, stopReason, iteration,
           { input: turn.inputTokens, output: turn.outputTokens }, turn.model, turn.provider);
         stream.push({ type: "done", reason: stopReason, message });
+        break;
+        }
       } catch {
         if (!halt) halt = input.signal?.aborted ? "CANCELLED" : "PROVIDER_FAILED";
         totalTokens.measured = halt === "LIMIT_REACHED" ? totalTokens.measured : false;
@@ -245,7 +261,8 @@ async function runPiQueryLoop(
     input.signal?.removeEventListener("abort", abort);
   }
 
-  const finish = (...args: Parameters<typeof buildResult>): QueryLoopResult => ({ ...buildResult(...args), ...(modelRouting ? { modelRouting } : {}) });
+  const finish = (...args: Parameters<typeof buildResult>): QueryLoopResult => ({ ...buildResult(...args), ...(modelRouting ? { modelRouting } : {}),
+    ...(corrector.events.length ? { proposalCorrections: corrector.events } : {}) });
   if (halt === "CANCELLED") return finish("Read preparation cancelled.", toolCallLog, toolSteps, attempts, true, totalTokens, started, "CANCELLED");
   if (halt === "PROVIDER_FAILED") return finish("Report preparation stopped before a complete answer was produced.", toolCallLog, toolSteps, attempts, true, totalTokens, started, "PROVIDER_FAILED");
   if (halt === "TOOL_FAILED") return finish("Read preparation stopped after a failed or denied tool request.", toolCallLog, toolSteps, attempts, true, totalTokens, started);
@@ -260,7 +277,8 @@ async function runPiQueryLoop(
   const clarificationTokenLimit = totalTokens.output >= TOKEN_BUDGET && isClarificationEnvelope(lastText);
   const clarification = complete && lastTurn?.completionConfirmed === true && !input.signal?.aborted && totalTokens.output < TOKEN_BUDGET &&
     toolCallLog.length === 0 && toolSteps.length === 0 ? parseClarification(lastText) : undefined;
-  return finish(lastText, toolCallLog, toolSteps, attempts, !complete || clarificationTokenLimit, totalTokens, started, undefined, clarification);
+  const recovery = complete && lastTurn?.completionConfirmed === true && !input.signal?.aborted && totalTokens.output < TOKEN_BUDGET && toolCallLog.length === 0 && toolSteps.length === 0 ? parseQueryRecoveryGuidance(lastText, input.workspaceStatus) : undefined;
+  return finish(lastText, toolCallLog, toolSteps, attempts, !complete || clarificationTokenLimit, totalTokens, started, undefined, clarification, recovery);
 }
 
 async function runLegacyQueryLoop(
@@ -282,7 +300,7 @@ async function runLegacyQueryLoop(
     function: {
       name: tool.mcp_tool_name.trim() || tool.name,
       description: tool.description,
-      parameters: (tool.input_schema as Record<string, unknown>) ?? { type: "object", properties: {} },
+      parameters: libraryModelInputSchema(tool),
     },
   }));
 
@@ -322,7 +340,7 @@ async function runLegacyQueryLoop(
       turn = await provider.queryWithTools(messages, agentTools, {
         allowFallback: true,
         maxOutputTokens: TOKEN_BUDGET - totalTokens.output,
-        promptTemplateVersion: "prompt/query/v4",
+        promptTemplateVersion: "prompt/query/v6",
         context: { sessionId: input.sessionId, actor: { id: input.actorId, role: input.actorRole }, ...(input.traceId ? { traceId: input.traceId } : {}),
           egress: { purpose: "interactive", dataClass: "restricted" } },
         signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(Math.max(1, deadline - Date.now()))]) : AbortSignal.timeout(Math.max(1, deadline - Date.now())),
@@ -347,7 +365,8 @@ async function runLegacyQueryLoop(
       const clarificationTokenLimit = totalTokens.output >= TOKEN_BUDGET && isClarificationEnvelope(lastText);
       const clarification = complete && turn.completionConfirmed === true && !input.signal?.aborted && totalTokens.output < TOKEN_BUDGET &&
         toolCallLog.length === 0 && toolSteps.length === 0 ? parseClarification(lastText) : undefined;
-      return finish(lastText, toolCallLog, toolSteps, iteration + 1, !complete || clarificationTokenLimit, totalTokens, started, undefined, clarification);
+      const recovery = complete && turn.completionConfirmed === true && !input.signal?.aborted && totalTokens.output < TOKEN_BUDGET && toolCallLog.length === 0 && toolSteps.length === 0 ? parseQueryRecoveryGuidance(lastText, input.workspaceStatus) : undefined;
+      return finish(lastText, toolCallLog, toolSteps, iteration + 1, !complete || clarificationTokenLimit, totalTokens, started, undefined, clarification, recovery);
     }
 
     // Append assistant message with tool calls
@@ -383,7 +402,8 @@ async function runLegacyQueryLoop(
         toolSteps.push({ toolName: call.name, arguments: redactCredentials(call.arguments), result: raw, status: "SUCCEEDED" });
         toolResultContent = promptData({ source: "untrusted_tool_result", callId: call.id, toolName: call.name, status: "SUCCEEDED", data: mcpResultForModel(raw) });
       } catch (error) {
-        toolSteps.push({ toolName: call.name, arguments: redactCredentials(call.arguments), result: acknowledgedReadToolFailure(error)?.result ?? { error: errorText(error) }, status: "FAILED" });
+        const credentialFailure = userMcpFailureCode(error);
+        toolSteps.push({ toolName: call.name, arguments: redactCredentials(call.arguments), result: acknowledgedReadToolFailure(error)?.result ?? { error: errorText(error) }, status: "FAILED", ...(credentialFailure ? { credentialFailure } : {}) });
         // A denial/failure is not permission to try another tool or argument.
         return finish("Read preparation stopped after a failed or denied tool request.", toolCallLog, toolSteps, iteration + 1, true, totalTokens, started);
       }
@@ -415,6 +435,7 @@ function buildResult(
   started: number,
   stopReason: QueryLoopResult["stopReason"] = boundHit ? "LIMIT_REACHED" : "COMPLETED",
   clarification?: ValidatedQueryClarification,
+  recoveryGuidance?: QueryRecoveryGuidance,
 ): QueryLoopResult {
   const latencyMs = Math.max(0, Math.round(performance.now() - started));
   const successful = toolSteps.filter((step) => step.status === "SUCCEEDED").length;
@@ -429,12 +450,16 @@ function buildResult(
   const completionClaim = Array.from(claimText.matchAll(completionClaims)).some(match =>
     !/^(?:email|e-mail|message|report)\b/i.test(match[0]) || !/\bno\s+$/i.test(claimText.slice(0, match.index)));
   const acceptedClarification = clarification && !completionClaim ? clarification : undefined;
+  const acceptedRecovery = recoveryGuidance && successful === 0 && toolSteps.length === 0 && !boundHit && !completionClaim ? recoveryGuidance : undefined;
   const malformedClarification = !acceptedClarification && isClarificationEnvelope(text);
-  const narrativeRejected = acceptedClarification ? false : successful === 0 || completionClaim || malformedClarification;
-  if (acceptedClarification) text = acceptedClarification.questions.join("\n");
+  const narrativeRejected = acceptedClarification || acceptedRecovery ? false : successful === 0 || completionClaim || malformedClarification;
+  if (acceptedRecovery) text = recoveryGuidanceText(acceptedRecovery);
+  else if (acceptedClarification) text = acceptedClarification.questions.join("\n");
   else if (malformedClarification) text = successful === 0 ? "No confirmed ERP data was retrieved. No email was sent, schedule activated or ERP change made." : "The assistant did not produce a complete report. Confirmed read results are available, but no email was sent, schedule activated or ERP change made.";
   else if (narrativeRejected) text = successful === 0 ? "No confirmed ERP data was retrieved. No email was sent, schedule activated or ERP change made." : "The assistant returned an unsupported action-completion claim. Confirmed read results are available, but no email was sent, schedule activated or ERP change made.";
-  const vis = acceptedClarification ? undefined : extractVisualisation(text);
+  const credentialFailure = toolSteps.find(step => step.status === "FAILED" && step.credentialFailure)?.credentialFailure;
+  if (credentialFailure) text = `${userMcpFailureNotice(credentialFailure)} ${successful === 0 ? "No ERP data was retrieved." : "Earlier confirmed read results are retained."} No email was sent, schedule activated or ERP change made.`;
+  const vis = acceptedClarification || acceptedRecovery ? undefined : extractVisualisation(text);
   return {
     text: extractText(text),
     toolCallLog,
@@ -445,6 +470,7 @@ function buildResult(
     totalTokens,
     latencyMs,
     narrativeRejected, ...(acceptedClarification ? { clarification: acceptedClarification } : {}), readOutcome: successful === 0 ? "NO_CONFIRMED_READ" : successful !== toolSteps.length || boundHit ? "PARTIAL_READ" : "READS_COMPLETED",
+    ...(acceptedRecovery ? { recoveryGuidance: acceptedRecovery } : {}),
     stopReason,
   };
 }

@@ -10,6 +10,22 @@ const source = stringify({ name: "Rows", trigger: { type: "manual" }, steps: [{ 
   { id: "second", action: tool.mcp_tool_name, parameters: { id: "{{first.structuredContent.id}}" } }] });
 const compile = (yaml = source) => compileReadWorkflow(yaml, [tool], "Builder");
 
+test.each([false, true])("v3 control-flow without a loop compiles as structured reads, withReturn=%s", withReturn => {
+  const sequence = (...nodes: unknown[]) => ({ kind: "sequence", nodes });
+  const branch = { kind: "if", id: "gate", predicate: { kind: "ref", source: "workflowInput", path: ["proceed"] },
+    then: sequence({ kind: "action", nodeId: "first" }), else: sequence({ kind: "action", nodeId: "second" }),
+    ...(withReturn ? { merge: { schema: { type: "string" }, then: { kind: "literal", value: "yes" }, else: { kind: "literal", value: "no" } } } : {}) };
+  const workflow = { name: "Conditional, not a collection", trigger: { type: "manual", config: { inputSchema: { type: "object", properties: { proceed: { type: "boolean" } }, required: ["proceed"], additionalProperties: false } } },
+    steps: ["first", "second"].map(id => ({ id, action: tool.name, parameters: { id } })),
+    metadata: { controlFlow: { schemaVersion: "read-control-flow/v3", root: sequence(branch,
+      ...(withReturn ? [{ kind: "return", id: "finish", output: { schema: { type: "string" }, value: { kind: "ref", source: "nodeOutput", nodeId: "gate", path: ["value"] } } }] : [])) } } };
+  const plan = compile(stringify(workflow));
+  expect(plan.ir).toMatchObject({ schemaVersion: "workflow-read-ir/v3", compilerVersion: "read-compiler/v3" });
+  const previousFormat = structuredClone(workflow); previousFormat.metadata.controlFlow.schemaVersion = "read-control-flow/v2";
+  expect(compile(stringify(previousFormat)).semanticHash).toBe(plan.semanticHash);
+  expect(compile(stringify(previousFormat)).sourceHash).not.toBe(plan.sourceHash);
+});
+
 test("compiler emits stable ordered actions and structured input/upstream references, not template instructions", () => {
   const plan = compile();
   expect(plan.ir.root.nodes.map(node => [node.id, node.kind, node.capability.action])).toEqual([["first", "action", "read.rows"], ["second", "action", "read.rows"]]);

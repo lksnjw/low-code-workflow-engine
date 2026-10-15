@@ -1,10 +1,15 @@
 import type { HandlerServices } from "../http/handlers/common.js";
+import { withUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import { publicExecution } from "../redact/public-model-usage.js";
 import { ProtectedJobCheckpoints } from "./protected-job-checkpoints.js";
 
 /** Internal owned worker. Normal publication/queue activation stays closed
  * until every required driver and its durability campaign are qualified. */
 export async function runProtectedOperation(services: HandlerServices, executionId: string) {
+  const original = await services.repository.readAuthoritative(state => state.executions[executionId]);
+  return withUserMcpBinding(services, original?.startedBy.id ?? "", original?.erpCredentialSecret, () => runBound(services, executionId));
+}
+async function runBound(services: HandlerServices, executionId: string) {
   const checkpoints = await ProtectedJobCheckpoints.claim(services, executionId);
   if (checkpoints) {
     try {

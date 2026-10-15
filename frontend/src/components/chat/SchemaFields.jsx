@@ -52,6 +52,7 @@ export default function SchemaFields({ schema, value, onChange, label = "Paramet
     {keys.slice(0, 50).map(key => {
       const child = properties[key], present = Object.hasOwn(value, key), name = `${label} · ${key}`;
       return <div key={key} className="space-y-2"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="break-all text-xs font-medium">{key}</span><span className="text-[10px] text-gray-500">{child?.type || "Undeclared type"} · {required.includes(key) ? "Required" : "Optional"}{child?.writeOnly ? " · Sensitive" : ""}</span></div>
+        {typeof child?.description === "string" && <p className="whitespace-pre-wrap break-words text-[11px] text-gray-500">{child.description.slice(0, 600)}{child.description.length > 600 ? "…" : ""}</p>}
         {present && child ? <Field schema={child} value={value[key]} onChange={next => onChange({ ...value, [key]: next })} label={name} depth={depth} dataSources={dataSources} allowReferences={allowReferences} /> : <p className="text-[10px] text-gray-500">{present ? "Existing value preserved below" : "Not supplied"}</p>}
         {present ? <button type="button" className="text-[10px] text-gray-500 hover:text-red-600" onClick={() => onChange(Object.fromEntries(Object.entries(value).filter(([old]) => old !== key)))}>Remove {key}</button> : child && <button type="button" className="text-xs text-primary" onClick={() => onChange({ ...value, [key]: initial(child) })}>Set {key}</button>}
       </div>;

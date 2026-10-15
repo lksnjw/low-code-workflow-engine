@@ -12,6 +12,7 @@ import { valueNodes } from "../workflows/read-control-flow.js";
 import { interpretReadPlan } from "../workflows/read-interpreter.js";
 import { ReadWorkerLeaseFailure } from "./read-worker-lease.js";
 import { connectionToolKey } from "../tools/mcp-dispatch-context.js";
+import { readFailureReason } from "./read-failure-reason.js";
 
 /** Explicit read profiles: sequential actions and structured boolean branches. Unsupported logic
  * is rejected before any dispatch, never reinterpreted by an agent. */
@@ -66,7 +67,8 @@ export async function executeReadWorkflow(services: HandlerServices, actorId: st
       // or a dependent node's successful data bindings.
       const entry = { id: `tl_${index + 1}`, nodeId: step.id, label: step.description ?? step.action!, status: "FAILED" as const, startedAt: started.toISOString(), completedAt: completed.toISOString(), durationMs: completed.getTime() - started.getTime(), sideEffect: false,
         ...(failure ? { output: failure.result } : {}) };
-      const log = { timestamp: completed.toISOString(), level: "error" as const, nodeId: step.id, message: error.message, metadata: { action: step.action!, sideEffect: false } };
+      const log = { timestamp: completed.toISOString(), level: "error" as const, nodeId: step.id, message: error.message,
+        metadata: { action: step.action!, sideEffect: false, failureCode: readFailureReason(cause) } };
       await hooks?.failed(index, entry, log, failure !== undefined);
       result.timeline.push(entry); result.logs.push(log);
       Object.defineProperty(error, "runnerResult", { value: result });

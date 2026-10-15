@@ -8,6 +8,34 @@ jest.unstable_mockModule("./WorkflowWorkspaceEditor", () => ({ default: (props) 
 const { default: WorkflowWorkspaceCanvas } = await import("./WorkflowWorkspaceCanvas");
 afterEach(() => { cleanup(); sessionStorage.clear(); editorProps.mockClear(); });
 
+test("new workflow requires confirmation and leaves creation to a fresh chat", () => {
+  const startNew = jest.fn(), close = jest.fn();
+  render(<WorkflowWorkspaceCanvas canEdit onStartNewWorkflow={startNew} onCloseWorkflow={close} messages={[{ id: "saved", artifacts: { workflowId: "old", yaml: "name: Old\nsteps: []" } }]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Start a new workflow" }));
+  expect(startNew).not.toHaveBeenCalled(); expect(screen.getByText(/without the old workflow context/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open new workflow chat" }));
+  expect(startNew).toHaveBeenCalledTimes(1); expect(close).not.toHaveBeenCalled();
+});
+
+test("close is cancellable, persists an empty canvas and can reopen the saved workflow", () => {
+  const close = jest.fn();
+  const props = { selectionStorageKey: "canvas.close", messages: [{ id: "saved", artifacts: { workflowId: "report", yaml: "name: Report\nsteps: []" } }], onCloseWorkflow: close };
+  const { unmount } = render(<WorkflowWorkspaceCanvas {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Reset canvas view" }));
+  expect(editorProps).toHaveBeenLastCalledWith(expect.objectContaining({ workflowId: "report", viewReset: 1 }));
+  fireEvent.click(screen.getByRole("button", { name: "Close workflow & continue chat" }));
+  expect(screen.getByText(/Closing does not cancel/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Close workflow & continue chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close and continue chat" }));
+  expect(close).toHaveBeenCalledTimes(1); expect(screen.queryByTestId("saved-workflow-editor")).toBeNull();
+  unmount(); render(<WorkflowWorkspaceCanvas {...props} />);
+  expect(screen.getByText("Canvas cleared")).toBeTruthy();
+  fireEvent.change(screen.getByRole("combobox", { name: "Workflow draft" }), { target: { value: "workflow:report" } });
+  expect(screen.getByTestId("saved-workflow-editor")).toBeTruthy();
+});
+
 test("the saved-workflow selector remains visible when the right-hand tools panel is closed", () => {
   render(<ChatWorkspaceLayout storageKey="visible-selector" chat={<p>Chat</p>} canvas={<WorkflowWorkspaceCanvas messages={[{ id: "saved", artifacts: { workflowId: "report", yaml: "name: Report\nsteps: []" } }]} />} />);
   expect(screen.getByRole("combobox", { name: "Workflow draft" })).toBeTruthy();

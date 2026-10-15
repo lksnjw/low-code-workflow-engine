@@ -18,9 +18,11 @@ import { GovernanceAdapter } from "../governance/adapter.js";
 import { GovernanceService } from "../governance/service.js";
 import { GovernedValidationGate } from "../governance/gate.js";
 import { LlmPolicyFallback } from "../governance/llm-fallback.js";
+import { checkRecordWorkflowPolicy } from "../governance/record-workflow-policy.js";
 import { PolicyGateClient } from "../governance/policy-gate-client.js";
 import { SynthesisService } from "../synthesis/service.js";
 import { restoreImportedCapabilities } from "../registry/capability-import.js";
+import { UserMcpCredentials } from "../tools/user-mcp-credentials.js";
 
 export const APPLICATION_STORAGE_TIMEOUT_MS = 30_000;
 
@@ -80,6 +82,7 @@ export async function openApplicationResources(input: {
   root: string;
   registryPreparation?: "resident-bootstrap" | "existing-only";
   onRegistriesLoaded?: () => void;
+  reuseVerifiedFirestoreImages?: boolean;
 }): Promise<ApplicationResources> {
   const { config, root } = input;
   if (input.registryPreparation !== undefined && !["resident-bootstrap", "existing-only"].includes(input.registryPreparation))
@@ -98,7 +101,7 @@ export async function openApplicationResources(input: {
   const registries = await RegistryService.load(config.toolRegistryPath, config.ruleRegistryPath);
   input.onRegistriesLoaded?.();
   // This opener already owns its deadline and disposal of late storage resources.
-  const repository = await openApplicationRepository(config, APPLICATION_STORAGE_TIMEOUT_MS);
+  const repository = await openApplicationRepository(config, APPLICATION_STORAGE_TIMEOUT_MS, { reuseVerifiedFirestoreImages: input.reuseVerifiedFirestoreImages === true });
   const owner = new RuntimeOwner();
   owner.add(() => repository.close());
   const resources = Object.freeze({ config, registries, repository, close: () => owner.close() });
@@ -108,7 +111,7 @@ export async function openApplicationResources(input: {
 
 /** Constructs governed services without HTTP, listeners, signals or workers.
  * This extraction alone is not a bounded execution host or a Functions adapter. */
-export async function constructApplicationRuntime(resources: ApplicationResources): Promise<ApplicationRuntime> {
+export async function constructApplicationRuntime(resources: ApplicationResources, options: {deferMcpConnection?:boolean} = {}): Promise<ApplicationRuntime> {
   const owner = owners.get(resources);
   if (!owner) throw new Error("Application resources must be opened by the owned resource factory");
   owner.begin();
@@ -121,7 +124,10 @@ export async function constructApplicationRuntime(resources: ApplicationResource
     const legacyMcp = config.mcpTransport === "bridge-v1" ? createGovernedMCPClient({
       baseURL: config.mcpBaseURL, timeoutMs: config.mcpTimeoutMs, mode: config.mcpMode, validator,
     }) : null;
-    const mcpConnectionRuntime = await McpConnectionManager.open({ config, repository, registries, validator });
+    const userMcpCredentials = config.mcpTransport === "erpbridge-mcp" && config.mcpMode === "remote"
+      ? new UserMcpCredentials(repository, config) : undefined;
+    if (userMcpCredentials) owner.add(() => userMcpCredentials.close());
+    const mcpConnectionRuntime = await McpConnectionManager.open({ config, repository, registries, validator, ...(userMcpCredentials ? { userMcpCredentials } : {}), ...(options.deferMcpConnection ? {deferConnection:true} : {}) });
     owner.add(() => mcpConnectionRuntime.stop());
     owner.assertOpen();
     const executorTools = createExecutorToolBoundary({ transport: config.mcpTransport, tools: registries, legacyClient: legacyMcp });
@@ -145,10 +151,11 @@ export async function constructApplicationRuntime(resources: ApplicationResource
     const policyGateClient = (config.policyGateURL ?? "") !== "" && (config.policyGateAPIKey ?? "") !== "" ? new PolicyGateClient({
       url: config.policyGateURL!, apiKey: config.policyGateAPIKey!, timeoutMs: config.policyGateTimeoutMs,
     }) : null;
-    const validationGate = new GovernedValidationGate(governance, validator, registries, repository, policyGateClient);
+    const validationGate = new GovernedValidationGate(governance, validator, registries, repository, policyGateClient,
+      (yaml, user, context) => checkRecordWorkflowPolicy(services, yaml, user, context));
     const synthesis = new SynthesisService(providerRuntime, registries, validator, validationGate);
     const services: ApplicationServices = { config, repository, registries, validator, validationGate, executor, providerRuntime,
-      synthesis, contextAvailable: true, mcpConnectionRuntime, get erpbridgeSession() { return mcpConnectionRuntime.session; } };
+      synthesis, contextAvailable: true, mcpConnectionRuntime, ...(userMcpCredentials ? { userMcpCredentials } : {}), get erpbridgeSession() { return mcpConnectionRuntime.session; } };
     owner.finishConstruction();
     return Object.freeze({ services, close: () => owner.close() });
   } catch (error) {

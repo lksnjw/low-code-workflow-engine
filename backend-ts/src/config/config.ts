@@ -7,6 +7,7 @@ const environmentSchema = z
   .object({
     APP_NAME: z.string().optional(),
     APP_ENV: z.string().optional(),
+    CHAT_INTENT_ROUTING: z.enum(["agent", "patterns"]).optional(),
     PORT: z.string().optional(),
     API_BASE_PATH: z.string().optional(),
     JWT_SECRET: z.string().optional(),
@@ -22,6 +23,7 @@ const environmentSchema = z
     MCP_TRANSPORT: z.string().optional(),
     MCP_TIMEOUT_MS: z.string().optional(),
     FUNCTIONS_WRITER_ADMISSION_TIMEOUT_MS: z.string().optional(),
+    FUNCTIONS_CHAT_TASK_TIMEOUT_MS: z.string().optional(),
     BACKEND_WORKER_CONCURRENCY: z.string().optional(),
     READ_WORKER_CONCURRENCY: z.string().optional(),
     READ_WORKER_PER_ACTOR: z.string().optional(),
@@ -29,6 +31,8 @@ const environmentSchema = z
     ERPBRIDGE_BASE_URL: z.string().optional(),
     ERPBRIDGE_MCP_TOKEN: z.string().optional(),
     ERPBRIDGE_MCP_TOKEN_ENV: z.string().optional(),
+    ERPBRIDGE_ADMIN_ENV_ACCESS: z.string().optional(),
+    ERPBRIDGE_ADMIN_CHAT_ACTIONS: z.string().optional(),
     ERPBRIDGE_ROLE_MAP: z.string().optional(),
     ERPBRIDGE_CONNECTIONS_JSON: z.string().optional(),
     ERPBRIDGE_PRIMARY_CONNECTION_ID: z.string().optional(),
@@ -54,12 +58,17 @@ const environmentSchema = z
     FIRESTORE_KEY_FILE: z.string().optional(),
     FIRESTORE_KEY_JSON: z.string().optional(),
     FIRESTORE_ENCRYPTION_KEY: z.string().optional(),
+    FIRESTORE_CONTENT_FORMAT: z.enum(["encrypted-records/v1", "native-fields/v1"]).optional(),
     POLICY_GATE_URL: z.string().optional(),
     POLICY_GATE_API_KEY: z.string().optional(),
     POLICY_GATE_TIMEOUT_MS: z.string().optional(),
     PIPELINE_API_BASE_URL: z.string().optional(),
     PIPELINE_API_KEY: z.string().optional(),
     PIPELINE_TIMEOUT_MS: z.string().optional(),
+    PIPELINE_WORKSPACE_ID: z.string().optional(),
+    RAG_POLICY_API_BASE_URL: z.string().optional(),
+    RAG_POLICY_API_KEY: z.string().optional(),
+    RAG_POLICY_ADMIN_API_KEY: z.string().optional(),
     CORS_ORIGINS: z.string().optional(),
     PLATFORM_ADMIN_EMAIL: z.string().optional(),
     PLATFORM_ADMIN_PASSWORD: z.string().optional(),
@@ -80,6 +89,9 @@ export type ErpbridgeConnectionConfig = {
 export type AppConfig = {
   appName: string;
   environment: string;
+  /** Patterns is a compatibility/test mode, not the natural-language agent router. */
+  chatIntentRouting?: "agent" | "patterns";
+  erpbridgeAdminChatActions?: boolean;
   port: number;
   apiBasePath: string;
   jwtSecret: string;
@@ -94,6 +106,7 @@ export type AppConfig = {
   firestoreKeyFile?: string;
   firestoreKeyJson?: Record<string, unknown>;
   firestoreEncryptionKey?: string;
+  firestoreContentFormat?: "encrypted-records/v1" | "native-fields/v1";
   databaseURL: string;
   storageEncryptionKey: string;
   mcpBaseURL: string;
@@ -101,12 +114,15 @@ export type AppConfig = {
   mcpTransport: MCPTransport;
   mcpTimeoutMs: number;
   functionsWriterAdmissionTimeoutMs?: number;
+  functionsChatTaskTimeoutMs?: number;
   readWorkerConcurrency: number;
   readWorkerPerActor: number;
   readWorkerLeaseMs: number;
   erpbridgeBaseURL: string;
   erpbridgeMcpToken: string;
   erpbridgeMcpTokenReference: string;
+  /** Explicit server-only opt-in for the built-in Platform Admin, never other roles. */
+  erpbridgeAdminEnvironmentAccess?: boolean;
   erpbridgeRoleMap: Record<string, string>;
   erpbridgeConnections: ErpbridgeConnectionConfig[];
   erpbridgePrimaryConnectionId: string;
@@ -132,6 +148,10 @@ export type AppConfig = {
   pipelineAPIBaseURL?: string;
   pipelineAPIKey?: string;
   pipelineTimeoutMs?: number;
+  pipelineWorkspaceId?: string;
+  ragPolicyAPIBaseURL?: string;
+  ragPolicyAPIKey?: string;
+  ragPolicyAdminAPIKey?: string;
   corsOrigins: string[];
   platformAdminEmail: string;
   platformAdminPassword: string;
@@ -184,6 +204,7 @@ export function loadConfig(
   const readWorkerConcurrency = parseInteger(workerConcurrencySource, 2,
     source.BACKEND_WORKER_CONCURRENCY !== undefined ? "BACKEND_WORKER_CONCURRENCY" : "READ_WORKER_CONCURRENCY");
   const functionsWriterAdmissionTimeoutMs = parseInteger(source.FUNCTIONS_WRITER_ADMISSION_TIMEOUT_MS, 30_000, "FUNCTIONS_WRITER_ADMISSION_TIMEOUT_MS");
+  const functionsChatTaskTimeoutMs = parseInteger(source.FUNCTIONS_CHAT_TASK_TIMEOUT_MS, 180_000, "FUNCTIONS_CHAT_TASK_TIMEOUT_MS");
   const readWorkerPerActor = parseInteger(source.READ_WORKER_PER_ACTOR, 1, "READ_WORKER_PER_ACTOR");
   const readWorkerLeaseMs = parseInteger(source.READ_WORKER_LEASE_MS, 30_000, "READ_WORKER_LEASE_MS");
   if (readWorkerConcurrency < 1 || readWorkerConcurrency > 8 || readWorkerPerActor < 1 || readWorkerPerActor > readWorkerConcurrency || readWorkerLeaseMs < 5000 || readWorkerLeaseMs > 300_000)
@@ -259,6 +280,8 @@ export function loadConfig(
     environment: nonblank(source.APP_ENV?.trim(), "development"),
     port,
     apiBasePath,
+    erpbridgeAdminEnvironmentAccess: parseBoolean(source.ERPBRIDGE_ADMIN_ENV_ACCESS, false),
+    erpbridgeAdminChatActions: parseBoolean(source.ERPBRIDGE_ADMIN_CHAT_ACTIONS, false),
     jwtSecret: nonblank(
       source.JWT_SECRET?.trim(),
       "development-only-change-me",
@@ -283,6 +306,7 @@ export function loadConfig(
       ),
     ),
     storageDriver,
+    ...(source.FIRESTORE_CONTENT_FORMAT ? {firestoreContentFormat: source.FIRESTORE_CONTENT_FORMAT} : {}),
     databaseURL: source.DATABASE_URL?.trim() ?? "",
     storageEncryptionKey: source.STORAGE_ENCRYPTION_KEY?.trim() ?? "",
     ...(source.FIRESTORE_PROJECT_ID?.trim() ? { firestoreProjectId: source.FIRESTORE_PROJECT_ID.trim() } : {}),
@@ -291,11 +315,13 @@ export function loadConfig(
     ...(source.FIRESTORE_KEY_FILE?.trim() ? { firestoreKeyFile: source.FIRESTORE_KEY_FILE.trim() } : {}),
     ...(source.FIRESTORE_KEY_JSON?.trim() ? { firestoreKeyJson: JSON.parse(source.FIRESTORE_KEY_JSON.trim()) as Record<string, unknown> } : {}),
     ...(source.FIRESTORE_ENCRYPTION_KEY?.trim() ? { firestoreEncryptionKey: source.FIRESTORE_ENCRYPTION_KEY.trim() } : {}),
+    chatIntentRouting: source.CHAT_INTENT_ROUTING ?? (source.APP_ENV === "test" ? "patterns" : "agent"),
     mcpBaseURL: source.MCP_BASE_URL?.trim() ?? "",
     mcpMode,
     mcpTransport,
     mcpTimeoutMs,
     functionsWriterAdmissionTimeoutMs,
+    functionsChatTaskTimeoutMs,
     readWorkerConcurrency,
     readWorkerPerActor,
     readWorkerLeaseMs,
@@ -335,6 +361,10 @@ export function loadConfig(
     pipelineAPIBaseURL: source.PIPELINE_API_BASE_URL?.trim() ?? "",
     pipelineAPIKey: source.PIPELINE_API_KEY?.trim() ?? "",
     pipelineTimeoutMs,
+    pipelineWorkspaceId: nonblank(source.PIPELINE_WORKSPACE_ID?.trim(), "lcwe"),
+    ragPolicyAPIBaseURL: source.RAG_POLICY_API_BASE_URL?.trim() ?? "",
+    ragPolicyAPIKey: source.RAG_POLICY_API_KEY?.trim() ?? "",
+    ragPolicyAdminAPIKey: source.RAG_POLICY_ADMIN_API_KEY?.trim() ?? "",
     corsOrigins: nonblank(source.CORS_ORIGINS, "http://localhost:5173")
       .split(",")
       .map((item) => item.trim())
@@ -356,7 +386,12 @@ export function loadConfig(
  * Checks application configuration for invalid or incompatible settings.
  ******************************************************************************/
 export function validateConfig(config: AppConfig, options: { administratorBootstrap?: "process-startup" | "external" } = {}): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(config.pipelineWorkspaceId ?? "lcwe"))
+    throw new Error("PIPELINE_WORKSPACE_ID must be a stable workspace identifier");
   const admissionTimeout = config.functionsWriterAdmissionTimeoutMs ?? 30_000;
+  const chatTimeout = config.functionsChatTaskTimeoutMs ?? 180_000;
+  if (!Number.isSafeInteger(chatTimeout) || chatTimeout < 1000 || chatTimeout > 240_000)
+    throw new Error("FUNCTIONS_CHAT_TASK_TIMEOUT_MS must be between 1000 and 240000 ms");
   if (!Number.isInteger(admissionTimeout) || admissionTimeout < 1000 || admissionTimeout > 60_000)
     throw new Error("FUNCTIONS_WRITER_ADMISSION_TIMEOUT_MS must be between 1000 and 60000 ms");
   if (!["development", "test", "production"].includes(config.environment))
@@ -372,6 +407,7 @@ export function validateConfig(config: AppConfig, options: { administratorBootst
   if ((config.storageDriver === "firestore" || config.storageDriver === "firestore-records") && !config.firestoreProjectId)
     throw new Error("FIRESTORE_PROJECT_ID is required when STORAGE_DRIVER=firestore");
   if (config.storageDriver === "firestore-records") {
+    if (config.firestoreContentFormat && !["encrypted-records/v1", "native-fields/v1"].includes(config.firestoreContentFormat)) throw new Error("Invalid FIRESTORE_CONTENT_FORMAT");
     if (!config.firestoreDatabaseId || !config.firestoreWorkspaceId || !config.storageEncryptionKey)
       throw new Error("FIRESTORE_DATABASE_ID, FIRESTORE_WORKSPACE_ID and STORAGE_ENCRYPTION_KEY are required for firestore-records");
     validateFirestoreNamespace({ projectId: config.firestoreProjectId!, databaseId: config.firestoreDatabaseId, workspaceId: config.firestoreWorkspaceId });
@@ -487,6 +523,16 @@ export function validateConfig(config: AppConfig, options: { administratorBootst
     if (/[\r\n]/.test(config.pipelineAPIKey) || config.pipelineAPIKey.length > 16_384)
       throw new Error("PIPELINE_API_KEY is not a supported backend credential");
   }
+  if (config.ragPolicyAPIBaseURL || config.ragPolicyAPIKey) {
+    if (!config.ragPolicyAPIBaseURL || !config.ragPolicyAPIKey) throw new Error("RAG_POLICY_API_BASE_URL and RAG_POLICY_API_KEY must be configured together");
+    let endpoint: URL;
+    try { endpoint = new URL(config.ragPolicyAPIBaseURL); } catch { throw new Error("RAG_POLICY_API_BASE_URL must be a valid service origin"); }
+    if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname !== "/" || config.environment === "production" && endpoint.protocol !== "https:")
+      throw new Error("RAG_POLICY_API_BASE_URL must be a credential-free service origin, using HTTPS in production");
+    if (/[\r\n]/.test(config.ragPolicyAPIKey) || config.ragPolicyAPIKey.length > 16384) throw new Error("RAG_POLICY_API_KEY is not a supported backend credential");
+  }
+  if (config.ragPolicyAdminAPIKey && (!config.ragPolicyAPIBaseURL || /[\r\n]/.test(config.ragPolicyAdminAPIKey) || config.ragPolicyAdminAPIKey.length > 16384))
+    throw new Error("RAG_POLICY_ADMIN_API_KEY requires the backend RAG connection and a supported server credential");
   if (
     config.environment === "production" &&
     options.administratorBootstrap !== "external" &&
@@ -520,6 +566,7 @@ function validateProductionReleaseConfig(config: AppConfig, bootstrapAdministrat
     ["GOVERNANCE_SECONDARY_URL", config.governanceSecondaryURL],
     ["POLICY_GATE_URL", config.policyGateURL],
     ["PIPELINE_API_BASE_URL", config.pipelineAPIBaseURL],
+    ["RAG_POLICY_API_BASE_URL", config.ragPolicyAPIBaseURL],
   ] as const) {
     if ((value ?? "") !== "") validateProductionServiceURL(value!, name);
   }

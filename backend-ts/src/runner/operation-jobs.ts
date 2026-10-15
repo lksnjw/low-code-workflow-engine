@@ -1,4 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { assertErpnextWriteArguments, assertErpnextWriteReceipt } from "../tools/erpnext-document-write.js";
+import { OperationPolicyBlocked, prepareOperationPolicy } from "../governance/record-workflow-policy.js";
+import { captureUserMcpBinding, withUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import { boundedOperation } from "../core/bounded-operation.js";
 import { canonicalJSONBytes, resolvedParameterHashBytes } from "../core/canonical-json.js";
 import type { CurrentUser, HandlerServices } from "../http/handlers/common.js";
@@ -12,6 +15,7 @@ import { publicExecution } from "../redact/public-model-usage.js";
 import { newReadProgress, appendExecutionEvent, assertCurrentRunController } from "./read-checkpoints.js";
 import { advanceOperationDecisions } from "./operation-control-checkpoints.js";
 import { assertOperationReturnCompletion } from "./operation-return-checkpoints.js";
+import { assertExecutionRetry, type ExecutionRetryRequest } from "./execution-retry.js";
 import { operationValueState } from "./operation-merge-checkpoints.js";
 import { prepareProtectedSelection, checkpointProtectedSelection, queueProtectedHandler, confirmedProtectedOperationTransition, assertProtectedCheckpointOwnership } from "./operation-protected-checkpoints.js";
 import { assertConfirmedOperationResults } from "./operation-result-evidence.js";
@@ -254,7 +258,7 @@ export class OperationJobQueue {
   }
   async admit(workflow: Workflow, rawInput: Record<string, unknown>, user: CurrentUser, key: string, traceId: string,
     source?: { profile: "workflow-schedule-source/v1"; scheduleId: string; scheduleRevision: number; occurrenceId: string; scheduledFor: string;
-      scheduleHash: string; reportWindow: ReportWindow; reportWindowBinding: ReportWindowInputBinding; inputHash: string }, lifecycleScope?: WorkflowLifecycleScope) {
+      scheduleHash: string; reportWindow: ReportWindow; reportWindowBinding: ReportWindowInputBinding; inputHash: string }, lifecycleScope?: WorkflowLifecycleScope, retry?: ExecutionRetryRequest) {
     const assertLifecycle = () => { if (lifecycleScope) assertWorkflowLifecycleScope(this.services.repository, lifecycleScope); };
     assertLifecycle();
     requireOperationTaskAdmission(this.services.repository);
@@ -266,7 +270,7 @@ export class OperationJobQueue {
     // Stable through credential/key rotation. The private scope is an identity,
     // not dispatch authority or an upstream idempotency promise.
     const scope = digest(["operation/v1", user.id, workflow.id, key]);
-    const fingerprint = digest({ sourceHash: workflowContentHash(workflow.yaml), version: workflow.publishedVersion, input, source: source ?? null });
+    const fingerprint = digest({ sourceHash: workflowContentHash(workflow.yaml), version: workflow.publishedVersion, input, source: source ?? null, ...(retry ? { retry } : {}) });
     const result = await this.services.repository.mutate(state => {
       assertLifecycle();
       const existing = Object.values(state.executions).find(run => run.operationSecret?.idempotencyScope === scope);
@@ -276,6 +280,7 @@ export class OperationJobQueue {
         assertLifecycle(); return { execution: publicExecution(existing), replayed: true };
       }
       const current = state.workflows[workflow.id], publication = state.versions[workflow.id]?.findLast(item => item.version === workflow.publishedVersion && item.artifactState === "PUBLISHED");
+      const retrySource = retry ? assertExecutionRetry(state, workflow, user, retry, input).link : undefined;
       if (!current || current.archived || current.yaml !== workflow.yaml || current.publishedVersion !== workflow.publishedVersion || !publication || publication.yaml !== workflow.yaml || current.pendingGenerationApproval?.steps.length) throw new HandlerFailure(409, "A current accepted immutable operation publication is required");
       if (source) {
         const schedule = state.schedules[source.scheduleId], occurrence = state.scheduleOccurrences[source.occurrenceId];
@@ -318,21 +323,24 @@ export class OperationJobQueue {
       }
       // Model egress has separate authority. Require the write-approval policy
       // only when this immutable publication actually contains an effect.
-      if (compiled.plan.ir.root.nodes.some(node => node.kind === "action" && node.effectClass !== "read")) runtimeApprovalPolicyHash(state);
+      if (compiled.plan.ir.root.nodes.some(node => node.kind === "action" && node.effectClass !== "read")) runtimeApprovalPolicyHash(state, user.id);
       const id = `operation-${randomBytes(16).toString("hex")}`, now = new Date().toISOString();
       const run: Execution = { id, workflowId: workflow.id, workflowName: workflow.name, status: "PENDING", startedAt: now, completedAt: null, durationMs: 0,
+        ...(this.services.userMcpCredentials ? { erpCredentialSecret: captureUserMcpBinding(this.services, state, user.id)! } : {}),
         startedBy: { id: user.id, name: user.name }, tokens: { input: 0, output: 0, total: 0 }, costUsd: 0, traceId,
         workflowSnapshot: { yaml: workflow.yaml, version: workflow.publishedVersion, contentHash: compiled.plan.sourceHash, registryHash: compiled.receipt.registryHash, input,
           executionProfile: "sequential-operation-v1", operationCompilation: compiled.receipt }, readProgress: newReadProgress(this.services.repository), stepOutputs: {},
         operationSecret: { profile: "operation-job/v1", actorId: user.id, roleId: state.users[user.id]!.roleId, admittedRole: user.role, state: "QUEUED", idempotencyScope: scope, requestFingerprint: fingerprint, createdAt: now, intents: {},
           ...(analysisProvider ? { analysisProvider } : {}), ...(agentProvider ? { agentProvider } : {}) },
         ...(source ? { scheduleSource: structuredClone(source) } : {}),
+        ...(retrySource ? { retrySource } : {}),
         agentSummary: compiled.plan.ir.root.nodes.some(node => node.kind === "action" && node.effectClass !== "read")
           ? "Operation queued. Each write requires an independent exact approval; nothing is confirmed by queue admission."
           : "Read-and-model workflow queued. Model and tool results require saved acknowledgements; no ERP write or notification is in this publication." };
       assertCurrentRunController(state, run, user.id, user.role);
       state.executions[id] = run; state.timelines[id] = []; state.executionEvents[id] = []; state.executionLogs[id] = [];
       appendExecutionEvent(state, run, "run.queued", { profile: "operation-job/v1", persistence: run.readProgress!.persistence }); audit(state, run, "execution.queued");
+      if (retrySource) appendExecutionEvent(state, run, "run.retry_queued", { sourceExecutionId: retrySource.sourceExecutionId, freshApprovalRequired: true });
       if (!residentExecutionAllowed(this.services.repository)) prepareOperationTaskGeneration(run);
       assertLifecycle(); return { execution: publicExecution(run), replayed: false };
     });
@@ -429,6 +437,10 @@ export class OperationJobQueue {
     } finally { this.#pumping = false; if (this.#repump) { this.#repump = false; this.kick(); } }
   }
   private async process(control: Active) {
+    const expected = await this.services.repository.readAuthoritative(state => state.executions[control.id]?.erpCredentialSecret);
+    return withUserMcpBinding(this.services, control.actorId, expected, () => this.processBound(control));
+  }
+  private async processBound(control: Active) {
     const { services } = this, repository = services.repository, id = control.id;
     let executingPlan: CompiledOperationPlan | undefined, executingEpoch: number | undefined;
     let knownCoverageFailure: { nodeId: string; intentKey: string; intentId: string; output: Record<string, unknown>; message: string } | undefined;
@@ -655,7 +667,7 @@ export class OperationJobQueue {
                 run.operationSecret!.intents[node.id] || !current || !canonicalJSONBytes(current).equals(canonicalJSONBytes(captured)))
               throw new Error("Analysis intent facts changed or are already used");
             assertRuntimeAnalysisEgress(current.configuration.egressPolicy!, current.configuration.baseURL, node.dataClass);
-            const now = new Date().toISOString(); run.operationSecret!.intents[node.id] = { id: intentId, nodeId: node.id, invocationId: attempt.id,
+            const now = new Date().toISOString(); run.operationSecret!.intents[node.id] = { id: intentId, nodeId: node.id, invocationId: attempt.id, dispatchKind: "analysis",
               operationKey: `${id}:${node.id}`, argumentHash: digest({ input: resolvedInput, instruction: node.instruction, outputSchema: node.outputSchema,
                 dataClass: node.dataClass, model, maxOutputTokens: node.maxOutputTokens, configurationRevision: current.configurationRevision }), state: "DISPATCH_INTENT", preparedAt: now };
             attempt.status = "DISPATCH_INTENT"; attempt.dispatchIntentAt = now;
@@ -906,6 +918,7 @@ export class OperationJobQueue {
           }
           continue;
         }
+        const assertSelectedPolicy = node.effectClass === "read" ? undefined : await prepareOperationPolicy(services, actor, tool.mcp_tool_name, args, control.controller.signal, initial.traceId);
         const pending = await repository.readAuthoritative(state => state.executions[id]!.runtimeApprovalSecret);
         if (node.effectClass !== "read" && initial.scheduleSource)
           await repository.readAuthoritative(state => assertCoverageBeforeScheduledEffect(state.executions[id]!, plan, live, index));
@@ -915,7 +928,7 @@ export class OperationJobQueue {
             return { executionId: id, workflowId: run.workflowId, nodeId: node.id, invocationId: run.readProgress!.attempts[node.id]!.id, operationKey: `${id}:${node.id}`,
               sourceHash: plan.sourceHash, semanticHash: plan.semanticHash, connectionId: pin.connectionId, connectionBinding: nodeBinding!.session.admissionBinding!, capabilityId: pin.capabilityId,
               capabilityRevision: pin.revisionId, admissionVersion: pin.admissionVersion, contractHash: pin.contractHash, argumentHash: digest(args), requesterId: actor.id,
-              requesterRoleId: run.operationSecret!.roleId, workerEpoch: run.readProgress!.epoch, policyHash: runtimeApprovalPolicyHash(state) };
+              requesterRoleId: run.operationSecret!.roleId, workerEpoch: run.readProgress!.epoch, policyHash: runtimeApprovalPolicyHash(state, actor.id) };
           });
           await requestRuntimeApproval(repository, id, binding, args, `Review exact ${node.effectClass} action ${node.capability.action}. Automatic retry is disabled.`); return;
         }
@@ -923,6 +936,7 @@ export class OperationJobQueue {
         const intentId = `intent-${randomBytes(16).toString("hex")}`;
         const persistIntent = async () => { await repository.mutateExecution(id, state => {
           assertContext(); const run = state.executions[id]!, attempt = run.readProgress!.attempts[node.id]!;
+          assertSelectedPolicy?.(state);
           assertScheduledRelatedRead(state, run, plan, live, node, args);
           const fresh = resolveReadBinding(node.inputs, operationValueState(run, plan.ir.flow, node.id));
           if (attempt.status !== "PREPARING" || !canonicalJSONBytes(fresh).equals(canonicalJSONBytes(args)) || run.operationSecret!.intents[node.id]) throw new Error("Operation intent facts changed or are already used");
@@ -942,6 +956,7 @@ export class OperationJobQueue {
         if (node.effectClass === "read") output = await captureReadFailure(node.id, node.id, intentId, args, tool, dispatchReadTool(services, actor.id, node.capability.action, args, { workflowId: initial.workflowId, executionId: id, signal: control.controller.signal, assertDispatch: assertContext,
           beforeDispatch: persistIntent, ...protectedReadContext, plan: { yaml: snapshot.yaml, stepIndex: index, token: gate.token, admissionPin: node.capability.admission!, contractHash: node.capability.contractHash, toolId: node.capability.toolId } }));
         else {
+          assertErpnextWriteArguments(tool, args);
           const identity = createDispatchIdentity(actor, nodeBinding!.roleMap), resolved = await services.validator.evaluateResolvedStep(id, snapshot.yaml, index, args, gate.token, identity, {
             executionId: id, workflowId: initial.workflowId, traceId: initial.traceId, actor: { id: actor.id, role: actor.role },
           });
@@ -950,9 +965,9 @@ export class OperationJobQueue {
           const permit = await issueOperationDispatchPermit(repository, id, intentId, tool, args, identity, assertContext);
           try {
             output = await nodeBinding!.session.clientFor(tool, node.capability.admission).execute(node.capability.action, resolved.capability, args, identity, control.controller.signal,
-              async () => { assertContext(); await repository.readAuthoritative(state => assertConsumedRuntimeApproval(state as RepositoryState, id, intentId)); assertContext(); }, assertContext, permit);
+              async () => { assertContext(); await repository.readAuthoritative(state => { assertSelectedPolicy?.(state); assertConsumedRuntimeApproval(state as RepositoryState, id, intentId); }); assertContext(); }, assertContext, permit);
           } finally { retireOperationDispatchPermit(permit); }
-          if (!confirmedOperationResult(tool, output)) throw new Error("Operation tool returned no contract confirmation");
+          if (!confirmedOperationResult(tool, output, args)) throw new Error("Operation tool returned no contract confirmation");
         }
         let coverageReceipt: ReportCoverageReceipt | undefined;
         if (node.effectClass === "read" && initial.scheduleSource && tool.report_coverage_contract) {
@@ -994,7 +1009,7 @@ export class OperationJobQueue {
           ? "All steps have acknowledged results. Operation evidence follows each reviewed result contract; this is not independent recipient-delivery verification."
           : "All read and model nodes have acknowledged results. No ERP write or notification was part of this run.");
       });
-    } catch {
+    } catch (operationError) {
       try { await repository.mutateExecution(id, state => {
         const run = state.executions[id];
         if (!run || run.operationSecret?.lease?.id !== control.leaseId || run.status !== "RUNNING") return;
@@ -1080,7 +1095,10 @@ export class OperationJobQueue {
         const attempt = Object.values(run.readProgress!.attempts).findLast(item => ["PREPARING", "DISPATCH_INTENT"].includes(item.status));
         if (attempt?.status === "DISPATCH_INTENT") recover(state, run, "OPERATION_DISPATCH_OR_RESULT_UNCONFIRMED");
         else if (run.readProgress!.cancellation) finish(state, run, "CANCELLED", "Cancelled before a new dispatch. Previous acknowledged results remain saved.");
-        else { run.failure = { failureCategory: "OPERATION_BLOCKED_BEFORE_DISPATCH", failedStepId: attempt?.nodeId ?? "preflight" }; finish(state, run, "FAILED", "Current operation verification or authority failed before a new dispatch. Previous acknowledged results remain saved."); }
+        else if (operationError instanceof OperationPolicyBlocked) {
+          run.failure = { failureCategory: "OPTIONAL_POLICY_BLOCKED", failedStepId: attempt?.nodeId ?? "preflight", reason: operationError.message };
+          finish(state, run, "FAILED", `${operationError.message} No new ERP change was dispatched; correct the fields or policy and start a reviewed new run.`);
+        } else { run.failure = { failureCategory: "OPERATION_BLOCKED_BEFORE_DISPATCH", failedStepId: attempt?.nodeId ?? "preflight" }; finish(state, run, "FAILED", "Current operation verification or authority failed before a new dispatch. Previous acknowledged results remain saved."); }
       }); } catch { this.#stalled = true; }
     }
   }
@@ -1091,8 +1109,12 @@ export class OperationJobQueue {
     await Promise.allSettled(active.flatMap(control => control.task ? [control.task] : [])); this.#unsubscribe();
   }
 }
-export function confirmedOperationResult(tool: ToolDefinition, output: Record<string, unknown>): boolean {
+export function confirmedOperationResult(tool: ToolDefinition, output: Record<string, unknown>, args?: Record<string, unknown>): boolean {
   const contract = tool.operation_contract; if (!contract || output.isError === true) return false;
+  if (contract.receipt_profile) {
+    if (!args) return false;
+    try { assertErpnextWriteReceipt(tool, args, output.structuredContent); } catch { return false; }
+  }
   let value: unknown = output.structuredContent;
   for (const key of contract.confirmation.path) {
     if (!value || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(value, key)) return false;

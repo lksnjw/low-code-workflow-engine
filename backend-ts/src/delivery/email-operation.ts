@@ -156,7 +156,7 @@ export async function admitEmailDelivery(services: HandlerServices, user: Curren
       const current = candidate(services, role.name, draft);
       if (current.tool.tool_id !== selected.tool.tool_id || current.contractHash !== selected.contractHash || !canonicalJSONBytes(current.args).equals(canonicalJSONBytes(selected.args)))
         deny("The email connector or exact draft binding changed before admission");
-      assertOperationPublicationCurrent(prepared, services, state, yaml, role.name); runtimeApprovalPolicyHash(state);
+      assertOperationPublicationCurrent(prepared, services, state, yaml, role.name); runtimeApprovalPolicyHash(state, user.id);
       const now = new Date().toISOString(), admissionId = `email-admission-${randomBytes(16).toString("hex")}`;
       const workflowId = `email-workflow-${randomBytes(16).toString("hex")}`, executionId = `operation-${randomBytes(16).toString("hex")}`;
       const source = { profile: "email-delivery-source/v1" as const, admissionId, sessionId, draftId: draft.id, draftVersion: draft.version, draftHash: draft.contentHash };

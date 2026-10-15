@@ -80,6 +80,10 @@ test.each([
   ["capture", "POLICY_CONTINUES"],
   ["tool", "TOOL_STATUS"], ["rows", "ROW_COUNT"], ["transport", "HTTP_RESPONSE"],
 ])("actual query campaign preserves failure and performs no generation/replay: %s", async (fault, expectedCheck) => {
+  // This is an injected query-fault simulation, not a live Node 22 qualification.
+  // Keep its prerequisite deterministic without weakening the operator guard.
+  const originalVersion = Object.getOwnPropertyDescriptor(process, "version")!;
+  Object.defineProperty(process, "version", { ...originalVersion, value: "v22.0.0" });
   for (const [key, value] of Object.entries(environment)) vi.stubEnv(key, value);
   const secret = "RAW_SECRET_SENTINEL", requests: string[] = [], events: unknown[] = [];
   const admission = { taskDispatch: "ENQUEUED", operation: { id: `chatop_${secret}`, modelBinding: { model: environment.GENERATION_MODEL_PRIMARY } } };
@@ -124,5 +128,18 @@ test.each([
     expect(requests.filter(value => value.endsWith("/messages"))).toHaveLength(1);
     expect(requests.some(value => value.includes("/workflows"))).toBe(false);
     expect(open).not.toHaveBeenCalled();
-  } finally { vi.unstubAllEnvs(); }
+  } finally { Object.defineProperty(process, "version", originalVersion); vi.unstubAllEnvs(); }
+});
+
+test("native qualification still rejects a non-Node-22 host before any HTTP request", async () => {
+  const originalVersion = Object.getOwnPropertyDescriptor(process, "version")!;
+  Object.defineProperty(process, "version", { ...originalVersion, value: "v24.0.0" });
+  for (const [key, value] of Object.entries(environment)) vi.stubEnv(key, value);
+  const request = vi.fn();
+  try {
+    let failure: unknown;
+    try { await qualifyNativeRealModel({ request, open: vi.fn(), config }); } catch (error) { failure = error; }
+    expect(safeNativeFailureDiagnostic(failure)).toMatchObject({ stage: "provider_setup", check: "NODE_VERSION" });
+    expect(request).not.toHaveBeenCalled();
+  } finally { Object.defineProperty(process, "version", originalVersion); vi.unstubAllEnvs(); }
 });

@@ -1,13 +1,15 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import { AESGCMCodec, decodeEncryptionKey } from "./aes-gcm.js";
 import { recordKey, type RuntimeRecord } from "./execution-record-layout.js";
+import { containsCredentials, nativeFields, nativeFieldDepth, type NativeRecordIndex } from "./firestore-native-fields.js";
 
 export type FirestoreNamespace = Readonly<{ projectId: string; databaseId: string; workspaceId: string }>;
-export type PrivateFirestoreDocument = { profile: "firestore-private/v1"; payload: Buffer };
+export type PrivateFirestoreDocument = { profile: "firestore-private/v1" | "firestore-native/v1"; payload: Buffer; data?: unknown; index?: NativeRecordIndex };
+export type FirestoreContentFormat = "encrypted-records/v1" | "native-fields/v1";
 export type RecordChunk = { id: string; document: PrivateFirestoreDocument };
 export type EncodedFirestoreRecord = { key: string; record: RuntimeRecord; bytes: Buffer; hash: string; chunks: RecordChunk[] };
-export type DecodedRecordChunk = { key: string; hash: string; bytes: number; index: number; count: number; body: Buffer };
+export type DecodedRecordChunk = { key: string; hash: string; bytes: number; index: number; count: number; body: Buffer; credentialFieldsBody?: true };
 // Application budgets, not platform quotas. Activate only bounded metadata in
 // one commit; prepare the larger immutable encrypted bodies separately.
 export const FIRESTORE_RECORD_BOUNDS = Object.freeze({ chunkBytes: 384_000, recordBytes: 8_000_000, documentBytes: 786_432, imageBytes: 256_000_000, recordCount: 100_000, chunkCount: 100_000, transactionWrites: 400, transactionBytes: 3_000_000, mutationBytes: 32_000_000, stagingConcurrency: 4, readBatch: 100,
@@ -60,7 +62,8 @@ export class FirestoreRecordCodec {
   readonly namespace: FirestoreNamespace;
   readonly #codec: AESGCMCodec;
   readonly #addressKey: Buffer;
-  constructor(encryptionKey: string, namespace: FirestoreNamespace) {
+  constructor(encryptionKey: string, namespace: FirestoreNamespace, readonly contentFormat: FirestoreContentFormat = "encrypted-records/v1") {
+    if (!["encrypted-records/v1", "native-fields/v1"].includes(contentFormat)) throw invalid();
     this.namespace = validateFirestoreNamespace(namespace); this.#codec = new AESGCMCodec(encryptionKey);
     this.#addressKey = createHmac("sha256", decodeEncryptionKey(encryptionKey)).update(canonicalJSONBytes(["firestore-private-address/v1", this.namespace])).digest();
   }
@@ -87,17 +90,45 @@ export class FirestoreRecordCodec {
   }
   encodeRecord(record: RuntimeRecord): EncodedFirestoreRecord {
     const bytes = recordBytes(record), key = recordKey(record.path), digest = hash(bytes), count = Math.ceil(bytes.length / FIRESTORE_RECORD_BOUNDS.chunkBytes), chunks: RecordChunk[] = [];
+    const credentialRecord=record.path[0]==="domain" && ["passwordHashes","refreshSessions","apiKeys","userMcpCredentials"].includes(record.path[1]??"");
+    // Seal individual credential fields before splitting a large business
+    // record. A provider key must not force the entire chat/workflow to AES.
+    const credentialFieldsBody = this.contentFormat === "native-fields/v1" && !credentialRecord && count > 1 && containsCredentials(record)
+      ? canonicalJSONBytes(nativeFields(record, this.#codec)) : undefined;
+    const fieldChunkBytes = credentialFieldsBody ? Math.ceil(credentialFieldsBody.length / count) : 0;
     for (let index = 0; index < count; index++) {
       const header = canonicalJSONBytes({ profile: "firestore-chunk/v1", namespace: this.namespace, key, hash: digest, bytes: bytes.length, index, count });
       if (header.length > MAX_HEADER) throw invalid();
       const size = Buffer.alloc(4); size.writeUInt32BE(header.length);
       const body = bytes.subarray(index * FIRESTORE_RECORD_BOUNDS.chunkBytes, (index + 1) * FIRESTORE_RECORD_BOUNDS.chunkBytes);
-      chunks.push({ id: this.documentId(key, index, digest), document: this.document(Buffer.concat([chunkMagic, size, header, body])) });
+      let document: PrivateFirestoreDocument;
+      if (this.contentFormat === "native-fields/v1" && !credentialRecord) {
+        const fields=count===1?nativeFields(record,this.#codec):undefined;
+        const data = { header: JSON.parse(header.toString("utf8")), ...(count === 1 ? nativeFieldDepth(fields)<=15 ? {record:fields} : {json:JSON.stringify(fields)} : credentialFieldsBody
+          ? { credentialFieldsBody: credentialFieldsBody.subarray(index * fieldChunkBytes, (index + 1) * fieldChunkBytes).toString("base64") } : { body: body.toString("base64") }) };
+        const payload = createHmac("sha256", this.#addressKey).update(canonicalJSONBytes(data)).digest();
+        if (canonicalJSONBytes(data).length + payload.length + 8192 > FIRESTORE_RECORD_BOUNDS.documentBytes) throw new Error("Native Firestore document budget exceeded");
+        document = { profile: "firestore-native/v1", payload, data };
+      } else document = this.document(Buffer.concat([chunkMagic, size, header, body]));
+      chunks.push({ id: this.documentId(key, index, digest), document });
     }
     return { key, record: JSON.parse(bytes.toString("utf8")), bytes, hash: digest, chunks };
   }
   decodeChunk(id: string, document: unknown): DecodedRecordChunk {
-    const raw = this.plaintext(document), start = chunkMagic.length + 4;
+    let raw: Buffer, credentialFieldsBody = false;
+    if (document && typeof document === "object" && (document as PrivateFirestoreDocument).profile === "firestore-native/v1") {
+      if (this.contentFormat !== "native-fields/v1" || !exact(document, ["profile", "payload", "data"]) || !Buffer.isBuffer(document.payload) || document.payload.length !== 32) throw invalid();
+      const expected = createHmac("sha256", this.#addressKey).update(canonicalJSONBytes(document.data)).digest();
+      if (!timingSafeEqual(expected, document.payload)) throw invalid();
+      const data = document.data as Record<string, unknown>;
+      if (!data || (!exact(data, ["header", "record"]) && !exact(data, ["header", "body"]) && !exact(data,["header","json"]) && !exact(data,["header","credentialFieldsBody"]))) throw invalid();
+      if (canonicalJSONBytes(data).length + document.payload.length + 8192 > FIRESTORE_RECORD_BOUNDS.documentBytes) throw invalid();
+      const header = canonicalJSONBytes(data.header), size = Buffer.alloc(4); size.writeUInt32BE(header.length);
+      credentialFieldsBody = Object.hasOwn(data, "credentialFieldsBody");
+      const body = Object.hasOwn(data, "record") ? canonicalJSONBytes(nativeFields(data.record, this.#codec, true)) : typeof data.json==="string" ? canonicalJSONBytes(nativeFields(JSON.parse(data.json),this.#codec,true)) : typeof data.body === "string" ? Buffer.from(data.body, "base64") : typeof data.credentialFieldsBody === "string" ? Buffer.from(data.credentialFieldsBody, "base64") : null;
+      if (!body) throw invalid(); raw = Buffer.concat([chunkMagic, size, header, body]);
+    } else raw = this.plaintext(document);
+    const start = chunkMagic.length + 4;
     if (raw.length < start || !raw.subarray(0, chunkMagic.length).equals(chunkMagic)) throw invalid();
     const length = raw.readUInt32BE(chunkMagic.length);
     if (length > MAX_HEADER || length < 1 || start + length >= raw.length) throw invalid();
@@ -111,30 +142,34 @@ export class FirestoreRecordCodec {
         header.count !== Math.ceil(Number(header.bytes) / FIRESTORE_RECORD_BOUNDS.chunkBytes) || !Number.isSafeInteger(header.index) || Number(header.index) < 0 || Number(header.index) >= Number(header.count)) throw invalid();
     if (id !== this.documentId(header.key, Number(header.index), header.hash)) throw invalid();
     const body = raw.subarray(start + length), expected = Math.min(FIRESTORE_RECORD_BOUNDS.chunkBytes, Number(header.bytes) - Number(header.index) * FIRESTORE_RECORD_BOUNDS.chunkBytes);
-    if (body.length !== expected) throw invalid();
-    return { key: header.key, hash: header.hash, bytes: Number(header.bytes), index: Number(header.index), count: Number(header.count), body };
+    if (credentialFieldsBody ? !body.length || Number(header.count) < 2 : body.length !== expected) throw invalid();
+    return { key: header.key, hash: header.hash, bytes: Number(header.bytes), index: Number(header.index), count: Number(header.count), body, ...(credentialFieldsBody ? {credentialFieldsBody: true} : {}) };
   }
   decodeRecord(chunks: DecodedRecordChunk[]): RuntimeRecord {
     const first = chunks[0]; if (!first || chunks.length !== first.count) throw invalid();
     const ordered: Buffer[] = [];
     for (const chunk of chunks) {
-      if (chunk.key !== first.key || chunk.hash !== first.hash || chunk.bytes !== first.bytes || chunk.count !== first.count || ordered[chunk.index]) throw invalid();
+      if (chunk.key !== first.key || chunk.hash !== first.hash || chunk.bytes !== first.bytes || chunk.count !== first.count || chunk.credentialFieldsBody !== first.credentialFieldsBody || ordered[chunk.index]) throw invalid();
       ordered[chunk.index] = chunk.body;
     }
     if (ordered.filter(Boolean).length !== first.count) throw invalid();
-    const bytes = Buffer.concat(ordered); if (bytes.length !== first.bytes || hash(bytes) !== first.hash) throw invalid();
+    const stored = Buffer.concat(ordered);
+    const bytes = first.credentialFieldsBody ? canonicalJSONBytes(nativeFields(JSON.parse(stored.toString("utf8")), this.#codec, true)) : stored;
+    if (bytes.length !== first.bytes || hash(bytes) !== first.hash) throw invalid();
     let record: RuntimeRecord; try { record = JSON.parse(bytes.toString("utf8")); } catch { throw invalid(); }
     if (recordKey(record.path) !== first.key || !recordBytes(record).equals(bytes)) throw invalid();
     return record;
   }
-  encodeHead(value: unknown): PrivateFirestoreDocument {
-    assertJSON(value); const raw = canonicalJSONBytes({ profile: "firestore-head-packet/v1", namespace: this.namespace, value });
-    if (raw.length > MAX_HEADER) throw invalid(); return this.document(raw);
+  encodeHead(value: unknown, index?: NativeRecordIndex): PrivateFirestoreDocument {
+    assertJSON(value); const raw = canonicalJSONBytes(index ? { profile: "firestore-head-packet/v2", namespace: this.namespace, value, index } : { profile: "firestore-head-packet/v1", namespace: this.namespace, value });
+    if (raw.length > MAX_HEADER) throw invalid(); return { ...this.document(raw), ...(index ? { index } : {}) };
   }
   decodeHead(document: unknown): unknown {
-    const raw = this.plaintext(document); if (raw.length > MAX_HEADER) throw invalid();
+    const indexed = document && typeof document === "object" && Object.hasOwn(document, "index");
+    if (indexed && (this.contentFormat !== "native-fields/v1" || !exact(document, ["profile", "payload", "index"]))) throw invalid();
+    const raw = this.plaintext(indexed ? { profile: (document as PrivateFirestoreDocument).profile, payload: (document as PrivateFirestoreDocument).payload } : document); if (raw.length > MAX_HEADER) throw invalid();
     let packet: Record<string, unknown>; try { packet = JSON.parse(raw.toString("utf8")); } catch { throw invalid(); }
-    if (!exact(packet, ["profile", "namespace", "value"]) || packet.profile !== "firestore-head-packet/v1" || !canonicalJSONBytes(packet.namespace).equals(canonicalJSONBytes(this.namespace)) || !canonicalJSONBytes(packet).equals(raw)) throw invalid();
+    if (!(indexed ? exact(packet, ["profile", "namespace", "value", "index"]) && packet.profile === "firestore-head-packet/v2" && canonicalJSONBytes(packet.index).equals(canonicalJSONBytes((document as PrivateFirestoreDocument).index)) : exact(packet, ["profile", "namespace", "value"]) && packet.profile === "firestore-head-packet/v1") || !canonicalJSONBytes(packet.namespace).equals(canonicalJSONBytes(this.namespace)) || !canonicalJSONBytes(packet).equals(raw)) throw invalid();
     return packet.value;
   }
 }

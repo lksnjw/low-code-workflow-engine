@@ -29,6 +29,16 @@ test("uses one abortable server-held progress read instead of freezing or overla
   expect(chatService.operation.mock.calls[0][2]).toMatchObject({ waitMs: 25000 });
   unmount(); resolve(page([event(1)]));
 });
+
+test("fresh progress immediately reopens one held read, while unchanged pages retain the bounded interval", async () => {
+  chatService.operation.mockResolvedValueOnce(page([event(1)])).mockResolvedValue(page([event(1)]));
+  const { unmount } = renderHook(() => useChatOperationMonitor("job")); await flush(); await tick(1);
+  expect(chatService.operation).toHaveBeenCalledTimes(2);
+  expect(chatService.operation.mock.calls[1][1]).toBe(1);
+  await tick(1000); expect(chatService.operation).toHaveBeenCalledTimes(2);
+  await tick(500); expect(chatService.operation).toHaveBeenCalledTimes(3);
+  expect(chatService.sendMessage).not.toHaveBeenCalled(); unmount();
+});
 test("gaps reset only the read cursor and reconnect beyond three network failures", async () => {
   chatService.operation.mockResolvedValueOnce(page([event(1)])).mockResolvedValueOnce(page([event(3)])).mockRejectedValue(new Error("offline"));
   const { result } = renderHook(() => useChatOperationMonitor("job")); await flush(); await tick(); expect(result.current.cursor).toBe(0); expect(result.current.reconnecting).toBe(true);

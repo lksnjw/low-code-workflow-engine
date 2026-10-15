@@ -5,12 +5,24 @@ import { recordKey, type RuntimeRecord } from "./execution-record-layout.js";
 import { RuntimeRecordIndex } from "./runtime-record-index.js";
 import { FirestoreRecordCodec, validateFirestoreNamespace, FIRESTORE_RECORD_BOUNDS as B, type FirestoreNamespace, type EncodedFirestoreRecord, type PrivateFirestoreDocument, type RecordChunk } from "./firestore-record-codec.js";
 import { FirestoreWriterOwnership, FirestoreOwnershipFailure, type FirestoreWriterClock } from "./firestore-writer-ownership.js";
+import { nativeRecordIndex } from "./firestore-native-fields.js";
+import type { FirestoreContentFormat } from "./firestore-record-codec.js";
 
 type Transition = { identity: string; inputHash: string; previousRevision: number; previousFingerprint: string };
 type Head = { profile: "firestore-record-head/v2"; revision: number; records: number; chunks: number; bytes: number; fingerprint: string; writerGeneration: number | null; transition: Transition };
 type Manifest = { profile: "firestore-record-manifest/v1"; key: string; hash: string; bytes: number; chunks: string[] };
 type Entry = EncodedFirestoreRecord & { manifest: PrivateFirestoreDocument };
 type View = { head: Head | null; index: RuntimeRecordIndex; entries: Map<string, Entry> };
+export type ScopedFirestoreReader = {
+  entries: ReadonlyArray<{path: string[]; index?: import("./firestore-native-fields.js").NativeRecordIndex}>;
+  read(paths: readonly string[][]): Promise<Array<RuntimeRecord | null>>;
+};
+// Immutable, fully verified record images only: never a Repository, SDK client,
+// actor decision, lease or execution controller. Every reuse must first match
+// the freshly authenticated head in the caller's own Firestore transaction.
+// Bounded to small images in two explicit server namespaces; no TTL authority.
+const warmImages = new Map<string, View>();
+const WARM_IMAGE_LIMITS = { namespaces: 2, bytes: 16_000_000, records: 10_000 } as const;
 export class FirestoreSnapshotChanged extends Error { constructor() { super("Committed Firestore image changed before control acknowledgement"); } }
 export type FirestoreRecordSnapshot = Readonly<{ profile: "firestore-record-snapshot/v1"; revision: number; recordCount: number; chunkCount: number; bytes: number; fingerprint: string; transitionIdentity: string | null }>;
 export type FirestoreRecordMutation = { transitionId: string; upsert: readonly RuntimeRecord[]; remove?: readonly string[][] };
@@ -18,8 +30,12 @@ const same = (a: unknown, b: unknown) => canonicalJSONBytes(a).equals(canonicalJ
 const exact = (value: unknown, keys: string[]): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join("|") === [...keys].sort().join("|"));
 const fingerprint = (value: unknown) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const bounded = (value: unknown, min: number, max: number) => Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max;
-const sameDocument = (actual: unknown, expected: PrivateFirestoreDocument) => exact(actual, ["profile", "payload"]) && actual.profile === expected.profile && Buffer.isBuffer(actual.payload) && actual.payload.equals(expected.payload);
-const copyDocument = (document: PrivateFirestoreDocument): PrivateFirestoreDocument => ({ profile: "firestore-private/v1", payload: Buffer.from(document.payload) });
+const sameOptional = (a: unknown, b: unknown) => a === undefined || b === undefined ? a === b : same(a, b);
+// Compare binary packets as bytes, not hundreds of thousands of JSON number
+// properties. Native data/index still require exact canonical equality.
+const sameDocument = (actual: unknown, expected: PrivateFirestoreDocument) => exact(actual, Object.keys(expected)) && actual.profile === expected.profile && Buffer.isBuffer(actual.payload) && actual.payload.equals(expected.payload) && sameOptional(actual.data, expected.data) && sameOptional(actual.index, expected.index);
+const copyDocument = (document: PrivateFirestoreDocument): PrivateFirestoreDocument => ({ ...document, payload: Buffer.from(document.payload), ...(document.data === undefined ? {} : {data:structuredClone(document.data)}), ...(document.index === undefined ? {} : {index:structuredClone(document.index)}) });
+const documentBytes = (document: PrivateFirestoreDocument) => document.payload.length + (document.data === undefined ? 0 : canonicalJSONBytes(document.data).length) + (document.index === undefined ? 0 : canonicalJSONBytes(document.index).length);
 
 /** Lower-level encrypted record store, deliberately NOT a qualified
  * PersistenceBackend. Immutable bodies are prepared first; only the atomic
@@ -33,14 +49,17 @@ export class FirestoreRecordStore {
   #uncertain = false;
   #closed = false;
   #writer: FirestoreWriterOwnership | null = null;
+  readonly #warmKey: string | undefined;
+  #readDirectory: { head: Head; manifests: Map<string, {manifest: Manifest; document: PrivateFirestoreDocument}> } | undefined;
   readonly collectionPath: string;
   readonly chunkCollectionPath: string;
   readonly headPath: string;
   readonly writerPath: string;
   readonly writerGenerationPath: string;
   get namespace() { return this.#codec.namespace; }
-  private constructor(readonly db: Firestore, codec: FirestoreRecordCodec) {
+  private constructor(readonly db: Firestore, codec: FirestoreRecordCodec, warmKey?: string) {
     this.#codec = codec; const namespace = codec.namespace;
+    this.#warmKey = warmKey;
     if (db.databaseId !== namespace.databaseId) throw new Error("Firestore client and explicit namespace differ");
     this.headPath = `workspaces/${namespace.workspaceId}/lcwe_runtime/head`;
     this.writerPath = `workspaces/${namespace.workspaceId}/lcwe_runtime/writer`;
@@ -48,12 +67,14 @@ export class FirestoreRecordStore {
     this.collectionPath = `${this.headPath}/lcwe_private_records`;
     this.chunkCollectionPath = `${this.headPath}/lcwe_record_chunks`;
   }
-  static create(encryptionKey: string, namespace: FirestoreNamespace, authentication: Pick<Settings, "keyFilename" | "credentials"> = {}): FirestoreRecordStore {
-    const scope = validateFirestoreNamespace(namespace), codec = new FirestoreRecordCodec(encryptionKey, scope);
+  static create(encryptionKey: string, namespace: FirestoreNamespace, authentication: Pick<Settings, "keyFilename" | "credentials"> = {}, contentFormat: FirestoreContentFormat = "encrypted-records/v1", reuseVerifiedImages = false): FirestoreRecordStore {
+    const scope = validateFirestoreNamespace(namespace), codec = new FirestoreRecordCodec(encryptionKey, scope, contentFormat);
     const db = new Firestore({ projectId: scope.projectId, databaseId: scope.databaseId,
       ...(authentication.keyFilename ? { keyFilename: authentication.keyFilename } : {}),
       ...(authentication.credentials ? { credentials: authentication.credentials } : {}) });
-    return new FirestoreRecordStore(db, codec);
+    const warmKey = reuseVerifiedImages ? codec.identity("verified-image-cache/v1", { contentFormat,
+      emulator: process.env.FIRESTORE_EMULATOR_HOST ?? null, keyFile: authentication.keyFilename ?? null, credentials: authentication.credentials ?? null }) : undefined;
+    return new FirestoreRecordStore(db, codec, warmKey);
   }
   private assertOpen() { if (this.#closed) throw new Error("Firestore record store is closed"); }
   async acquireWriter(options: { duration?: number; clock?: FirestoreWriterClock } = {}): Promise<void> {
@@ -146,6 +167,12 @@ export class FirestoreRecordStore {
       fingerprint: view.index.fingerprint, transitionIdentity: view.head?.transition.identity ?? null });
     this.#views.set(snapshot, view); return snapshot;
   }
+  private remember(view: View): void {
+    const key = this.#warmKey;
+    if (!key || !view.head || view.head.bytes > WARM_IMAGE_LIMITS.bytes || view.entries.size > WARM_IMAGE_LIMITS.records) return;
+    warmImages.delete(key); warmImages.set(key, view);
+    while (warmImages.size > WARM_IMAGE_LIMITS.namespaces) warmImages.delete(warmImages.keys().next().value!);
+  }
   readRecords(snapshot: FirestoreRecordSnapshot, paths?: readonly string[][]): RuntimeRecord[] {
     this.assertOpen();
     this.#writer?.assertActive();
@@ -158,6 +185,82 @@ export class FirestoreRecordStore {
       return structuredClone(entry.record);
     });
   }
+  /** Authenticate the small manifest directory, then fetch ONLY selected
+   * record bodies in the SAME read transaction. No full workspace assembly,
+   * chat history, writer lease, model call or writable repository is involved.
+   * The directory's Merkle fingerprint proves membership AND absence; merely
+   * trusting a signed but retired manifest would permit stale authorization. */
+  async readScoped<T>(project: (reader: ScopedFirestoreReader) => Promise<T>): Promise<T> {
+    return this.#mutex.runExclusive(async () => {
+      this.assertOpen();
+      return this.db.runTransaction(async transaction => {
+        const row = await transaction.get(this.db.doc(this.headPath));
+        if (!row.exists) throw new Error("No committed normalized progress image");
+        const head = this.head(row.data());
+        let directory = this.#readDirectory;
+        if (!directory || !same(head, directory.head)) {
+          const rows = await transaction.get(this.db.collection(this.collectionPath).limit(head.records + 1));
+          if (rows.size !== head.records) throw new Error("Scoped manifest count differs from committed head");
+          const manifests = new Map<string, {manifest: Manifest; document: PrivateFirestoreDocument}>();
+          let index = new RuntimeRecordIndex(), bytes = 0, chunks = 0;
+          for (const doc of rows.docs) {
+            const manifest = this.manifest(doc.id, doc.data());
+            if (manifests.has(manifest.key)) throw new Error("Duplicate scoped manifest");
+            manifests.set(manifest.key, {manifest,document:copyDocument(doc.data() as PrivateFirestoreDocument)});
+            index = index.with(manifest.key,manifest.hash); bytes += manifest.bytes; chunks += manifest.chunks.length;
+          }
+          if (index.fingerprint !== head.fingerprint || bytes !== head.bytes || chunks !== head.chunks)
+            throw new Error("Scoped manifest directory differs from authenticated head");
+          directory = {head,manifests};
+          if (head.records <= WARM_IMAGE_LIMITS.records) this.#readDirectory = directory;
+        }
+        const selected = directory, loaded = new Map<string, RuntimeRecord>();
+        const reader: ScopedFirestoreReader = {
+          entries: [...selected.manifests].map(([key,value]) => ({path:JSON.parse(key) as string[],...(value.document.index?{index:structuredClone(value.document.index)}:{})})),
+          read: async paths => {
+            if (paths.length > 10_000) throw new Error("Scoped record selection exceeds its budget");
+            const needed = [...new Set(paths.map(path=>recordKey(path)))].filter(key=>selected.manifests.has(key)&&!loaded.has(key));
+            const packets = await this.readChunks(transaction,needed.flatMap(key=>selected.manifests.get(key)!.manifest.chunks));
+            for (const key of needed) {
+              const value=selected.manifests.get(key)!, manifest=value.manifest;
+              const record=this.#codec.decodeRecord(manifest.chunks.map(id=>this.#codec.decodeChunk(id,packets.get(id)!)));
+              if (recordKey(record.path)!==key || canonicalJSONBytes(record).length!==manifest.bytes) throw new Error("Scoped record identity differs");
+              if (this.#codec.contentFormat==="native-fields/v1" && (!value.document.index || !same(value.document.index,nativeRecordIndex(record.path,record.value))))
+                throw new Error("Scoped native index differs from its authenticated record");
+              loaded.set(key,record);
+            }
+            this.assertOpen();
+            return paths.map(path=>{const record=loaded.get(recordKey(path));return record?structuredClone(record):null;});
+          },
+        };
+        const result=await project(reader); this.assertOpen(); return result;
+      },{readOnly:true});
+    });
+  }
+  /** Native keyset query. Authorization is supplied by the caller's coherent
+   * image; every selected manifest must still belong to that exact head. */
+  async metadataPage(snapshot: FirestoreRecordSnapshot, kind: string, ownerId: string | undefined, limit: number,
+    after?: { updatedAt: string; entityId: string }): Promise<RuntimeRecord[]> {
+    if (this.#codec.contentFormat !== "native-fields/v1" || !/^[a-zA-Z-]{1,64}$/.test(kind) || !Number.isInteger(limit) || limit < 1 || limit > 201) throw new Error("Unsupported native index query");
+    return this.#mutex.runExclusive(async () => {
+      this.assertOpen(); if (this.#uncertain) throw new Error("Native index authority is unavailable");
+      const view = this.view(snapshot);
+      return this.db.runTransaction(async transaction => {
+        await this.assertCommittedSnapshot(transaction, snapshot);
+        let query = this.db.collection(this.collectionPath).where("index.kind", "==", kind);
+        if (ownerId !== undefined) query = query.where("index.ownerId", "==", ownerId);
+        query = query.orderBy("index.updatedAt", "desc").orderBy("index.entityId", "asc");
+        if (after) query = query.startAfter(after.updatedAt, after.entityId);
+        const rows = await transaction.get(query.limit(limit)), selected: RuntimeRecord[] = [];
+        for (const row of rows.docs) {
+          const manifest = this.manifest(row.id, row.data()), expected = view.entries.get(manifest.key);
+          if (!expected || expected.hash !== manifest.hash || !sameDocument(row.data(), expected.manifest)) throw new Error("Native query differs from its authenticated image");
+          selected.push(structuredClone(expected.record));
+        }
+        return selected;
+      }, {readOnly:true});
+    });
+  }
   private head(document: unknown): Head {
     const value = this.#codec.decodeHead(document);
     if (!exact(value, ["profile", "revision", "records", "chunks", "bytes", "fingerprint", "writerGeneration", "transition"]) || value.profile !== "firestore-record-head/v2" ||
@@ -168,6 +271,9 @@ export class FirestoreRecordStore {
   }
   private manifestValue(entry: EncodedFirestoreRecord): Manifest {
     return { profile: "firestore-record-manifest/v1", key: entry.key, hash: entry.hash, bytes: entry.bytes.length, chunks: entry.chunks.map(chunk => chunk.id) };
+  }
+  private manifestDocument(entry: EncodedFirestoreRecord): PrivateFirestoreDocument {
+    return this.#codec.encodeHead(this.manifestValue(entry), this.#codec.contentFormat === "native-fields/v1" ? nativeRecordIndex(entry.record.path, entry.record.value) : undefined);
   }
   private manifest(id: string, document: unknown): Manifest {
     const value = this.#codec.decodeHead(document);
@@ -183,25 +289,47 @@ export class FirestoreRecordStore {
   }
   private async readChunks(transaction: Transaction, ids: string[]): Promise<Map<string, PrivateFirestoreDocument>> {
     const documents = new Map<string, PrivateFirestoreDocument>();
-    for (let at = 0; at < ids.length; at += B.readBatch) {
-      this.assertOpen();
-      const batch = ids.slice(at, at + B.readBatch), rows = await transaction.getAll(...batch.map(id => this.db.collection(this.chunkCollectionPath).doc(id)));
-      for (let index = 0; index < rows.length; index++) {
-        const row = rows[index]!; if (!row.exists) throw new Error("Firestore referenced chunk is missing");
-        const document = row.data() as PrivateFirestoreDocument; this.#codec.decodeChunk(batch[index]!, document);
-        documents.set(batch[index]!, copyDocument(document));
+    let cursor = 0, failed = false;
+    // Bounded parallel reads in the SAME read-only transaction, not parallel
+    // business work. Drain started requests on failure before teardown.
+    const results = await Promise.allSettled(Array.from({ length: Math.min(4, Math.ceil(ids.length / B.readBatch)) }, async () => {
+      while (!failed && cursor < ids.length) {
+        const at = cursor; cursor += B.readBatch;
+        try {
+          this.assertOpen();
+          const batch = ids.slice(at, at + B.readBatch), rows = await transaction.getAll(...batch.map(id => this.db.collection(this.chunkCollectionPath).doc(id)));
+          if (rows.length !== batch.length) throw new Error("Firestore chunk read was incomplete");
+          for (let index = 0; index < rows.length; index++) {
+            const row = rows[index]!; if (!row.exists) throw new Error("Firestore referenced chunk is missing");
+            const document = row.data() as PrivateFirestoreDocument; this.#codec.decodeChunk(batch[index]!, document);
+            documents.set(batch[index]!, copyDocument(document));
+          }
+        } catch (error) { failed = true; throw error; }
       }
-    }
+    }));
+    const error = results.find(result => result.status === "rejected");
+    if (error?.status === "rejected") throw error.reason;
     return documents;
   }
-  async load(): Promise<FirestoreRecordSnapshot> {
+  async load(unchanged?: FirestoreRecordSnapshot): Promise<FirestoreRecordSnapshot> {
     return this.#mutex.runExclusive(() => this.withWriter(async () => {
       this.assertOpen();
+      const warm = this.#warmKey ? warmImages.get(this.#warmKey) : undefined;
       try {
         const view = await this.db.runTransaction(async transaction => {
           if (this.#writer) await this.assertWriterTransaction(transaction);
           const headDoc = await transaction.get(this.db.doc(this.headPath)), head = headDoc.exists ? this.head(headDoc.data()) : null;
           if (head?.writerGeneration !== undefined && head.writerGeneration !== null && this.#writer && this.#writer.generation! < head.writerGeneration) throw new FirestoreOwnershipFailure();
+          // Only read-only observers may reuse a fully verified image. The
+          // authenticated head is read afresh in this transaction; a changed
+          // commit (including role revocation) must reload all records. An
+          // uncertain store cannot use this shortcut to restore authority.
+          if (unchanged && !this.#writer && !this.#uncertain && head && same(head, this.view(unchanged).head))
+            return this.view(unchanged);
+          // Fresh writer ownership and the current head were checked above.
+          // Reuse only immutable verified bytes, never the old owner's lease,
+          // cached role decision or writable application runtime.
+          if (!this.#uncertain && head && warm && same(head, warm.head)) return warm;
           const rows = await transaction.get(this.db.collection(this.collectionPath).limit((head?.records ?? 0) + 1));
           if (!head) {
             if (!rows.empty) throw new Error("Firestore manifests have no authoritative head");
@@ -213,17 +341,28 @@ export class FirestoreRecordStore {
           if (ids.length !== head.chunks || new Set(ids).size !== ids.length || manifests.reduce((sum, row) => sum + row.value.bytes, 0) !== head.bytes) throw new Error("Firestore manifest totals differ from their authenticated head");
           // Unreferenced preparation/retirement chunks cannot activate state.
           // Reachability GC is a separate, not-yet-qualified protocol.
-          const packets = await this.readChunks(transaction, ids), entries = new Map<string, Entry>(); let index = new RuntimeRecordIndex();
+          const reusable = new Map<string, Entry>();
+          if (warm) for (const row of manifests) {
+            const prior = warm.entries.get(row.value.key);
+            if (prior && prior.hash === row.value.hash && sameDocument(row.document, prior.manifest)) reusable.set(row.value.key, prior);
+          }
+          const needed = manifests.filter(row => !reusable.has(row.value.key)).flatMap(row => row.value.chunks);
+          const packets = await this.readChunks(transaction, needed), entries = new Map<string, Entry>(); let index = new RuntimeRecordIndex();
           for (const row of manifests) {
+            const prior = reusable.get(row.value.key);
+            if (prior) { entries.set(row.value.key, prior); index = index.with(row.value.key, prior.hash); continue; }
             const chunks = row.value.chunks.map(id => ({ id, document: packets.get(id)! })), decoded = chunks.map(chunk => this.#codec.decodeChunk(chunk.id, chunk.document));
             const record = this.#codec.decodeRecord(decoded), bytes = canonicalJSONBytes(record), key = recordKey(record.path);
             if (key !== row.value.key || bytes.length !== row.value.bytes || decoded[0]!.hash !== row.value.hash || entries.has(key)) throw new Error("Firestore body differs from its authenticated manifest");
+            if (this.#codec.contentFormat === "native-fields/v1" && (row.document.index === undefined || !same(row.document.index, nativeRecordIndex(record.path, record.value)))) throw new Error("Native query index differs from its authenticated record; an explicit migration is required for legacy manifests");
             entries.set(key, { key, record, bytes, hash: row.value.hash, chunks, manifest: row.document }); index = index.with(key, row.value.hash);
           }
           if (index.fingerprint !== head.fingerprint) throw new Error("Firestore records differ from their authenticated head");
           return { head, entries, index };
         }, { readOnly: true });
-        this.assertOpen(); this.#uncertain = false; return this.snapshot(view);
+        this.assertOpen(); this.#uncertain = false;
+        this.remember(view);
+        return unchanged && view === this.view(unchanged) ? unchanged : this.snapshot(view);
       } catch (error) { this.#uncertain = true; throw error; }
     }));
   }
@@ -271,7 +410,7 @@ export class FirestoreRecordStore {
         // Conservative read-side serialized document allowance. The normal
         // write budget uses a larger per-write allowance; activation reads the
         // prepared manifests and writes only the head.
-        const manifest = this.#codec.encodeHead(this.manifestValue(encoded)); manifestBytes += manifest.payload.length + 1024;
+        const manifest = this.manifestDocument(encoded); manifestBytes += documentBytes(manifest) + 1024;
         if (totalBytes > B.imageBytes || chunkCount > B.chunkCount || manifestBytes > B.migrationManifestBytes)
           throw new Error("Firestore staged migration budget exceeded");
         entries.set(key, { ...encoded, manifest }); manifests.set(id, manifest);
@@ -379,7 +518,7 @@ export class FirestoreRecordStore {
         if (old) { totalBytes -= old.bytes.length; chunks -= old.chunks.length; index = index.without(key); next.delete(key); }
         if (value) {
           totalBytes += value.bytes.length; chunks += value.chunks.length; index = index.with(key, value.hash);
-          const manifest = this.#codec.encodeHead(this.manifestValue(value)); next.set(key, { ...value, manifest }); writes.set(id, manifest);
+          const manifest = this.manifestDocument(value); next.set(key, { ...value, manifest }); writes.set(id, manifest);
         } else writes.set(id, null);
         if (totalBytes > B.imageBytes || chunks > B.chunkCount || next.size > B.recordCount) throw new Error("Firestore image budget exceeded");
       };
@@ -398,8 +537,8 @@ export class FirestoreRecordStore {
           upsert: mutation.upsert.map(record => [recordKey(record.path), next.get(recordKey(record.path))!.hash]).sort((a, b) => a[0]! < b[0]! ? -1 : a[0]! > b[0]! ? 1 : 0), remove: (mutation.remove ?? []).map(recordKey).sort() }),
         previousRevision: base.head?.revision ?? 0, previousFingerprint: base.index.fingerprint };
       const head: Head = { profile: "firestore-record-head/v2", revision, records: next.size, chunks, bytes: totalBytes, fingerprint: index.fingerprint, writerGeneration: this.#writer?.generation ?? base.head?.writerGeneration ?? null, transition }, headDocument = this.#codec.encodeHead(head);
-      let wireBytes = headDocument.payload.length + 8192;
-      for (const [id, document] of writes) wireBytes += (document ?? expected.get(id))!.payload.length + 8192;
+      let wireBytes = documentBytes(headDocument) + 8192;
+      for (const [id, document] of writes) wireBytes += documentBytes((document ?? expected.get(id))!) + 8192;
       if (writes.size + 1 > B.transactionWrites || wireBytes > B.transactionBytes) throw new Error("Firestore atomic transaction budget exceeded; staged migration or a smaller checkpoint is required");
       const prepared = [...changed].flatMap(key => next.get(key)?.chunks ?? []);
       try {
@@ -441,7 +580,7 @@ export class FirestoreRecordStore {
         if (acknowledged) for (const key of changed) {
           const entry = next.get(key); if (entry) next.set(key, { ...entry, manifest: acknowledged.get(this.#codec.manifestId(key))! });
         }
-        this.assertOpen(); return this.snapshot({ head, index, entries: next });
+        this.assertOpen(); const view = { head, index, entries: next }; this.remember(view); return this.snapshot(view);
       } catch (error) { this.#uncertain = true; throw error; }
     }));
   }

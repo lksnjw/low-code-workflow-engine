@@ -16,7 +16,7 @@ export function completeApprovalDisplay(value) {
   };
   return visit(value, 0);
 }
-export default function RuntimeApprovalReview({ execution, onReload }) {
+export default function RuntimeApprovalReview({ execution, onReload, onDecisionRecorded }) {
   const review = execution.runtimeApproval;
   const protectedItem = review.profile === "protected-approval/v1";
   const scopeComplete = !protectedItem || validProtectedApprovalReview(review, execution.status);
@@ -43,6 +43,7 @@ export default function RuntimeApprovalReview({ execution, onReload }) {
       const result = await executionService[outcome](execution.id, command);
       if (result?.approvalId !== review.id || result.executionId !== execution.id || result.canResume !== false || !["APPROVED", "REJECTED", "CONSUMED"].includes(result.state)) throw new Error("Unconfirmed decision response");
       setReceipt(result); setNotice(result.state === "REJECTED" ? "Exact transaction rejected. This checkpoint did not dispatch its operation." : result.operationManaged === true ? "Exact approval saved. The operation worker rechecks authority before dispatch. Check run history for the actual outcome; this receipt does not confirm delivery." : "Exact approval saved. This is not resumed, sent or completed; safe effect dispatch remains unavailable.");
+      onDecisionRecorded?.(result);
       try { await onReload(); } catch { setNotice("Decision was acknowledged, but refreshing its review failed. Reload to see current state; do not submit it again."); }
     } catch (error) {
       const status = error?.response?.status;
@@ -56,6 +57,7 @@ export default function RuntimeApprovalReview({ execution, onReload }) {
     <div className="border-y border-gray-200 py-4 dark:border-gray-700">
       <p className="text-sm font-semibold">{receipt?.state || stateLabel} · revision {receipt?.version || review.version}</p>
       <p className="mt-2 text-sm">{review.reason}</p><p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{review.resumeReason}</p>
+      {review.selfApprovalAllowed === true && <p className="mt-2 text-sm font-medium">As Super Admin, you may confirm your own exact transaction. Review the details below; nothing is approved automatically.</p>}
     </div>
     {protectedItem && <div className="space-y-1 text-sm"><h2 className="font-semibold">Selected workflow item</h2>
       <p>{scopeComplete ? selectedItem || "Outside a collection" : "Item details unavailable"}</p><p className="text-xs text-gray-500 dark:text-gray-400">This decision applies only to this exact invocation and its displayed arguments, not other items.</p></div>}

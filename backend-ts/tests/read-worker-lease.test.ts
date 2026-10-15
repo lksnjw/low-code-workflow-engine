@@ -15,6 +15,15 @@ function fixture() {
 }
 
 describe("authenticated read-worker ownership", () => {
+  test("native input is bound by the same lease MAC, including its credential fields",()=>{
+    const {job,item}=fixture();delete job.inputCiphertext;job.inputFields={version:1,executionId:item.id,input:{invoiceId:"native-invoice",api_key:"private-fixture"}};
+    job.lease=issueReadWorkerLease(key,job,item,"worker-one",now,duration);const expected=structuredClone(job.lease);
+    expect(assertReadWorkerLease(key,job,item,expected,now,duration)).toEqual(expected);
+    job.inputFields.input.invoiceId="different";expect(()=>assertReadWorkerLease(key,job,item,expected,now,duration)).toThrow(ReadWorkerLeaseFailure);
+    job.inputFields.input.invoiceId="native-invoice";job.inputFields.input.api_key="changed";
+    expect(()=>assertReadWorkerLease(key,job,item,expected,now,duration)).toThrow(ReadWorkerLeaseFailure);
+    job.inputCiphertext="ambiguous";expect(()=>issueReadWorkerLease(key,job,item,"worker-one",now,duration)).toThrow(ReadWorkerLeaseFailure);
+  });
   test("binds issuance, acknowledged renewal and final entry to the same private run generation", () => {
     const { job, item, expected } = fixture();
     expect(assertReadWorkerLease(key, job, item, expected, now, duration)).toEqual(expected);

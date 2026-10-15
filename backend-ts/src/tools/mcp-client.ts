@@ -31,6 +31,8 @@ export type GovernedMCPClient = Readonly<{
     operationPermit?: import("./operation-dispatch-permit.js").OperationDispatchPermit | import("./protected-operation-dispatch-permit.js").ProtectedOperationDispatchPermit | undefined,
     /** Opaque server-owned identity for this read invocation, not remote metadata. */
     readErrorBinding?: object,
+    /** One-use private document scope, bound to tool/actor/business arguments. */
+    libraryDelegation?: object,
   ): Promise<Record<string, unknown>>;
 }>;
 

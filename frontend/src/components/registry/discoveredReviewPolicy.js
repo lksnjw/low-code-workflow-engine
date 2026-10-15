@@ -28,7 +28,15 @@ export function importReceiptMatches(decision, result) {
   const revision = result?.revision, definition = revision?.definition, admission = result?.admission;
   const version = definition?.bridge_contract?.resource_version;
   if (typeof version !== "string") return false;
-  const remoteName = `${definition.mcp_tool_name}.rev_${btoa(version).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`;
+  const selector = definition.bridge_contract.selector;
+  if (selector !== undefined && !["digest-pinned-alias", "digest-pinned-operation-alias"].includes(selector)) return false;
+  if (selector === "digest-pinned-alias" && (decision.body.effectClass !== "read" || definition.is_read_only !== true ||
+      !/^[a-f0-9]{64}$/.test(definition.bridge_contract.resource_digest ?? ""))) return false;
+  if (selector === "digest-pinned-operation-alias" && (decision.body.effectClass !== "write" || definition.is_read_only !== false ||
+      !["erpnext-item-create/v1", "erpnext-item-update/v1", "erpnext-stock-receipt-draft/v1"].includes(definition.operation_contract?.receipt_profile) ||
+      decision.body.riskClass !== "medium" || !/^[a-f0-9]{64}$/.test(definition.bridge_contract.resource_digest ?? ""))) return false;
+  const remoteName = selector ? definition.mcp_tool_name :
+    `${definition.mcp_tool_name}.rev_${btoa(version).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`;
   return result.remoteHash === decision.body.remoteHash && remoteName === decision.body.remoteName && revision.connectionId === decision.connectionId &&
     definition.connection_id === decision.connectionId && revision.capabilityId === admission?.capabilityId &&
     ["AVAILABLE", "DISABLED", "BLOCKED"].includes(admission?.state) && definition.risk_level === decision.body.riskClass &&

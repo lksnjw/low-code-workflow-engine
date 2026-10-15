@@ -4,6 +4,16 @@ import { expect, jest, test, afterEach } from "@jest/globals";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import ChatOperationProgress from "./ChatOperationProgress";
 afterEach(cleanup);
+
+test("ordinary conversation progress is natural while business responses retain their completion boundary", () => {
+  const operation = { status: "ANSWERED", stage: "ANSWERED", persistence: "durable", attempts: [] };
+  const { rerender } = render(<ChatOperationProgress operation={operation} answerIntent="CONVERSATION" />);
+  expect(screen.getByText("Reply saved.")).toBeTruthy(); expect(screen.queryByText(/not proof of email delivery/)).toBeNull();
+  rerender(<ChatOperationProgress operation={operation} answerIntent="WORKFLOW_DISCUSSION" />);
+  expect(screen.getByText("Explanation saved. No workflow changes were applied.")).toBeTruthy();
+  rerender(<ChatOperationProgress operation={operation} answerIntent="QUERY" />);
+  expect(screen.getByText(/not proof of email delivery/)).toBeTruthy();
+});
 test.each([
   ["POLICY_REVIEW_REQUIRED", "This ERP read requires policy review."],
   ["POLICY_DENIED", "Policy denied this ERP read."],

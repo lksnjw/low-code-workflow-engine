@@ -31,6 +31,17 @@ assert.equal(pkg.dependencies["@earendil-works/pi-agent-core"], "1.2.0"); assert
 const handlers = await import(pathToFileURL(resolve(directory, "index.mjs")).href);
 assert.deepEqual(Object.keys(handlers).sort(), ["advanceWorkflowLifecycle", "api", "executeChatTask", "executeOperationTask", "executeReadTask", "executeReadbackTask", "recoverReadTaskDispatch"]);
 assert.deepEqual(handlers.api.__endpoint.httpsTrigger.invoker, ["public"]);
+assert.equal(handlers.api.__endpoint.minInstances, 1);
+for (const name of ["api", "executeChatTask", "executeReadTask", "executeReadbackTask", "executeOperationTask"]) {
+  assert.equal(handlers[name].__endpoint.availableMemoryMb, 4096);
+  assert.equal(handlers[name].__endpoint.cpu, 2);
+  assert.equal(handlers[name].__endpoint.timeoutSeconds, 300);
+  assert.equal(handlers[name].__endpoint.maxInstances, name==="api"?4:2);
+}
+for (const name of ["recoverReadTaskDispatch", "advanceWorkflowLifecycle"]) {
+  assert.equal(handlers[name].__endpoint.availableMemoryMb, 1024);
+  assert.equal(handlers[name].__endpoint.cpu, 2);
+}
 assert.deepEqual(handlers.executeReadTask.__endpoint.taskQueueTrigger.invoker, ["private"]);
 assert.equal(handlers.executeReadTask.__endpoint.taskQueueTrigger.rateLimits.maxConcurrentDispatches, 1);
 assert.deepEqual(handlers.executeChatTask.__endpoint.taskQueueTrigger.invoker, ["private"]);

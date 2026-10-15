@@ -29,8 +29,10 @@ test.each(["/", "/chat", "/chat/session-1?mode=edit"])("chat uses shared left si
   expect(screen.getByText("Chat and canvas")).toBeTruthy();
 });
 
-test.each(["workflow:read", "workflow:read_own", "execution:read_own", "chat:use"])("dashboard shortcut keeps existing permission boundary %s", permission => {
+test.each(["workflow:read", "workflow:read_own", "execution:read_own", "chat:use"])("workspace has no extra dashboard row above the conversation for %s", permission => {
   grants = [permission];
   render(<MemoryRouter><WorkspaceLayout><p>Chat</p></WorkspaceLayout></MemoryRouter>);
-  expect(Boolean(screen.queryByRole("link", { name: "Dashboard", exact: true }))).toBe(permission !== "chat:use");
+  expect(screen.queryByRole("navigation", { name: "Workspace shortcuts" })).toBeNull();
+  // Dashboard now belongs to the shared left sidebar (tested separately).
+  expect(screen.queryByRole("link", { name: "Dashboard", exact: true })).toBeNull();
 });

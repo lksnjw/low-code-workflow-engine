@@ -22,7 +22,10 @@ export function createAppConfig(env = {}, browserOrigin = "http://localhost") {
     throw new Error("VITE_API_REQUEST_TIMEOUT_MS must be between 1000 and 300000 ms");
   const apiBaseUrl = validateEndpoint(env.VITE_API_BASE_URL ?? "/api", { kind: "API", origin: browserOrigin, allowRelative: true });
   const apiOrigin = new URL(apiBaseUrl, browserOrigin).origin;
-  const wsBaseUrl = validateEndpoint(env.VITE_WS_BASE_URL ?? `${apiOrigin.replace(/^http/, "ws")}/ws`, { kind: "WebSocket", origin: browserOrigin });
+  const pollingOnly = env.VITE_PROGRESS_TRANSPORT === "http-polling";
+  if (env.VITE_PROGRESS_TRANSPORT && !pollingOnly) throw new Error("Unsupported progress transport");
+  if (pollingOnly && env.VITE_WS_BASE_URL) throw new Error("HTTP polling cannot advertise a WebSocket endpoint");
+  const wsBaseUrl = pollingOnly ? null : validateEndpoint(env.VITE_WS_BASE_URL ?? `${apiOrigin.replace(/^http/, "ws")}/ws`, { kind: "WebSocket", origin: browserOrigin });
   return Object.freeze({
     name: env.VITE_APP_NAME ?? "Agentic Workflow Engine",
     version: "0.1.0", apiBaseUrl, wsBaseUrl, apiRequestTimeoutMs,

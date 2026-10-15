@@ -10,6 +10,7 @@ import { withWorkspaceCompilationIssues } from "../workflows/draft-validation.js
 import type { ReviewedModelSourceContext } from "./reviewed-model-sources.js";
 import { generatedReturnCoverageIssues } from "./return-coverage.js";
 import type { AnalysisResponse } from "../analysisprovider/types.js";
+import { reviewedReadOutputKey } from "../tools/mcp-result.js";
 
 export type SynthesisInput = { prompt: string; userRole: string; user?: GovernanceUser; model?: string; providerRuntime?: ProviderRuntime; priorMessages?: string[]; caseContext?: Record<string, unknown>; candidateContext?: Record<string, unknown>; modelSourceContext?: ReviewedModelSourceContext; candidateValidator?: (yaml: string) => void; signal?: AbortSignal; traceId?: string; sessionId?: string; messageId?: string; liveTools?: readonly ToolDefinition[] };
 export type PreparedCandidate = { prompt: string; liveTools: readonly ToolDefinition[]; candidateId: "candidate_1" };
@@ -188,6 +189,9 @@ export function assembleCandidatePrompt(userText: string, userRole: string, regi
   // back to registered tools that this connection did not advertise.
   return promptData({ USER_ROLE: userRole, PRIOR_MESSAGES_JSON: priorMessages, USER_REQUEST: userText,
     TOOL_REGISTRY_JSON: liveTools ?? snapshot.tools, APPLICABLE_RULES_JSON: applicableRules,
+    TOOL_RESULT_BINDINGS_JSON: (liveTools ?? snapshot.tools).filter(tool => tool.bridge_contract?.output_schema).map(tool => ({
+      action: tool.name, remoteName: tool.mcp_tool_name, path: [reviewedReadOutputKey(tool)], schema: tool.bridge_contract!.output_schema,
+    })),
     ...(candidateContext === undefined ? {} : { SERVER_DERIVED_CONTEXT_JSON: candidateContext }),
     ...(modelSourceContext === undefined ? {} : { MODEL_SOURCE_HINTS_JSON: modelSourceContext }) });
 }

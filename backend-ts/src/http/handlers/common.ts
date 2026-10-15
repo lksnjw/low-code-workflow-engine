@@ -25,6 +25,7 @@ export type HandlerServices = {
   erpbridgeSession?: ErpbridgeMcpSession | undefined;
   mcpConnectionRuntime?: import("../../tools/mcp-connection-runtime.js").McpConnectionRuntime | import("../../tools/mcp-connection-runtime.js").McpConnectionManager;
   contextAvailable?: boolean;
+  userMcpCredentials?: import("../../tools/user-mcp-credentials.js").UserMcpCredentials;
 };
 
 export type EnrichedValidationResult = ValidationGateResult & { gateExplanation?: GateExplanation };
@@ -157,7 +158,7 @@ export function now(): string { return new Date().toISOString(); }
  ******************************************************************************/
 export function pageValues(request: FastifyRequest): { page: number; limit: number } {
   const query = queryRecord(request);
-  return { page: Math.max(1, Math.trunc(numberValue(query.page, 1))), limit: Math.max(1, Math.trunc(numberValue(query.limit, 20))) };
+  return { page: Math.max(1, Math.trunc(numberValue(query.page, 1))), limit: Math.max(1, Math.min(200, Math.trunc(numberValue(query.limit, 20)))) };
 }
 
 /*******************************************************************************

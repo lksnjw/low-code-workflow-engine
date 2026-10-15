@@ -205,13 +205,15 @@ test.each([false, true])("normal nested collection execution keeps distinct invo
   expect(item.iterationProgress?.receipts["collection:each"]?.status).toBe("DONE");
 });
 
-test("historical collection publications require explicit reviewed re-publication; aggregate durable storage remains design-only", async () => {
+test("historical collections require reviewed re-publication and unsupported aggregate durable publication stays denied", async () => {
   const s = await setup(); await s.review(); const w = await workflowHarness(s, true, collectionFlow(), "{{each.item}}");
   expect((await w.run({ input: { rows: ["a"] } })).statusCode).toBe(409); expect(s.sdk.callTool).not.toHaveBeenCalled();
   expect((await w.publish()).json().data).toMatchObject({ version: 2, compiledRead: { schemaVersion: "workflow-read-ir/v4" } });
   const durable = await setup(new Persistence()); await durable.review(); const design = await workflowHarness(durable, false, collectionFlow(), "{{each.item}}");
-  const publication = await design.publish(); expect(publication.statusCode, publication.body).toBe(200); expect(publication.json().data).toMatchObject({ executionReadiness: "UNSUPPORTED_PROFILE" }); expect(publication.json().data.compiledRead).toBeUndefined();
-  expect((await design.run({ mode: "async-read", idempotencyKey: "aggregate-collection-fixture", input: { rows: ["a"] } })).statusCode).toBe(422); expect(durable.sdk.callTool).not.toHaveBeenCalled();
+  const publication = await design.publish(); expect(publication.statusCode, publication.body).toBe(422); expect(publication.json().meta.code).toBe("UNSUPPORTED_PUBLICATION_PROFILE");
+  expect((await durable.repository.snapshot()).workflows.compiled!.publishedVersion).toBe(0);
+  const deniedRun = await design.run({ mode: "async-read", idempotencyKey: "aggregate-collection-fixture", input: { rows: ["a"] } });
+  expect(deniedRun.statusCode).toBe(409); expect(deniedRun.json().meta.code).toBe("WORKFLOW_NOT_PUBLISHED"); expect(durable.sdk.callTool).not.toHaveBeenCalled();
 });
 
 test.each([false, true])("collection review changes after intent acknowledgement deny actual SDK entry, async=%s", async queued => {

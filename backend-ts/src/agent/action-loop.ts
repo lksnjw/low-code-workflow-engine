@@ -1,4 +1,5 @@
 import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import { libraryModelInputSchema } from "../documents/library-client.js";
 import { Type, createAssistantMessageEventStream, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
 import type { ToolDefinition } from "../registry/schemas.js";
 import type { ProviderRuntime } from "../providers/runtime.js";
@@ -6,13 +7,14 @@ import type { QueryMessage, QueryModelRouting, QueryToolDefinition } from "../an
 import { assistantToolCallMessage, type ProviderContinuationSecret } from "../analysisprovider/provider-continuation.js";
 import type { GovernanceUser } from "../governance/gate.js";
 import { validateToolArguments } from "./workflow-runtime-validator.js";
-import { WORKSPACE_ACTION_SYSTEM_PROMPT, promptData } from "../prompts/contracts.js";
+import { ERP_ACTION_SYSTEM_PROMPT, promptData } from "../prompts/contracts.js";
 import type { ChatWorkspaceStatus } from "./chat-workspace-status.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { hasReservedBridgeRole } from "../tools/erpbridge-contract.js";
 import { mcpResultForModel } from "../tools/mcp-result.js";
 import { acknowledgedReadToolFailure } from "../tools/read-tool-broker.js";
 import { combinedAgentSignal, piBridgeAssistantMessage, piBridgeModel, piJsonObject, piTranscriptMessages } from "./pi-provider-bridge.js";
+import { ToolProposalCorrector, type ToolProposalCorrection } from "./tool-proposal-correction.js";
 
 export type GovernanceCheck = (
   toolName: string,
@@ -56,6 +58,7 @@ export type ActionLoopResult = {
   totalTokens: { input: number; output: number; measured?: boolean };
   latencyMs: number;
   modelRouting?: QueryModelRouting;
+  proposalCorrections?: ToolProposalCorrection[];
 };
 
 const MAX_ITERATIONS = parseInt(process.env.ACTION_AGENT_MAX_ITERATIONS ?? "12", 10);
@@ -63,7 +66,7 @@ const TIMEOUT_MS = parseInt(process.env.ACTION_AGENT_TIMEOUT_MS ?? "120000", 10)
 const TOKEN_BUDGET = parseInt(process.env.ACTION_AGENT_TOKEN_BUDGET ?? "16000", 10);
 const PI_ACTION_MODEL = piBridgeModel("lcwe-governed-action", "LCWE governed action provider", TOKEN_BUDGET);
 
-const SYSTEM_PROMPT = WORKSPACE_ACTION_SYSTEM_PROMPT;
+const SYSTEM_PROMPT = ERP_ACTION_SYSTEM_PROMPT;
 
 /*******************************************************************************
  * Function: runActionLoop
@@ -97,9 +100,10 @@ async function runPiActionLoop(
   const definitions: QueryToolDefinition[] = admitted.map(tool => ({ type: "function", function: {
     name: tool.mcp_tool_name.trim() || tool.name,
     description: `[READ] ${tool.description}`,
-    parameters: (tool.input_schema as Record<string, unknown>) ?? { type: "object", properties: {} },
+    parameters: libraryModelInputSchema(tool),
   } }));
   const steps: ActionStep[] = [];
+  const corrector = new ToolProposalCorrector(admitted);
   const handledCallIds = new Set<string>();
   const continuationByCall = new Map<string, ProviderContinuationSecret>();
   const totalTokens = { input: 0, output: 0, measured: true };
@@ -160,16 +164,18 @@ async function runPiActionLoop(
     void (async () => {
       stream.push({ type: "start", partial: piBridgeAssistantMessage(PI_ACTION_MODEL, [], "pending", attempts, totalTokens) });
       try {
+        let messages = piTranscriptMessages(context, continuationByCall);
+        for (;;) {
         if (input.signal?.aborted) { halt = "CANCELLED"; blocked = true; throw new Error("cancelled"); }
         if (attempts >= MAX_ITERATIONS || Date.now() > deadline || totalTokens.output >= TOKEN_BUDGET) {
           halt = "LIMIT_REACHED"; blocked = true; throw new Error("limit reached");
         }
         const iteration = attempts++;
         await input.onTurn?.(iteration);
-        const turn = await provider.queryWithTools(piTranscriptMessages(context, continuationByCall), definitions, {
+        const turn = await provider.queryWithTools(messages, definitions, {
           allowFallback: true,
           maxOutputTokens: Math.max(1, TOKEN_BUDGET - totalTokens.output),
-          promptTemplateVersion: "prompt/action/v3",
+          promptTemplateVersion: "prompt/action/v5",
           context: { sessionId: input.sessionId, actor: { id: input.actorId, role: input.actorRole }, ...(input.traceId ? { traceId: input.traceId } : {}),
             egress: { purpose: "interactive", dataClass: "restricted" } },
           signal: combinedAgentSignal(input.signal, options?.signal, deadline),
@@ -178,6 +184,11 @@ async function runPiActionLoop(
         totalTokens.input += turn.inputTokens; totalTokens.output += turn.outputTokens;
         totalTokens.measured = totalTokens.measured && turn.measured === true;
         if (input.signal?.aborted) { halt = "CANCELLED"; blocked = true; }
+        // A known write is not a misspelled read proposal and must still stop.
+        const requestsWrite = turn.toolCalls.some(call => allTools.some(tool => !tool.is_read_only && (tool.mcp_tool_name.trim() || tool.name) === call.name));
+        const feedback = !halt && !requestsWrite ? corrector.feedback(turn, Date.now() <= deadline && totalTokens.output < TOKEN_BUDGET && attempts < MAX_ITERATIONS) : undefined;
+        if (corrector.blocked) { halt = "TOOL_FAILED"; blocked = true; lastText = "Input correction changed concrete values or scope. Review is required; no corrected call was dispatched."; throw new Error("Proposal scope changed"); }
+        if (feedback) { messages = [...messages, ...feedback]; continue; }
         const validToolTurn = !halt && turn.stopReason === "tool_calls" && turn.toolCalls.length > 0;
         if (validToolTurn && turn.providerContinuationSecret)
           for (const call of turn.toolCalls) continuationByCall.set(call.id, turn.providerContinuationSecret);
@@ -188,6 +199,8 @@ async function runPiActionLoop(
         const stopReason = validToolTurn ? "toolUse" : turn.stopReason === "length" ? "length" : "stop";
         stream.push({ type: "done", reason: stopReason, message: piBridgeAssistantMessage(PI_ACTION_MODEL, content, stopReason, iteration,
           { input: turn.inputTokens, output: turn.outputTokens }, turn.model, turn.provider) });
+        break;
+        }
       } catch {
         if (!halt) halt = input.signal?.aborted ? "CANCELLED" : "PROVIDER_FAILED";
         if (halt === "CANCELLED") blocked = true;
@@ -257,6 +270,7 @@ async function runPiActionLoop(
   if (halt === "CANCELLED") lastText = "Read operation cancelled. No new ERP change was performed.";
   if (halt === "LIMIT_REACHED") lastText = "Read operation stopped at cancellation or a configured limit.";
   return { text: lastText, steps, blocked, workflowYaml: buildWorkflowYaml(steps, input.userMessage), totalTokens,
+    ...(corrector.events.length ? { proposalCorrections: corrector.events } : {}),
     latencyMs: Math.max(0, Math.round(performance.now() - started)), ...(modelRouting ? { modelRouting } : {}) };
 }
 
@@ -276,7 +290,7 @@ async function runLegacyActionLoop(
     function: {
       name: tool.mcp_tool_name.trim() || tool.name,
       description: `[${tool.is_read_only ? "READ" : "WRITE"}] ${tool.description}`,
-      parameters: (tool.input_schema as Record<string, unknown>) ?? { type: "object", properties: {} },
+      parameters: libraryModelInputSchema(tool),
     },
   }));
 
@@ -304,7 +318,7 @@ async function runLegacyActionLoop(
     const turn = await provider.queryWithTools(messages, agentTools, {
       allowFallback: true,
       maxOutputTokens: TOKEN_BUDGET - totalTokens.output,
-      promptTemplateVersion: "prompt/action/v3",
+      promptTemplateVersion: "prompt/action/v5",
       context: { sessionId: input.sessionId, actor: { id: input.actorId, role: input.actorRole }, ...(input.traceId ? { traceId: input.traceId } : {}),
         egress: { purpose: "interactive", dataClass: "restricted" } },
       signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(Math.max(1, deadline - Date.now()))]) : AbortSignal.timeout(Math.max(1, deadline - Date.now())),

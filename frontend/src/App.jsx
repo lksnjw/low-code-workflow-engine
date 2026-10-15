@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import ErrorBoundary from "./components/shared/ui/ErrorBoundary";
 import { appRouter } from "./config/router";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuthContext } from "./context/AuthContext";
+import { authorityScope } from "./utils/authAuthority";
 import { NotificationProvider } from "./context/NotificationContext";
 import { ThemeProvider } from "./context/ThemeContext";
 
@@ -11,6 +12,11 @@ const queryClient = new QueryClient({
     queries: { staleTime: 15_000, retry: 1, refetchOnWindowFocus: false },
   },
 });
+
+function AccountNotifications({ children }) {
+  const { user } = useAuthContext();
+  return <NotificationProvider key={authorityScope(user)}>{children}</NotificationProvider>;
+}
 
 /*******************************************************************************
  * Function: App
@@ -22,11 +28,11 @@ function App() {
     <ErrorBoundary name="application root">
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <NotificationProvider>
-            <AuthProvider>
+          <AuthProvider>
+            <AccountNotifications>
               <RouterProvider router={appRouter} />
-            </AuthProvider>
-          </NotificationProvider>
+            </AccountNotifications>
+          </AuthProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </ErrorBoundary>

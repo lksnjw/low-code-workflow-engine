@@ -1,17 +1,29 @@
 import type { IncomingHttpHeaders } from "node:http";
 import { fail } from "../models/schemas.js";
 import { withFunctionRuntime, type FunctionComposition } from "./invocation.js";
-import { handleFunctionProgress, isFunctionProgressRequest } from "./progress-http.js";
+import { FunctionServiceReadRequired, handleFunctionProgress, isFunctionProgressRequest } from "./progress-http.js";
 import { FirestoreOwnershipFailure } from "../storage/firestore-writer-ownership.js";
 import { handleFunctionChatCreation, isFunctionChatCreationRequest } from "./chat-creation-http.js";
 import { handleFunctionChatCancellation, isFunctionChatCancellationRequest } from "./chat-cancellation-http.js";
 import { handleFunctionControlPlane, isFunctionControlPlaneRequest } from "./control-plane-http.js";
+import { handleFunctionPreflight } from "./preflight-http.js";
 
 export type FunctionHttpRequest = { method: string; url: string; headers: IncomingHttpHeaders; rawBody?: Buffer; body?: unknown; ip?: string | undefined; signal?: AbortSignal };
 export type FunctionHttpResponse = { statusCode: number; headers: Record<string, string | string[] | number | undefined>; body: Buffer };
 const hopHeaders = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade", "proxy-authenticate", "proxy-authorization", "te", "trailer", "content-length", "host"]);
 function response(statusCode: number, message: string, code: string): FunctionHttpResponse {
   return { statusCode, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, body: Buffer.from(JSON.stringify(fail(message, { code }))) };
+}
+
+/** Closed admission-only route. No email delivery, synchronous operation or
+ * arbitrary command may inherit a runtime with deferred ERP initialization. */
+export function isAsyncChatAdmission(request:FunctionHttpRequest):boolean {
+  if(request.method!=="POST"||!/^\/api\/chat\/sessions\/[A-Za-z0-9_-]+\/messages$/.test(request.url))return false;
+  try{
+    const body=request.rawBody?.length?JSON.parse(request.rawBody.toString("utf8")):request.body;
+    return body!==null&&typeof body==="object"&&!Array.isArray(body)&&body.delivery==="async-chat"&&
+      Object.keys(body).every(key=>["content","message","model","mode","workflowContext","nodeContext","documentContext","attachmentTicket","requestRevision","delivery","idempotencyKey"].includes(key));
+  }catch{return false;}
 }
 
 /** Native Functions middleware has already parsed its request. Forward the
@@ -36,6 +48,24 @@ export async function handleFunctionHttp(input: FunctionComposition, request: Fu
   const headers = Object.fromEntries(Object.entries(request.headers).filter(([name]) => !hopHeaders.has(name.toLowerCase())));
   let invocationEntered = false;
   try {
+    // OPTIONS is transport negotiation, never a database/model/ERP operation.
+    // Do not make the browser acquire a writer just to learn CORS headers.
+    if (request.method === "OPTIONS") {
+      const result = await handleFunctionPreflight(input.config, { ...request, headers });
+      return { ...result, headers: Object.fromEntries(Object.entries(result.headers).filter(([name]) => !hopHeaders.has(name.toLowerCase()))) };
+    }
+    // Safe committed reads must not take an exclusive writer lease merely to
+    // restore an account or open a list. Mutation/control routes stay below.
+    if (isFunctionProgressRequest(input.config, request)) {
+      try {
+        const result = await handleFunctionProgress(input.config, request, undefined, {chatTaskAdmissionAvailable:Boolean(input.chatTransport)});
+        return { ...result, headers: Object.fromEntries(Object.entries(result.headers).filter(([name]) => !hopHeaders.has(name.toLowerCase()))) };
+      } catch (error) {
+        if (!(error instanceof FunctionServiceReadRequired)) throw error;
+        // The snapshot reader has closed. Exact protected-review services are
+        // opened below with their original ownership and authorization rules.
+      }
+    }
     if (isFunctionControlPlaneRequest(input.config, request)) {
       const result = await handleFunctionControlPlane({ ...input, signal: request.signal }, { ...request, headers }, () => { invocationEntered = true; });
       return { ...result, headers: Object.fromEntries(Object.entries(result.headers).filter(([name]) => !hopHeaders.has(name.toLowerCase()))) };
@@ -48,11 +78,8 @@ export async function handleFunctionHttp(input: FunctionComposition, request: Fu
       const result = await handleFunctionChatCreation({ ...input, signal: request.signal }, { ...request, headers }, () => { invocationEntered = true; });
       return { ...result, headers: Object.fromEntries(Object.entries(result.headers).filter(([name]) => !hopHeaders.has(name.toLowerCase()))) };
     }
-    if (isFunctionProgressRequest(input.config, request)) {
-      const result = await handleFunctionProgress(input.config, request);
-      return { ...result, headers: Object.fromEntries(Object.entries(result.headers).filter(([name]) => !hopHeaders.has(name.toLowerCase()))) };
-    }
-    return await withFunctionRuntime({ ...input, signal: request.signal }, async ({ app, services }) => {
+    const documentServiceRequest = /^\/api\/(?:pipeline(?:\/|$)|chat\/sessions\/[^/?]+\/attachments(?:\/|\?|$)|settings\/rag-policy(?:\/|\?|$))/.test(request.url);
+    return await withFunctionRuntime({ ...input, signal: request.signal, ...(isAsyncChatAdmission(request)?{runtimePurpose:"chat-admission" as const}: documentServiceRequest ? { runtimePurpose: "document-services" as const } : {}) }, async ({ app, services }) => {
       invocationEntered = true;
       const result = await app.inject({ method: request.method as "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS", url: request.url, headers,
         ...(payload?.length ? { payload } : {}), ...(request.ip ? { remoteAddress: request.ip } : {}) });
@@ -68,6 +95,13 @@ export async function handleFunctionHttp(input: FunctionComposition, request: Fu
     // storage records, raw SDK errors, URLs, lease IDs or provider credentials.
     console.warn(JSON.stringify({ severity: "WARNING", message: "Functions invocation unconfirmed",
       phase: invocationEntered ? "invocation-or-cleanup" : "initialization", authorityReason: authority?.reason ?? "UNCONFIRMED" }));
-    return response(503, "Invocation or cleanup could not be confirmed. Inspect the original request/run and reuse its original idempotency key; do not create a replacement run.", "FUNCTIONS_INVOCATION_UNCONFIRMED");
+    const unavailable = response(503, "Invocation or cleanup could not be confirmed. Inspect the original request/run and reuse its original idempotency key; do not create a replacement run.", "FUNCTIONS_INVOCATION_UNCONFIRMED");
+    // Keep the actionable receipt guidance visible to the configured web app.
+    // Otherwise browsers hide this response behind a generic network error.
+    const origin = request.headers.origin;
+    if (typeof origin === "string" && input.config.corsOrigins.includes(origin)) Object.assign(unavailable.headers, {
+      "access-control-allow-origin": origin, "access-control-allow-credentials": "true", vary: "Origin",
+    });
+    return unavailable;
   }
 }

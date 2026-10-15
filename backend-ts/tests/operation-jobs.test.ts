@@ -31,9 +31,84 @@ import { reviewedModelSourceContext } from "../src/synthesis/reviewed-model-sour
 import { SynthesisService, assembleCandidatePrompt } from "../src/synthesis/service.js";
 import { systemInstructionsFor } from "../src/prompts/contracts.js";
 import { assertConfirmedOperationResults } from "../src/runner/operation-result-evidence.js";
+import { prepareOperationPolicy } from "../src/governance/record-workflow-policy.js";
 
 const closers: { close(): Promise<unknown> }[] = [];
-afterEach(async () => { vi.useRealTimers(); await Promise.all(closers.splice(0).reverse().map(value => value.close())); });
+afterEach(async () => { vi.useRealTimers(); await Promise.all(closers.splice(0).reverse().map(value => value.close())); vi.unstubAllGlobals(); });
+
+test("disabled optional policy keeps the exact operation guard usable", async () => {
+  const s = await setup(null, false);
+  const guard = await prepareOperationPolicy(s.services, s.actor, s.write.mcp_tool_name, { value: "fixture report" }, new AbortController().signal);
+  await s.repository.read(state => guard(state));
+});
+
+test("Super Admin readiness can prepare exact self-confirmation without globally configuring reviewers", async () => {
+  const s = await setup(null, false); expect((await s.publish()).statusCode).toBe(200);
+  await s.repository.mutate(state => { delete (state.settings.rbac as Record<string, unknown>).runtimeApprovalPolicy; });
+  const response = await s.request("GET", "/api/workflows/flow/readiness");
+  expect(response.statusCode, response.body).toBe(200);
+  expect(response.json().data).toMatchObject({ can_attempt_run: true, approval_setup_required: false, can_manage_approval_policy: true });
+  expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(Object.keys((await s.repository.snapshot()).executions)).toHaveLength(0);
+});
+
+test("Super Admin saved workflow pauses and explicitly self-confirms its exact effect once without reviewer setup", async () => {
+  const s = await setup(null, false);
+  await s.repository.mutate(state => { delete (state.settings.rbac as Record<string, unknown>).runtimeApprovalPolicy; });
+  const id = await s.admit();
+  const review = await s.request("GET", `/api/executions/${id}?view=approval`);
+  expect(review.json().data.runtimeApproval).toMatchObject({ selfApprovalAllowed: true, state: "PENDING", canDecide: true });
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+  const exact = review.json().data.runtimeApproval;
+  const command = { approvalId: exact.id, baseVersion: exact.version, reviewHash: exact.reviewHash, decisionKey: "admin-own-exact-effect-01", note: "Reviewed exact synthetic effect" };
+  expect((await s.request("POST", `/api/executions/${id}/approve`, command)).statusCode).toBe(200);
+  await s.wait(id, "DONE");
+  expect(s.sdk.callTool).toHaveBeenCalledOnce();
+  expect((await s.request("POST", `/api/executions/${id}/approve`, command)).json().data.replayed).toBe(true);
+  expect(s.sdk.callTool).toHaveBeenCalledOnce();
+});
+
+test("selected policy denial stops a write before even requesting runtime approval", async () => {
+  const s = await setup(null, false);
+  s.services.config.ragPolicyAPIBaseURL = "https://rag.example.test"; s.services.config.ragPolicyAPIKey = "synthetic-key";
+  await s.repository.mutate(state => { state.settings.rbac = { ...(state.settings.rbac as Record<string, unknown>), enabled: true, localPolicyAgentEnabled: false }; });
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ decision: "deny", reason: "Record creation is blocked", conditions: [] })));
+  expect((await s.publish()).statusCode).toBe(200); const response = await s.run();
+  expect(response.statusCode, response.body).toBe(202); const id = response.json().data.id; await s.wait(id, "FAILED");
+  expect(s.sdk.callTool).not.toHaveBeenCalled(); const run = (await s.repository.snapshot()).executions[id]!;
+  expect(run.failure).toMatchObject({ failureCategory: "OPTIONAL_POLICY_BLOCKED", reason: expect.stringContaining("Record creation is blocked") });
+  expect(run.runtimeApprovalSecret).toBeUndefined(); expect(run.operationSecret!.intents).toEqual({});
+});
+
+test("approval cannot override a new selected policy denial on the resumed worker", async () => {
+  const s = await setup(null, false);
+  s.services.config.ragPolicyAPIBaseURL = "https://rag.example.test"; s.services.config.ragPolicyAPIKey = "synthetic-key";
+  await s.repository.mutate(state => { state.settings.rbac = { ...(state.settings.rbac as Record<string, unknown>), enabled: true, localPolicyAgentEnabled: false }; });
+  const transport = vi.fn().mockResolvedValueOnce(Response.json({ decision: "allow", reason: "Initial policy", conditions: [] }))
+    .mockImplementation(async () => Response.json({ decision: "deny", reason: "Current policy blocks this change", conditions: [] })); vi.stubGlobal("fetch", transport);
+  const id = await s.admit();
+  expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer")).statusCode).toBe(200); await s.wait(id, "FAILED");
+  expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(transport).toHaveBeenCalledTimes(2);
+  expect((await s.repository.snapshot()).executions[id]!.failure).toMatchObject({ failureCategory: "OPTIONAL_POLICY_BLOCKED", reason: expect.stringContaining("Current policy blocks this change") });
+  expect((await s.repository.snapshot()).executions[id]!.operationSecret!.intents).toEqual({});
+});
+
+test("explicit retry after cancellation creates a separate run and a fresh independent approval without copying old decisions", async () => {
+  const s = await setup(new Records());
+  const sourceId = await s.admit(), oldApproval = await s.review(sourceId);
+  const cancelled = await s.request("POST", `/api/executions/${sourceId}/cancel`, {});
+  expect([200, 202], cancelled.body).toContain(cancelled.statusCode); await s.wait(sourceId, "CANCELLED");
+  const before = structuredClone((await s.repository.snapshot()).executions[sourceId]);
+  const command = { mode: "async-operation", idempotencyKey: "explicit-operation-retry-0001", retry: { sourceExecutionId: sourceId, acknowledgeUnconfirmed: false } };
+  const admitted = await s.request("POST", `/api/executions/${sourceId}/retry`, command);
+  expect(admitted.statusCode, admitted.body).toBe(202); const childId = admitted.json().data.id;
+  expect(childId).not.toBe(sourceId); await s.wait(childId, "AWAITING_APPROVAL");
+  const fresh = await s.review(childId); expect(fresh.id).not.toBe(oldApproval.id);
+  expect((await s.repository.snapshot()).executions[sourceId]).toEqual(before);
+  expect((await s.request("POST", `/api/executions/${sourceId}/retry`, command)).json().data.id).toBe(childId);
+  const self = await s.request("POST", `/api/executions/${childId}/approve`, { ...await s.command(childId), approvalId: oldApproval.id, reviewHash: oldApproval.reviewHash });
+  expect(self.statusCode, self.body).toBe(409); expect((await s.repository.snapshot()).executions[childId]!.status).toBe("AWAITING_APPROVAL");
+  expect(s.sdk.callTool.mock.calls.some(call => call[0] === exactBridgeName(s.write))).toBe(false);
+});
 class Records implements PersistenceBackend {
   readonly readQueueDurability = "encrypted-single-writer" as const;
   readonly executionCheckpointDurability = "encrypted-record-transactions/v1" as const;
@@ -637,6 +712,86 @@ async function prepareScheduleWorkflow(s: Awaited<ReturnType<typeof setup>>, pag
   return (await s.repository.snapshot()).workflows.flow!;
 }
 
+async function chatScheduleSetup(timezone: string | null = "UTC", records = new Records()) {
+  const s = await setup(records, true, false, false, false, true);
+  await prepareScheduleWorkflow(s); expect((await s.publish()).statusCode).toBe(200);
+  s.services.config.chatIntentRouting = "agent";
+  const configuration = s.providerRuntime!.configuration!;
+  s.providerRuntime!.activate({ ...configuration, egressPolicy: { ...configuration.egressPolicy!, interactiveDataClasses: ["restricted"] } });
+  let action = "schedule";
+  s.modelFetch.mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)); expect(body.tools).toBeUndefined(); expect(body.messages[0].content).toContain("prompt/intent-routing/v4");
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ intent: "WORKFLOW_CONTROL", needsClarification: false, workflowControl: action,
+      ...(action === "schedule" ? { scheduleSuggestion: { cadence: "daily", localTime: "09:00", ...(timezone ? { timezone } : {}) } } : {}) }) } }] });
+  });
+  const chat = await s.request("POST", "/api/chat/sessions", { title: "My daily report" }); expect(chat.statusCode, chat.body).toBe(201); const sessionId = chat.json().data.id;
+  const send = async (content: string, key: string) => {
+    const response = await s.request("POST", `/api/chat/sessions/${sessionId}/messages`, { content, delivery: "async-chat", idempotencyKey: key, workflowContext: { workflowId: "flow" } });
+    expect(response.statusCode, response.body).toBe(202); const id = response.json().data.operation.id;
+    await vi.waitFor(async () => expect((await s.repository.snapshot()).chatOperations[id]?.status).not.toMatch(/^(?:RUNNING|QUEUED)$/));
+    const state = await s.repository.snapshot(); expect(state.chatOperations[id]?.status).toBe("ANSWERED");
+    return { id, message: state.chats[sessionId]!.messages.at(-1)! };
+  };
+  return { ...s, records, sessionId, send, pause: () => { action = "pause"; } };
+}
+
+test("plain chat schedules a reviewed report durably in the background, preserves runtime approval and can pause it", async () => {
+  const s = await chatScheduleSetup();
+  const scheduled = await s.send("Run this report every morning at 9 UTC.", "ordinary-schedule-chat-0001");
+  const schedule = (await s.repository.snapshot()).schedules["schedule-flow"]!;
+  expect(schedule).toMatchObject({ state: "ACTIVE", localTime: "09:00", timezone: "UTC", cadence: "daily", revision: 1, reportWindowBinding: scheduleReportWindowBinding });
+  expect(scheduled.message.artifacts).toMatchObject({ intent: "WORKFLOW_CONTROL", toolsDispatched: false,
+    workflowControl: { scheduleCommandApplied: true, scheduleState: "ACTIVE", scheduleRevision: 1, nextRunAt: schedule.nextRunAt } });
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+  const persisted = JSON.parse(s.records.bytes!.toString()) as RepositoryState;
+  expect(persisted.schedules["schedule-flow"]!.revision).toBe(1); expect(persisted.chatOperations[scheduled.id]!.status).toBe("ANSWERED");
+  // Original idempotent chat is a receipt lookup, not another schedule revision.
+  expect((await s.send("Run this report every morning at 9 UTC.", "ordinary-schedule-chat-0001")).id).toBe(scheduled.id);
+  expect((await s.repository.snapshot()).schedules["schedule-flow"]!.revision).toBe(1);
+  expect(await workflowScheduleRunner(s.services).runDue(Date.parse(schedule.nextRunAt!))).toEqual({ admitted: 1, skipped: 0, blocked: 0 });
+  const state = await s.repository.snapshot(), occurrence = Object.values(state.scheduleOccurrences)[0]!;
+  await s.wait(occurrence.executionId!, "AWAITING_APPROVAL");
+  expect(s.sdk.callTool.mock.calls.some(call => call[0] === exactBridgeName(s.write))).toBe(false);
+  expect(await workflowScheduleRunner(s.services).runDue(Date.parse(schedule.nextRunAt!))).toEqual({ admitted: 0, skipped: 0, blocked: 0 });
+  s.pause(); const paused = await s.send("Pause the automatic report.", "ordinary-schedule-pause-0001");
+  expect(paused.message.artifacts).toMatchObject({ workflowControl: { scheduleCommandApplied: true, scheduleState: "PAUSED", scheduleRevision: 2 } });
+  expect((await s.repository.snapshot()).schedules["schedule-flow"]).toMatchObject({ state: "PAUSED", nextRunAt: null });
+});
+
+test("plain chat asks for the missing timezone instead of guessing or activating a background schedule", async () => {
+  const s = await chatScheduleSetup(null);
+  const response = await s.send("Run this report every morning at 9.", "ordinary-schedule-missing-zone");
+  expect(response.message.text).toContain("Which timezone should I use");
+  expect((await s.repository.snapshot()).schedules).toEqual({}); expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
+
+test("plain chat schedule acknowledgement loss retains one atomic schedule and answer receipt, never another automatic activation", async () => {
+  const s = await chatScheduleSetup();
+  s.records.loseWhen = state => state.schedules["schedule-flow"]?.state === "ACTIVE" && Object.values(state.chatOperations).some(op => op.status === "ANSWERED");
+  const content = "Run this report every morning at 9 UTC.", payload = { content, delivery: "async-chat", idempotencyKey: "schedule-chat-lost-ack-0001", workflowContext: { workflowId: "flow" } };
+  const accepted = await s.request("POST", `/api/chat/sessions/${s.sessionId}/messages`, payload); expect(accepted.statusCode).toBe(202); const id = accepted.json().data.operation.id;
+  await vi.waitFor(() => expect((JSON.parse(s.records.bytes!.toString()) as RepositoryState).chatOperations[id]?.status).toBe("ANSWERED"));
+  await s.repository.recoverPersistenceState();
+  const state = await s.repository.snapshot(); expect(state.schedules["schedule-flow"]).toMatchObject({ state: "ACTIVE", revision: 1 });
+  expect(state.chats[s.sessionId]!.messages.at(-1)!.artifacts).toMatchObject({ workflowControl: { scheduleCommandApplied: true, scheduleRevision: 1 } });
+  // The original owner deliberately stays fenced after storage uncertainty.
+  // Status reads remain available; a new admission needs owner restart, not a
+  // blind resubmission against this stalled worker.
+  const replay = await s.request("POST", `/api/chat/sessions/${s.sessionId}/messages`, payload); expect(replay.statusCode, replay.body).toBe(503);
+  const receipt = await s.request("GET", `/api/chat/operations/${id}`); expect(receipt.statusCode, receipt.body).toBe(200); expect(receipt.json().data.operation.status).toBe("ANSWERED");
+  expect((await s.repository.snapshot()).schedules["schedule-flow"]!.revision).toBe(1);
+  expect(s.modelFetch).toHaveBeenCalledOnce(); expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
+
+test("plain chat scheduling never guesses missing mandatory business inputs", async () => {
+  const s = await chatScheduleSetup();
+  await s.repository.mutate(state => { const source = parse(state.workflows.flow!.yaml); source.trigger.config.inputSchema.required.push("count"); state.workflows.flow!.yaml = stringify(source); });
+  expect((await s.publish()).statusCode).toBe(200);
+  const response = await s.send("Run this report every morning at 9 UTC.", "schedule-chat-missing-input-01");
+  expect(response.message.text).toContain("required business values");
+  expect((await s.repository.snapshot()).schedules).toEqual({}); expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
+
 async function prepareAnalysisWorkflow(s: Awaited<ReturnType<typeof setup>>, dataClass = "internal") {
   await s.repository.mutate(state => {
     const workflow = state.workflows.flow!;
@@ -798,7 +953,7 @@ test.each(["daily", "weekly", "monthly"].flatMap(cadence => ["analysis", "agent"
     expect(pending.reportCoverages!.lookup!.pagination!.pages.at(-1)).toMatchObject({ hasMore: false, totalCount: 3 });
     if (selected) {
       expect(pending.finalOutput).toBeUndefined(); expect(pending.readProgress!.values).toBeUndefined();
-      expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id))).statusCode).toBe(403);
+      expect((await s.request("GET", `/api/executions/${id}?view=approval`)).json().data.runtimeApproval).toMatchObject({ selfApprovalAllowed: true, canDecide: true, state: "PENDING" });
       expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer")).statusCode).toBe(200); await s.wait(id, "DONE");
     }
     const state = await s.repository.snapshot(), run = state.executions[id]!, answerId = selected ? "accepted_answer" : "not_requested_answer";
@@ -945,7 +1100,7 @@ test.each(["keys", "object"].flatMap(shape => [true, false].map(selected => [sha
     expect(s.sdk.callTool.mock.calls.map(call => call[0])).toEqual([exactBridgeName(s.reportRead), exactBridgeName(s.relatedOrderRead!)]);
     expect(s.sdk.callTool.mock.calls[1]![1]).toMatchObject({ orderIds: ["order-1", "order-2"] });
     expect(pending.readProgress!.values!.gate).toMatchObject({ kind: "merge", status: "DONE" }); expect(pending.finalOutput).toBeUndefined();
-    expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "requester")).statusCode).toBe(403);
+    expect((await s.request("GET", `/api/executions/${id}?view=approval`, undefined, "requester")).json().data.runtimeApproval).toMatchObject({ selfApprovalAllowed: true, canDecide: true, state: "PENDING" });
     expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer")).statusCode).toBe(200); await s.wait(id, "DONE");
     expect((await s.repository.snapshot()).executions[id]!.finalOutput).toBe(true);
     expect(s.sdk.callTool).toHaveBeenCalledTimes(3); expect(s.modelFetch).not.toHaveBeenCalled();
@@ -1004,7 +1159,7 @@ test.each(["daily", "weekly", "monthly"].flatMap(cadence => ["cursor", "related"
     expect(pending.valueOutputs).toEqual({ gate: { value: (pending.stepOutputs![own] as { structuredContent: { summary: string } }).structuredContent.summary } }); expect(pending.finalOutput).toBeUndefined();
     expect(pending.reportCoverages![other]).toBeUndefined(); expect(await s.review(id)).toMatchObject({ nodeId: "after", canDecide: true });
     expect(s.sdk.callTool).toHaveBeenCalledTimes(profile === "related" ? 2 : 3);
-    expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "requester")).statusCode).toBe(403);
+    expect((await s.request("GET", `/api/executions/${id}?view=approval`, undefined, "requester")).json().data.runtimeApproval).toMatchObject({ selfApprovalAllowed: true, canDecide: true, state: "PENDING" });
     expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer")).statusCode).toBe(200); await s.wait(id, "DONE");
     const done = (await s.repository.snapshot()).executions[id]!; expect(done.finalOutput).toBe(true);
     expect(s.sdk.callTool.mock.calls.at(-1)![1]).toEqual({ value: pending.valueOutputs!.gate!.value });
@@ -1270,7 +1425,7 @@ test.each(["chat", "async-chat"].flatMap(route => ["analysis", "agent"].flatMap(
     } else workflowId = response.json().data.assistantMessage.artifacts.workflowId;
     const before = await s.repository.snapshot(); expect(before.workflows[workflowId]!.yaml).toBe(yaml.trim());
     expect(before.workflows[workflowId]!.publishedVersion).toBe(0); expect(before.executions).toEqual({}); expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).toHaveBeenCalledOnce();
-    expect(JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)).messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v20"));
+    expect(JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)).messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
     const published = await s.request("POST", `/api/workflows/${workflowId}/publish`, {}); expect(published.statusCode, published.body).toBe(200);
     expect(published.json().data.compiledOperation.schemaVersion).toBe("workflow-operation-ir/v7");
     const runCommand = { mode: "async-operation", input: { includeAnswer: selected }, idempotencyKey: `generated-merge-${route}-${kind}-${selected}-0001` }, runUrl = `/api/workflows/${workflowId}/run`;
@@ -1288,7 +1443,7 @@ test.each([true, false])("selected=%s merged effect still waits for exact indepe
   expect((await s.publish()).statusCode).toBe(200); const key = `merge-effect-${selected}-0001`, admitted = await s.run(key, { includeAnswer: selected });
   expect(admitted.statusCode, admitted.body).toBe(202); const id = admitted.json().data.id; await s.wait(id, "AWAITING_APPROVAL");
   expect(s.sdk.callTool).toHaveBeenCalledOnce(); const review = await s.review(id); expect(review.arguments).toEqual({ value: selected ? "FIXTURE REPORT" : "Explicit no path" });
-  expect((await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "requester")).statusCode).toBe(403);
+  expect((await s.request("GET", `/api/executions/${id}?view=approval`, undefined, "requester")).json().data.runtimeApproval).toMatchObject({ selfApprovalAllowed: true, canDecide: true, state: "PENDING" });
   const accepted = await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer"); expect(accepted.statusCode, accepted.body).toBe(200);
   expect(accepted.json().data).toMatchObject({ executionStatus: "PENDING", resumeQueued: true });
   await s.wait(id, "DONE"); expect(s.sdk.callTool).toHaveBeenCalledTimes(2); expect((await s.repository.snapshot()).executions[id]!.finalOutput).toBe("FIXTURE REPORT");
@@ -1314,7 +1469,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     if (route === "direct") {
       const response = await s.request("POST", "/api/synthesis", { prompt }); expect(response.statusCode, response.body).toBe(200);
       const candidate = response.json().data; expect(candidate.execution_profile_issues).toEqual([]); expect(candidate.validation.passed).toBe(true);
-      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v20"); expect(candidate.yaml).toBe(yaml.trim());
+      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v23"); expect(candidate.yaml).toBe(yaml.trim());
       expect(Object.keys((await s.repository.snapshot()).workflows)).toEqual(["flow"]);
       const created = await s.request("POST", "/api/workflows", { yaml: candidate.yaml }); expect(created.statusCode, created.body).toBe(201); workflowId = created.json().data.id;
     } else {
@@ -1333,7 +1488,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     const before = await s.repository.snapshot(), draft = before.workflows[workflowId!]!;
     expect(parse(draft.yaml)).toEqual(source); expect(draft.publishedVersion).toBe(0); expect(before.executions).toEqual({});
     expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).toHaveBeenCalledOnce();
-    const body = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v20"));
+    const body = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
     const published = await s.request("POST", `/api/workflows/${workflowId!}/publish`, {}); expect(published.statusCode, published.body).toBe(200); expect(published.json().data.compiledOperation.schemaVersion).toBe("workflow-operation-ir/v6");
     if (selected) s.modelFetch.mockResolvedValueOnce(Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ summary: "Typed synthesis answer", ...(kind === "agent" ? { complete: true } : {}) }) } }], usage: { prompt_tokens: 9, completion_tokens: 4 } }));
     const command = { mode: "async-operation", idempotencyKey: `return-run-${route}-${kind}-${selected}-0001`, input: { includeAnswer: selected } };
@@ -1547,7 +1702,7 @@ test.each(["direct", "chat"])("%s synthesis ignores forged browser source claims
   });
   expect(response.statusCode, response.body).toBe(200); expect(s.modelFetch).toHaveBeenCalledOnce();
   const body = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body));
-  expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v20"));
+  expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
   const data = JSON.parse(body.messages[1].content);
   expect(data.MODEL_SOURCE_HINTS_JSON.sources.find((source: { toolId: string }) => source.toolId === s.read.tool_id)).toEqual({
     toolId: s.read.tool_id, action: s.read.name, connectionId: "erpbridge-default", dataClass: "confidential", review: "REVIEWED",
@@ -1569,7 +1724,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     if (route === "direct") {
       const response = await s.request("POST", "/api/synthesis", { prompt }); expect(response.statusCode, response.body).toBe(200);
       const candidate = response.json().data; expect(candidate.execution_profile_issues).toEqual([]);
-      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v20"); expect(candidate.yaml).toBe(yaml.trim());
+      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v23"); expect(candidate.yaml).toBe(yaml.trim());
       expect(Object.keys((await s.repository.snapshot()).workflows)).toEqual(["flow"]);
       const created = await s.request("POST", "/api/workflows", { yaml: candidate.yaml }); expect(created.statusCode, created.body).toBe(201); workflowId = created.json().data.id;
     } else {
@@ -1590,7 +1745,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     const before = await s.repository.snapshot(), draft = before.workflows[workflowId!]!;
     expect(parse(draft.yaml).metadata.controlFlow).toEqual(source.metadata.controlFlow); expect(draft.publishedVersion).toBe(0);
     expect(before.executions).toEqual({}); expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).toHaveBeenCalledTimes(1);
-    const requestBody = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(requestBody.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v20"));
+    const requestBody = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(requestBody.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
     const publication = await s.request("POST", `/api/workflows/${workflowId!}/publish`, {}); expect(publication.statusCode, publication.body).toBe(200);
     expect(publication.json().data.compiledOperation.schemaVersion).toBe("workflow-operation-ir/v4");
     const admitted = await s.request("POST", `/api/workflows/${workflowId!}/run`, { mode: "async-operation", idempotencyKey: `explicit-${route}-${kind}-${selected}`, input: { sendReport: selected } });
@@ -1786,7 +1941,7 @@ test.each(["analysis", "agent"] as const)("read-only %s can run with a disabled 
   expect((await s.publish()).statusCode).toBe(200);
   const admitted = await s.run(`read-disabled-policy-${kind}-0001`); expect(admitted.statusCode, admitted.body).toBe(202);
   await s.wait(admitted.json().data.id, "DONE"); expect(s.sdk.callTool).toHaveBeenCalledOnce(); expect(s.modelFetch).toHaveBeenCalledOnce();
-  const effect = await setup(); await effect.repository.mutate(state => { state.settings.rbac = {}; });
+  const effect = await setup(); await effect.repository.mutate(state => { ((state.settings.rbac as { runtimeApprovalPolicy: { enabled: boolean } }).runtimeApprovalPolicy).enabled = false; });
   expect((await effect.publish()).statusCode).toBe(200);
   const denied = await effect.run(`effect-missing-policy-${kind}-0001`); expect(denied.statusCode).toBe(503);
   expect(denied.json().meta.code).toBe("RUNTIME_APPROVAL_DENIED"); expect(effect.sdk.callTool).not.toHaveBeenCalled();
@@ -3345,7 +3500,7 @@ test("query heartbeat ACK loss fences an entered query and recovery never adopts
   expect((await s.history()).jobs[0]).toMatchObject({ queryOutcome: "UNKNOWN", observation: null });
   expect((await s.request("POST", `/api/executions/${s.id}/readbacks`, command)).json().data.replayed).toBe(true); expect(s.sdk.callTool).toHaveBeenCalledTimes(2);
 });
-test.each(["reject", "cancel", "self", "revoke-requester", "revoke-admission", "change-args", "expire"])("a waiting operation contains %s without write dispatch", async scenario => {
+test.each(["reject", "cancel", "revoke-requester", "revoke-admission", "change-args", "expire"])("a waiting operation contains %s without write dispatch", async scenario => {
   const s = await setup(null, false), id = await s.admit(), command = await s.command(id);
   if (scenario === "reject") expect((await s.request("POST", `/api/executions/${id}/reject`, command, "reviewer")).statusCode).toBe(200);
   else if (scenario === "cancel") { const result = await s.request("POST", `/api/executions/${id}/cancel`, {}); expect(result.statusCode, result.body).toBe(200); expect(result.body).not.toMatch(/operationSecret|runtimeApprovalSecret/); }
@@ -3357,7 +3512,7 @@ test.each(["reject", "cancel", "self", "revoke-requester", "revoke-admission", "
     });
     if (scenario === "change-args") await s.repository.mutate(state => { state.executions[id]!.workflowSnapshot!.yaml += "# tampered\n"; });
     if (scenario === "expire") { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.now() + 301000); }
-    const result = await s.request("POST", `/api/executions/${id}/approve`, command, scenario === "self" ? "requester" : "reviewer"); expect([403, 409]).toContain(result.statusCode);
+    const result = await s.request("POST", `/api/executions/${id}/approve`, command, "reviewer"); expect([403, 409]).toContain(result.statusCode);
   }
   expect(s.sdk.callTool).not.toHaveBeenCalled();
 });

@@ -125,22 +125,23 @@ function Topbar() {
   return (
     <header className="flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 dark:border-darkBackgroundVery dark:bg-darkBackground sm:px-6">
       <div className="min-w-0 flex-1 sm:flex-none">
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-white">
             <BrandMark size={27} />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm font-bold text-gray-950 dark:text-white">
                 {appConfig.name}
               </span>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-darkBackgroundVery dark:bg-darkBackgroundVery dark:text-gray-300">
+              <span className="hidden shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-darkBackgroundVery dark:bg-darkBackgroundVery dark:text-gray-300 sm:inline-block">
                 v{appConfig.version}
               </span>
               {environment ? (
                 <span
                   data-testid="environment-badge"
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                  title={`${environment}${mockERP ? " · Mock ERP" : ""}`}
+                  className={`max-w-[6rem] truncate rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide sm:max-w-none ${
                     mockERP
                       ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
                       : "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"

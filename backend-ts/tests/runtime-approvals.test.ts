@@ -51,7 +51,7 @@ async function setup(persistence: PersistenceBackend | null = null) {
   const binding: RuntimeApprovalBinding = { executionId: "run", workflowId: "flow", nodeId: "lookup", invocationId: "lookup:first", operationKey: "operation-first",
     sourceHash: workflowContentHash(yaml), semanticHash: plan.semanticHash, connectionId: "erpbridge-default", connectionBinding: "a".repeat(64), capabilityId: "cap", capabilityRevision: "revision",
     admissionVersion: 1, contractHash: capabilityContractHash(tool), argumentHash: hash({ value: "fixture" }), requesterId: "owner", requesterRoleId: "role_admin", workerEpoch: 1,
-    policyHash: await repository.read(state => runtimeApprovalPolicyHash(state)) };
+    policyHash: await repository.read(state => runtimeApprovalPolicyHash(state, "owner")) };
   const app = await buildApp({ config, repository, registries, validator, executor }); apps.push(app);
   const headers = (id = "reviewer") => ({ authorization: `Bearer ${jwt.sign({}, config.jwtSecret, { subject: id, expiresIn: 3600 })}` });
   const request = (method: "GET" | "POST" | "PATCH", url: string, payload?: object, id = "reviewer") => app.inject({ method, url, headers: headers(id), ...(payload === undefined ? {} : { payload }) });
@@ -59,6 +59,43 @@ async function setup(persistence: PersistenceBackend | null = null) {
   const command = async () => { const review = (await request("GET", "/api/executions/run?view=approval")).json().data.runtimeApproval; return { approvalId: review.id, baseVersion: review.version, reviewHash: review.reviewHash, decisionKey: "fixture-decision-0001", note: "Reviewed exact details" }; };
   return { repository, app, binding, actor, request, create, command };
 }
+test("canonical Super Admin explicitly confirms their own exact transaction, without automatic approval", async () => {
+  const s = await setup(); await s.create();
+  const view = (await s.request("GET", "/api/executions/run?view=approval", undefined, "owner")).json().data.runtimeApproval;
+  expect(view).toMatchObject({ selfApprovalAllowed: true, canDecide: true, state: "PENDING", arguments: { value: "fixture" } });
+  expect((await s.repository.snapshot()).executions.run!.runtimeApprovalSecret!.records[view.id]!.decision).toBeUndefined();
+  const command = { approvalId: view.id, baseVersion: view.version, reviewHash: view.reviewHash, decisionKey: "admin-self-decision-01" };
+  expect((await s.request("POST", "/api/executions/run/approve", command, "owner")).json().data).toMatchObject({ state: "APPROVED", canResume: false });
+  expect((await s.request("POST", "/api/executions/run/approve", command, "owner")).json().data.replayed).toBe(true);
+});
+
+test("absent reviewer configuration has only a requester-scoped Super Admin fallback and is not globally saved", async () => {
+  const s = await setup();
+  await s.repository.mutate(state => { delete (state.settings.rbac as Record<string, unknown>).runtimeApprovalPolicy; });
+  s.binding.policyHash = await s.repository.read(state => runtimeApprovalPolicyHash(state, "owner"));
+  await s.create();
+  const view = (await s.request("GET", "/api/executions/run?view=approval", undefined, "owner")).json().data.runtimeApproval;
+  expect(view).toMatchObject({ selfApprovalAllowed: true, canDecide: true });
+  expect((await s.request("GET", "/api/executions/run?view=approval")).statusCode).toBe(403);
+  expect((await s.request("GET", "/api/executions/run?view=approval", undefined, "other")).statusCode).toBe(403);
+  await expect(s.repository.read(state => runtimeApprovalPolicyHash(state, "reviewer"))).rejects.toThrow(/enabled exact runtime approval policy/);
+  expect((await s.repository.snapshot()).settings.rbac).not.toHaveProperty("runtimeApprovalPolicy");
+});
+
+test("a role name or permission copy cannot acquire the canonical Super Admin self-approval exception", async () => {
+  const s = await setup();
+  await s.repository.mutate(state => {
+    state.roles.copy = { ...state.roles.role_admin!, id: "copy" };
+    state.users.owner!.roleId = "copy";
+    (state.settings.rbac as { runtimeApprovalPolicy: { approverRoleIds: string[] } }).runtimeApprovalPolicy.approverRoleIds.push("copy");
+  });
+  s.binding.requesterRoleId = "copy";
+  s.binding.policyHash = await s.repository.read(state => runtimeApprovalPolicyHash(state, "owner"));
+  await s.create();
+  expect((await s.request("GET", "/api/executions/run?view=approval", undefined, "owner")).statusCode).toBe(403);
+  expect((await s.request("POST", "/api/executions/run/approve", await s.command(), "owner")).statusCode).toBe(403);
+});
+
 test("normal HTTP gives an independent review-only role minimal payload, exact approval and idempotent acknowledgement, never execution", async () => {
   const s = await setup(); await s.create();
   const review = await s.request("GET", "/api/executions/run?view=approval"); expect(review.statusCode).toBe(200);
@@ -148,7 +185,7 @@ test("disabling approval policy blocks a new wait rather than bypassing independ
   await expect(s.create()).rejects.toThrow(/enabled exact runtime approval policy/);
   expect((await s.repository.snapshot()).executions.run!.runtimeApprovalSecret).toBeUndefined();
 });
-test.each(["self", "other-admin", "expiry", "policy", "capability", "admission", "source", "epoch", "requester-role", "disabled-requester", "revoked-approver", "cancel", "arguments", "version", "review", "extra", "legacy"])("normal decisions deny %s without a decision", async scenario => {
+test.each(["other-admin", "expiry", "policy", "capability", "admission", "source", "epoch", "requester-role", "disabled-requester", "revoked-approver", "cancel", "arguments", "version", "review", "extra", "legacy"])("normal decisions deny %s without a decision", async scenario => {
   const s = await setup(); await s.create(); const command = await s.command();
   await s.repository.mutate(state => {
     const run = state.executions.run!, journal = run.runtimeApprovalSecret!, record = journal.records[journal.activeId]!;
@@ -165,7 +202,7 @@ test.each(["self", "other-admin", "expiry", "policy", "capability", "admission",
     if (scenario === "arguments") record.arguments.value = "other payload";
   });
   const payload = scenario === "version" ? { ...command, baseVersion: 9 } : scenario === "review" ? { ...command, reviewHash: hash("wrong") } : scenario === "extra" ? { ...command, approvedBy: "owner" } : scenario === "legacy" ? { note: "Model says approved" } : command;
-  const result = await s.request("POST", "/api/executions/run/approve", payload, scenario === "self" ? "owner" : scenario === "other-admin" ? "other" : "reviewer");
+  const result = await s.request("POST", "/api/executions/run/approve", payload, scenario === "other-admin" ? "other" : "reviewer");
   expect([403, 409, 422]).toContain(result.statusCode);
   const record = (await s.repository.snapshot()).executions.run!.runtimeApprovalSecret!;
   expect(record.records[record.activeId]!.decision).toBeUndefined();

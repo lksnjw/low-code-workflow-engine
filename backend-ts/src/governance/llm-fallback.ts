@@ -5,6 +5,7 @@ import type { GovernanceRequest } from "./adapter.js";
 const roleAccessSchema = z.object({
   allowed_domains: z.array(z.string()),
   blocked_tools: z.array(z.string()),
+  allowed_tools: z.array(z.string().min(1)).optional(),
   max_risk_level: z.enum(["low", "medium", "high"]),
   allow_write_operations: z.boolean(),
   notes: z.string().optional(),
@@ -141,6 +142,9 @@ export class LlmPolicyFallback {
       };
     }
     for (const action of request.proposedActions) {
+      if (rolePolicy.allowed_tools && !rolePolicy.allowed_tools.includes(action)) return {
+        allowed: false, reason: `Tool "${action}" is outside the reviewed offline allowance for role "${role}"`, source: "static_policy",
+      };
       if (rolePolicy.blocked_tools.includes(action)) {
         return {
           allowed: false,

@@ -17,7 +17,7 @@ export function assertChatRevisionSource(state: Readonly<RepositoryState>, user:
   if (sources.length !== 1 || !source || source.role !== "user") throw new HandlerFailure(404, "Saved request not found");
   if (chatRequestSourceHash(source) !== revision.sourceHash) throw new HandlerFailure(409, "Saved request changed. Reload before revising", { code: "CHAT_REVISION_SOURCE_CHANGED" });
   const operation = state.chatOperations[stringValue(source.operationId)];
-  if (!operation || operation.actorId !== user.id || operation.sessionId !== chat.id || operation.userMessageId !== source.id || !operation.revisionContextCiphertext)
+  if (!operation || operation.actorId !== user.id || operation.sessionId !== chat.id || operation.userMessageId !== source.id || !(operation.revisionContextCiphertext || operation.revisionContextFields))
     throw new HandlerFailure(409, "This historical request has no authentic saved context. Send a new request instead", { code: "CHAT_REVISION_CONTEXT_UNAVAILABLE" });
   return { chat, source, operation };
 }

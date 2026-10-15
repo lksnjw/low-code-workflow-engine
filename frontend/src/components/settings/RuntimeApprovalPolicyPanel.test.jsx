@@ -58,7 +58,7 @@ test("ineligible selected roles must be removed explicitly and missing eligible 
   fireEvent.click(screen.getByRole("checkbox", { name: /Revoked reviewer/ })); fireEvent.click(screen.getByRole("checkbox", { name: "Another eligible reviewer" }));
   expect(screen.getByRole("button", { name: "Review policy change" })).not.toBeDisabled(); expect(patch).not.toHaveBeenCalled(); cleanup();
   get.mockResolvedValue(envelope(view({ policy: null, revision: 0, roles: [] }))); show(); await screen.findByText(/No eligible roles/);
-  expect(screen.getByText(/Not configured—governed effects blocked/)).toBeTruthy(); expect(screen.getByRole("button", { name: "Review policy change" })).toBeDisabled();
+  expect(screen.getByText(/Independent reviewer policy not configured/)).toBeTruthy(); expect(screen.getByText(/server checks any Super Admin exception/)).toBeTruthy(); expect(screen.getByRole("button", { name: "Review policy change" })).toBeDisabled();
 });
 test("local tracking failure prevents dispatch and corrupt pending state requires an explicit fresh reload", async () => {
   show(); await reviewChange(); jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("No local tracking"); });
@@ -69,7 +69,7 @@ test("local tracking failure prevents dispatch and corrupt pending state require
 test("a stale cache is not editable before fresh mount confirmation", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } }); client.setQueryData(["approval-policy", "admin"], view());
   let finish; get.mockImplementation(() => new Promise(resolve => { finish = () => resolve(envelope(view({ policy: null, revision: 0, roles: [] }))); })); show(client);
-  expect(screen.queryByRole("spinbutton")).toBeNull(); await waitFor(() => expect(finish).toEqual(expect.any(Function))); finish(); await screen.findByText(/Not configured—governed effects blocked/); expect(patch).not.toHaveBeenCalled();
+  expect(screen.queryByRole("spinbutton")).toBeNull(); await waitFor(() => expect(finish).toEqual(expect.any(Function))); finish(); await screen.findByText(/Independent reviewer policy not configured/); expect(patch).not.toHaveBeenCalled();
 });
 test("a different fresh policy after valid ACK remains unconfirmed and cannot be silently resubmitted", async () => {
   patch.mockImplementation(async () => { get.mockResolvedValue(envelope(view({ policy: { ...policy, revision: 3 }, revision: 3 }))); return envelope({ runtimeApprovalPolicy: { ...policy, ttlSeconds: 600, revision: 2 } }); });

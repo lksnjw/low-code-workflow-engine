@@ -4,6 +4,24 @@ import { test, expect, afterEach, jest } from "@jest/globals";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import SchemaFields from "./SchemaFields";
 afterEach(cleanup);
+
+test("schema descriptions clarify encoded JSON strings without turning them into arrays or markup", () => {
+  const changed = jest.fn(), value = { fields: '["name"]' };
+  const { container } = render(<SchemaFields schema={{ type: "object", properties: { fields: { type: "string", description: "JSON array encoded as a string. <script>not code</script>" } }, additionalProperties: false }} value={value} onChange={changed} />);
+  expect(screen.getByLabelText("Parameters · fields").value).toBe('["name"]');
+  expect(screen.getByText(/JSON array encoded as a string/)).toBeTruthy();
+  expect(container.querySelector("script")).toBeNull(); expect(changed).not.toHaveBeenCalled();
+});
+
+test("a one-item recipient list remains a list; a mismatched scalar requires explicit replacement", () => {
+  const changed = jest.fn(), contract = { type: "object", properties: { recipients: { type: "array", items: { type: "string" } } }, additionalProperties: false };
+  const first = render(<SchemaFields schema={contract} value={{ recipients: ["a@example.test"] }} onChange={changed} />);
+  expect(screen.getByLabelText("Parameters · recipients · Item 1").value).toBe("a@example.test");
+  expect(changed).not.toHaveBeenCalled(); first.unmount();
+  render(<SchemaFields schema={contract} value={{ recipients: "a@example.test" }} onChange={changed} />);
+  expect(screen.getByRole("alert").textContent).toContain("does not match array");
+  expect(screen.getByText("a@example.test")).toBeTruthy(); expect(changed).not.toHaveBeenCalled();
+});
 const schema = { type: "object", properties: { count: { type: "integer" }, title: { type: "string" }, enabled: { type: "boolean" }, rows: { type: "array", items: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false } } }, required: ["count", "title"], additionalProperties: false };
 const sources = [{ expression: "{{input.limit}}", label: "Workflow input · limit", binding: { kind: "ref", source: "workflowInput", path: ["limit"] }, schema: { type: "integer" } }, { expression: "{{read.structuredContent.label}}", label: "Node read · structuredContent · label", schema: { type: "string" } }];
 function Harness({ initial = {}, contract = schema, onValue, ...props }) {

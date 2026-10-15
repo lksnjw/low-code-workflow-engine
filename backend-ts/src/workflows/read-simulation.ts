@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "../registry/schemas.js";
 import { compileReadWorkflow, resolveReadBinding, type CompiledReadPlan } from "./compiled-read.js";
 import { interpretReadPlan, ReadCollectionFailure, type ReadVisit } from "./read-interpreter.js";
-import { safeMcpResult } from "../tools/mcp-result.js";
+import { safeMcpToolResult } from "../tools/mcp-result.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { withoutSecretFields } from "../redact/secrets.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
@@ -91,7 +91,7 @@ export async function simulateReadWorkflow(yaml: string, input: Record<string, u
         const fixtureID = key(visit, node.id);
         if (!Object.hasOwn(fixtures.outputs, fixtureID)) return fail(entry, "MISSING_FIXTURE");
         let output: Record<string, unknown>;
-        try { output = safeMcpResult(fixtures.outputs[fixtureID], tool.bridge_contract?.output_schema); } catch { return fail(entry, "FIXTURE_OUTPUT_INVALID"); }
+        try { output = safeMcpToolResult(fixtures.outputs[fixtureID], tool); } catch { return fail(entry, "FIXTURE_OUTPUT_INVALID"); }
         used.add(fixtureID);
         if (output.isError === true) return fail({ ...entry, output }, "FIXTURE_TOOL_ERROR");
         completed.actionCompleted(node.id, args, visit);

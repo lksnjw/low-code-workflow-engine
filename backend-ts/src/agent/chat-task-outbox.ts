@@ -24,6 +24,7 @@ function identity(op: ChatOperation) {
   return { profile: "chat-task-binding/v1", operationId: op.id, sessionId: op.sessionId, actorId: op.actorId, userMessageId: op.userMessageId,
     idempotencyScope: op.idempotencyScope, requestFingerprint: op.requestFingerprint, authorityFingerprint: op.authorityFingerprint,
     connectionFingerprint: op.connectionFingerprint, contractFingerprint: op.contractFingerprint, modelBinding: op.modelBinding,
+    ...(op.erpCredentialSecret ? { erpCredentialBinding: op.erpCredentialSecret } : {}),
     nodeContext: op.nodeContext ?? null, requestRevision: op.requestRevision ?? null, createdAt: op.createdAt };
 }
 export function newChatTaskOutbox(op: ChatOperation): ChatTaskOutbox {

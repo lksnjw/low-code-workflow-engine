@@ -15,6 +15,8 @@ import { isTraceId } from "../../trace/request-trace.js";
 import { HandlerFailure, isRecord, requestParam, stringValue, type CurrentUser, type HandlerServices } from "./common.js";
 import type { RepositoryState } from "../../repository/store.js";
 import { readableExecution } from "./execution-events.js";
+import { executionListPage } from "../execution-filters.js";
+import { executionRetryView } from "../../runner/execution-retry.js";
 
 export const EXECUTION_QUERY_UNHANDLED = Symbol("execution-query-unhandled");
 
@@ -37,19 +39,21 @@ export async function handleExecutionQueryRoute(
 
 async function listExecutions(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
   const state = await services.repository.snapshot();
-  const query = request.query as Record<string, unknown>;
+  const result = projectExecutionList(state, user, request.query as Record<string, unknown>);
+  return reply.send(ok(result.items, "OK", result.meta));
+}
+
+/** Visibility and filtering from one current committed image. No dispatcher,
+ * repository authority marker or remote runtime is needed to display a page. */
+export function projectExecutionList(state: Readonly<RepositoryState>, user: CurrentUser, query: Record<string, unknown>) {
   const traceId = stringValue(query.traceId).trim();
   if (traceId !== "") {
-    if (!isTraceId(traceId)) return reply.status(400).send(fail("Invalid trace ID", null));
+    if (!isTraceId(traceId)) throw new HandlerFailure(400, "Invalid trace ID");
     const chain = buildTraceChain(state, user, traceId);
-    return reply.send(ok(chain, "OK", { traceId, count: chain.length }));
+    return { items: chain, meta: { traceId, count: chain.length } };
   }
-  const chatSessionId = stringValue(query.chatSessionId).trim();
-  const all = Object.values(state.executions).filter((item) => chatSessionId === "" || item.chatSessionId === chatSessionId);
-  const visible = visibleExecutions(user, all);
-  return reply.send(ok(visible.map(publicExecution), "OK", {
-    page: 1, limit: 20, total: visible.length, totalPages: visible.length === 0 ? 0 : 1,
-  }));
+  const page = executionListPage(visibleExecutions(user, Object.values(state.executions)), query);
+  return { items: page.items.map(publicExecution), meta: page.meta };
 }
 
 async function reviewInbox(request: FastifyRequest, reply: FastifyReply, user: CurrentUser, services: HandlerServices): Promise<unknown> {
@@ -98,9 +102,9 @@ async function getExecution(request: FastifyRequest, reply: FastifyReply, user: 
 
 export function projectExecutionProgress(state: Readonly<RepositoryState>, user: CurrentUser, id: string) {
   const item = readableExecution(state, user, id);
-  return publicExecution({ ...item,
+  return { ...publicExecution({ ...item,
     ...(item.runtimeApprovalSecret || item.protectedApprovalSecret ? { hasRuntimeApproval: true } : {}),
     ...(hasOperationReconciliation(item) ? { hasOperationReconciliation: true } : {}),
     ...(hasReportPageResolution(item) ? { hasReportPageResolution: true } : {}),
-  });
+  }), retryAdmission: executionRetryView(state, user, item) };
 }
