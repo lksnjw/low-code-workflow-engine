@@ -62,3 +62,15 @@ test("chat run receipt shows the actual failed step, tool and safe explanation",
   expect(screen.getByText("customer_lookup")).toBeTruthy(); expect(screen.getByText("get_customer")).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("prior step output is missing");
 });
+
+
+test("draft requirement notes remain visible without hiding completed saved tool results", async () => {
+  const run = normalizeExecution({ id: "run/one", status: "DONE", tokens: { input: 0, output: 0, total: 0 },
+    workflowSnapshot: { yaml: "name: Saved steps\nmetadata:\n  unresolved_requirements:\n    - Follow up on duplicate branching\nsteps:\n  - id: lookup\n    action: get_customer\n" },
+    finalOutput: { structuredContent: { customer: "Confirmed customer" } } });
+  mockMonitor(run); await mount(run);
+  expect(screen.getByTestId("execution-status").textContent).toContain("Done");
+  expect(screen.getByLabelText("Workflow requirement notes").textContent).toContain("Follow up on duplicate branching");
+  expect(screen.getByText("Confirmed customer")).toBeTruthy();
+  expect(screen.queryByText(/Edit those requirements/)).toBeNull();
+});

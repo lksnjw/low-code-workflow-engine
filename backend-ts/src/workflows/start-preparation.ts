@@ -5,7 +5,7 @@ import { HandlerFailure, type CurrentUser, type HandlerServices } from "../http/
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { requireWorkflowBase, assertWorkflowMutable } from "./commands.js";
 import { resolveReadBinding } from "./compiled-read.js";
-import { publishWorkflowSnapshot } from "./publication.js";
+import { prepareStartSnapshot } from "./start-snapshot.js";
 
 /** Start is consent to prepare this exact draft for execution, not consent to
  * an ERP effect. Published bindings are never silently rebound on a new run. */
@@ -64,7 +64,7 @@ export async function prepareWorkflowStart(workflow: Workflow, revision: { baseV
     requireWorkflowBase(fresh, revision.baseVersion, revision.baseHash);
     return (state.versions[workflow.id] ?? []).some(version => version.artifactState === "PUBLISHED" && version.version === fresh.publishedVersion && version.yaml === fresh.yaml);
   });
-  if (!current) await publishWorkflowSnapshot(workflow.id, { ...revision, versionNote: "Execution snapshot prepared by Start workflow" }, request, user, services, true);
+  if (!current) await prepareStartSnapshot(workflow, request, user, services);
   return services.repository.readAuthoritative(state => {
     const fresh = state.workflows[workflow.id];
     if (!fresh || workflowContentHash(fresh.yaml) !== revision.baseHash)

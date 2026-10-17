@@ -1,3 +1,4 @@
+import { validateRequirementNotes } from "./requirement-notes.js";
 import { allRolesToolAccess, toolRoleAllowed } from "../governance/tool-access.js";
 import {
   resolvedParameterHash,
@@ -32,9 +33,7 @@ import {
   validateAgentStepStructure,
   validateAnalysisStepStructure,
 } from "./step-structure.js";
-
 export type { DispatchCapability, ValidationToken } from "./capability-authority.js";
-
 export type CandidateValidationResult = {
   candidate_id: string;
   passed: boolean;
@@ -56,7 +55,6 @@ export type CandidateValidationResult = {
   metadata: Record<string, unknown>;
   deferred_checks: DeferredCheck[];
 };
-
 export type ResolvedPolicyViolation = {
   ruleId: string;
   paramKey: string;
@@ -176,15 +174,7 @@ export class RegistryValidator {
       return result;
     }
     result.step_count = workflow.steps.length;
-    const unresolved = workflow.metadata?.unresolved_requirements;
-    if (unresolved !== undefined && (!Array.isArray(unresolved) || unresolved.length > 50 ||
-        unresolved.some((item) => typeof item !== "string" || item.trim().length === 0 || item.length > 2048))) {
-      result.schema_ok = false;
-      failRule(result, "UNRESOLVED_REQUIREMENTS", "Requirement blockers must be an array of at most 50 nonempty bounded strings");
-    } else if (Array.isArray(unresolved) && unresolved.length > 0) {
-      result.policy_ok = false;
-      failRule(result, "UNRESOLVED_REQUIREMENTS", "The proposal explicitly contains unresolved requested outcomes, policy obligations or required inputs");
-    }
+    validateRequirementNotes(candidateID, workflow.metadata?.unresolved_requirements, result);
     if (
       workflow.name.trim() === "" ||
       workflow.trigger.type.trim() === "" ||

@@ -2,7 +2,7 @@
 import React from "react";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import "@testing-library/jest-dom/jest-globals";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import WorkflowSchedulePanel, { suggestedScheduleForm } from "./WorkflowSchedulePanel";
 import { workflowScheduleService } from "../../services/workflow-schedule.service";
 import { workflowService } from "../../services/workflow.service";
@@ -46,12 +46,13 @@ test("a suggested schedule cannot inject credentials, enablement, run-as identit
   const initial = suggestedScheduleForm(null, "owner", suggestion); expect(initial.enabled).toBe(false); expect(initial.input).toEqual({});
 });
 
-test("a published read-only workflow explains schedule ineligibility instead of asking to publish again", async () => {
-  workflowService.readiness.mockResolvedValue({ ...readiness, executionProfile: "read-v1" });
+test("manual workflows do not show publication or unavailable-schedule warnings", async () => {
+  workflowService.readiness.mockResolvedValue({ ...readiness, published: false, executionProfile: "read-v1" });
   render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" />);
-  await screen.findByText(/Automatic report runs are not available for this workflow/);
-  expect(screen.getByRole("button", { name: "Activate daily schedule" })).toBeDisabled();
-  expect(screen.queryByText(/Publish and review this workflow before/)).toBeNull();
+  await waitFor(() => expect(screen.queryByText(/Loading authoritative schedule/)).toBeNull());
+  expect(screen.queryByText(/Publish and review/)).toBeNull();
+  expect(screen.queryByText("Technical reason")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Activate daily schedule" })).toBeNull();
   expect(workflowScheduleService.save).not.toHaveBeenCalled();
 });
 
@@ -108,15 +109,14 @@ test("decision schedule guidance requires scope-specific evidence and never trea
 
 test("does not offer activation for an unpublished or unsupported workflow", async () => {
   workflowService.readiness.mockResolvedValue({ ...readiness, published: false, executionProfile: "sequential-read-v1" });
-  render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" />); await screen.findByText(/Legacy trigger text is not an active schedule/);
-  expect(screen.getByRole("button", { name: "Activate daily schedule" })).toBeDisabled(); expect(workflowScheduleService.save).not.toHaveBeenCalled();
+  render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" />); await waitFor(() => expect(screen.queryByText(/Loading authoritative schedule/)).toBeNull());
+  expect(screen.queryByRole("button", { name: "Activate daily schedule" })).toBeNull(); expect(workflowScheduleService.save).not.toHaveBeenCalled();
 });
 
 test.each(["protected-operation-v1", "protected-draft-runtime-pending"])("protected %s never treats manual readiness as calendar qualification", async executionProfile => {
   workflowService.readiness.mockResolvedValue({ ...readiness, executionProfile, operation_job_admission: "operation-job/v1", can_attempt_run: true });
-  render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" />); await screen.findByText(/Protected workflow calendar activation is not qualified yet/);
-  selectWindowBinding(); fireEvent.click(screen.getByRole("button", { name: "Activate daily schedule" }));
-  expect(screen.getByRole("button", { name: "Activate daily schedule" })).toBeDisabled(); expect(workflowScheduleService.save).not.toHaveBeenCalled();
+  render(<WorkflowSchedulePanel workflow={{ id: "flow" }} actorId="owner" />); await waitFor(() => expect(screen.queryByText(/Loading authoritative schedule/)).toBeNull());
+  expect(screen.queryByRole("button", { name: "Activate daily schedule" })).toBeNull(); expect(workflowScheduleService.save).not.toHaveBeenCalled();
 });
 
 test("a legacy active schedule without a window binding can still be paused", async () => {

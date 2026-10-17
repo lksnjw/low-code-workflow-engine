@@ -420,6 +420,7 @@ describe("governed ERPBridge MCP adapter", () => {
     vi.mocked(sdk.callTool).mockImplementation(() => new Promise<unknown>(() => {}));
     const result = f.session.clientFor(f.definition).execute("demo.echo", f.capability, f.parameters, f.identity, controller.signal);
     const assertion = expect(result).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(sdk.callTool).toHaveBeenCalledOnce());
     controller.abort(); await assertion;
     expect(f.session.available).toBe(false); expect(sdk.callTool).toHaveBeenCalledOnce();
   });

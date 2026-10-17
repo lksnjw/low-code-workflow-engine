@@ -1377,7 +1377,7 @@ test("Start validates and snapshots an unpublished draft, reuses it with fresh i
   expect(s.callTool.mock.calls[2]?.[1]).toMatchObject({ id: "another-input" });
 });
 
-test.each(["changed", "unknown-tool", "unresolved", "invalid-input", "missing-legacy-input"])("Start rejects %s before publication or dispatch", async scenario => {
+test.each(["changed", "unknown-tool", "invalid-input", "missing-legacy-input"])("Start rejects %s before publication or dispatch", async scenario => {
   const source = parseWorkflowYAMLStrict(yaml);
   source.trigger.config = { inputSchema: { type: "object", properties: { invoiceId: { type: "string" } }, required: ["invoiceId"], additionalProperties: false } };
   if (scenario === "missing-legacy-input") delete source.trigger.config;
@@ -1403,4 +1403,59 @@ test("Start revalidates a valid legacy draft instead of requiring a separate val
   await s.repository.mutate(state => { state.workflows.read!.status = "draft-unvalidated"; });
   const response = await s.run({ mode: "async-read", idempotencyKey: "legacy-valid-start-001", input: { invoiceId: "valid" }, startRevision: { baseVersion: 1, baseHash: workflowContentHash(yaml) } });
   expect(response.statusCode, response.body).toBe(202); expect((await waitForTerminal(s.repository, response.json().data.id)).status).toBe("DONE");
+});
+
+
+test("a saved two-step workflow runs both ERP calls through Pi without regenerating its plan", async () => {
+  const { Agent } = await import("@earendil-works/pi-agent-core");
+  const prompt = vi.spyOn(Agent.prototype, "prompt");
+  try {
+    const s = await setup({ provider: true }); await s.seed();
+    const response = await s.run(); expect(response.statusCode, response.body).toBe(200);
+    expect(response.json().data.status).toBe("DONE");
+    expect(prompt).toHaveBeenCalledTimes(2);
+    expect(s.callTool).toHaveBeenCalledTimes(2); expect(s.queryWithTools).not.toHaveBeenCalled();
+    expect(response.json().data.workflowSnapshot.yaml).toBe(yaml);
+  } finally { prompt.mockRestore(); }
+});
+
+
+test("direct Run is prepared by Pi, records no publication action and uses the immutable saved source", async () => {
+  const { Agent } = await import("@earendil-works/pi-agent-core");
+  const prompt = vi.spyOn(Agent.prototype, "prompt");
+  const s = await setup(); await s.seed(yaml, false);
+  const validation = vi.spyOn(s.validator, "validatePlan");
+  try {
+    const response = await s.run({ mode: "async-read", idempotencyKey: "pi-direct-start-fixture-001", input: { invoiceId: "fresh-input" }, startRevision: { baseVersion: 1, baseHash: workflowContentHash(yaml) } });
+    expect(response.statusCode, response.body).toBe(202);
+    const run = await waitForTerminal(s.repository, response.json().data.id); expect(run.status).toBe("DONE");
+    const state = await s.repository.snapshot();
+    expect(state.versions.read?.[0]).toMatchObject({ preparation: "pi-direct-start/v1", yaml });
+    expect(state.auditLogs.some(log => log.action === "workflow.execution_prepared")).toBe(true);
+    expect(state.auditLogs.some(log => log.action === "workflow.published")).toBe(false);
+    expect(validation.mock.calls.some(call => call[0] === "PublishWorkflow")).toBe(false);
+    expect(validation.mock.calls.some(call => call[0] === "StartWorkflowAgent")).toBe(true);
+    expect(prompt).toHaveBeenCalledTimes(3); // Pi preparation, then each saved tool.
+    expect(run.workflowSnapshot?.yaml).toBe(yaml);
+  } finally { prompt.mockRestore(); validation.mockRestore(); }
+});
+
+test("draft requirement notes do not block Pi from executing the exact saved steps with fresh inputs", async () => {
+  const source = parseWorkflowYAMLStrict(yaml); source.metadata = { unresolved_requirements: ["Draft note about duplicate branching"] };
+  const value = stringify(source), s = await setup(); await s.seed(value, false);
+  const response = await s.run({ mode: "async-read", idempotencyKey: "pi-notes-start-fixture-001", input: { invoiceId: "fresh-value" }, startRevision: { baseVersion: 1, baseHash: workflowContentHash(value) } });
+  expect(response.statusCode, response.body).toBe(202);
+  const run = await waitForTerminal(s.repository, response.json().data.id);
+  expect(run.status, JSON.stringify(run.failure)).toBe("DONE"); expect(s.callTool).toHaveBeenCalledTimes(2);
+  expect(run.workflowSnapshot?.yaml).toBe(value);
+  expect(s.validator.validatePlan("StartWorkflowAgent", value, "business").failed_rules).not.toContain("UNRESOLVED_REQUIREMENTS");
+  expect(s.validator.validatePlan("PublishWorkflow", value, "business").failed_rules).toContain("UNRESOLVED_REQUIREMENTS");
+  expect(response.body).not.toContain("run was not confirmed");
+});
+
+test("malformed requirement metadata remains a structural error before any tool call", async () => {
+  const source = parseWorkflowYAMLStrict(yaml); source.metadata = { unresolved_requirements: [42] };
+  const value = stringify(source), s = await setup(); await s.seed(value, false);
+  const response = await s.run({ mode: "async-read", idempotencyKey: "pi-invalid-notes-start-001", input: { invoiceId: "valid" }, startRevision: { baseVersion: 1, baseHash: workflowContentHash(value) } });
+  expect(response.statusCode).toBe(422); expect(s.callTool).not.toHaveBeenCalled();
 });

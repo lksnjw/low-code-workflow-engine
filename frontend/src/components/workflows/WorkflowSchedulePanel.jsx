@@ -56,7 +56,7 @@ export default function WorkflowSchedulePanel({ workflow, actorId, suggestion })
   }); setNotice(""); };
   const snapshotMode = readiness?.read_snapshot_schedule_admission === "read-snapshot/v1";
   const supported = readiness?.published && readiness?.compilation?.state === "CURRENT" && (snapshotMode || readiness?.executionProfile === "sequential-operation-v1");
-  const unavailableExplanation = readiness?.published ? "Automatic report runs are not available for this workflow. You can still run it manually. Scheduling needs a reviewed report with start/end date fields and supported approval controls." : "Publish and review this workflow before turning on automatic runs. Automatic runs stay disabled until the safety checks pass.";
+
   const inputSchema = readiness?.authoring?.inputSchema || { type: "object", properties: {}, additionalProperties: false };
   const windowFields = Object.entries(inputSchema.properties || {}).filter(([, schema]) => schema?.type === "string" && !schema.writeOnly).map(([name]) => name);
   const boundFields = new Set(snapshotMode ? [] : [form.reportWindowBinding.startAtInput, form.reportWindowBinding.endAtInput].filter(Boolean));
@@ -82,13 +82,14 @@ export default function WorkflowSchedulePanel({ workflow, actorId, suggestion })
       setUncertain(true); setError(cause?.response?.data?.message || "Schedule save outcome is unconfirmed. Reload authoritative status before another change.");
     } finally { setSaving(false); }
   };
+  if (!loading && !error && !supported && !status?.schedule && !suggestion) return null;
   return <Card>
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><Icon icon="mdi:calendar-clock" className="h-5 w-5 text-primary" /><h2 className="section-title">Run automatically</h2></div>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">Choose when this published workflow should run. The schedule uses the selected local time and shows every occurrence here. Actions that change ERP data still wait for the required approval.</p></div>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">Choose when this saved workflow should run. The schedule uses the selected local time and shows every occurrence here. Actions that change ERP data still wait for the required approval.</p></div>
       {status?.schedule && <span className={`rounded-full px-3 py-1 text-xs font-semibold ${status.schedule.state === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : status.schedule.state === "BLOCKED" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-700"}`}>{status.schedule.state}</span>}</div>
     {loading ? <p role="status" className="mt-4 text-sm text-gray-500">Loading authoritative schedule…</p> : <div className="mt-5 space-y-5">
       {suggestion && <p role="note" className="text-xs text-gray-500">Your chat request has prefilled an unsaved schedule proposal. Review the time, timezone and recurrence before activating it. Current saved status is shown separately below.</p>}
-      {!supported && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900"><p>{["protected-operation-v1", "protected-draft-runtime-pending"].includes(readiness?.executionProfile) ? "This workflow is not ready for automatic runs yet. You can still run it manually or pause an existing schedule." : unavailableExplanation}</p><details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Technical reason</summary><p className="mt-1">{["protected-operation-v1", "protected-draft-runtime-pending"].includes(readiness?.executionProfile) ? "Protected workflow calendar activation is not qualified yet. Manual run eligibility does not establish scheduled report coverage, pagination or recovery. Existing schedules can still be paused." : "Sequential and supported decision operations must pass server-side report coverage checks. Legacy trigger text is not an active schedule."}</p></details></div>}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <label className="text-xs"><span className="font-semibold text-gray-700 dark:text-gray-200">How often?</span><select aria-label="Schedule cadence" className={control} value={form.cadence} onChange={event => updateCadence(event.target.value)}><option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly">Every month</option></select></label>
         {form.cadence === "weekly" && <label className="text-xs"><span className="font-semibold text-gray-700 dark:text-gray-200">Which day?</span><select aria-label="Weekly local weekday" className={control} value={form.dayOfWeek} onChange={event => update({ dayOfWeek: Number(event.target.value) })}><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="7">Sunday</option></select></label>}

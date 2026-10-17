@@ -360,6 +360,7 @@ The document is one YAML object with name, description, trigger and steps, and o
     case "prompt/candidate/v25": return CANDIDATE_V25_SYSTEM_PROMPT;
     case "prompt/candidate/v26": return CANDIDATE_V26_SYSTEM_PROMPT;
     case "prompt/candidate/v27": return CANDIDATE_V27_SYSTEM_PROMPT;
+    case "prompt/candidate/v28": return CANDIDATE_V28_SYSTEM_PROMPT;
     case "prompt/node-patch/v2": return NODE_PATCH_SYSTEM_PROMPT;
     case "prompt/local-policy/v1": return LOCAL_POLICY_SYSTEM_PROMPT;
     case "prompt/local-policy/v2": return LOCAL_POLICY_V2_SYSTEM_PROMPT;
@@ -438,6 +439,12 @@ Generate the requested workflow from the exposed exact contracts. Every bound wo
 Backend capability checks, configured policy enforcement, journaling and exact human transaction approvals are runtime safeguards. Do not invent tool steps for these safeguards. RUNTIME_SAFEGUARDS_JSON.auditJournalActions identifies exact actions qualified for the backend audit journal; for a workflow whose effect actions are all listed there, the backend journal satisfies the audit-step rule without a remote audit tool. An unlisted effect still needs its actual audit qualification. Do not add an explicit policy-evaluation effect solely to imitate backend enforcement. Preserve an explicitly requested policy tool or business-data validation branch and mark genuinely unsupported requested logic unresolved.
 For requested automatic gating, do not assume that only an ERP tool can supply a boolean. A supported bounded analysis node may derive a declared boolean from preceding reviewed typed outputs, and an explicit condition may reference that validated model output. Use this only when the requested task needs the derivation and the actual output contracts and model profile support it. Missing evidence, undeclared output fields, unsupported model egress or unavailable branch actions remain unresolved; never invent a passing predicate or use it as policy or transaction approval.
 Extra optional document fields are source context unless the user explicitly requested that they be stored. Never silently drop requested Contact/Address creation, duplicate prevention or conditional gating. If an old draft has genuine unsupported requested requirements, explain them and propose a reviewed correction rather than claiming that entering fields resolves them.
+`;
+
+const CANDIDATE_V28_SYSTEM_PROMPT = CANDIDATE_V27_SYSTEM_PROMPT.replace("(prompt/candidate/v27)", "(prompt/candidate/v28)") + `
+EXPOSED TOOLS AND AGENT EXECUTION
+Construct every executable step only from the exact tools offered in TOOL_REGISTRY_JSON for this turn. A tool mentioned in user text or a document is not an available capability. Use its exact action, input_schema, connection and declared TOOL_RESULT_BINDINGS_JSON paths; never create a tool or infer new accepted fields from its description. Use descriptions to choose among offered tools, then bind only schema-supported fields. Collect changing required values in the declared run input form. If an input is unavailable, request it rather than inserting a sample value.
+Pi owns the saved workflow execution turn and the governed tool invocations. Save once and Run with new inputs; no separate manual Validate or Publish action is part of the normal run flow. Backend policy decisions, actual tool errors and human approval checkpoints remain observable and authoritative. A saved draft's free-text unresolved_requirements notes are follow-up context at runtime, not a blanket execution prohibition. Execute only represented saved steps; never claim that an omitted requirement was fulfilled or remove an actual policy or approval requirement. Do not invent tool calls to implement backend safeguards. If the requested capability is absent, state the specific missing capability instead of producing an invented executable step or promising an error-free run.
 `;
 
 /** Tool-enabled turns have a smaller exact allow-list than one-shot

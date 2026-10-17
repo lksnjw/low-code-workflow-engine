@@ -1,3 +1,4 @@
+import { parseWorkflowPreview } from "../chat/workflowPreview";
 import GovernanceBlockPanel from "../executions/GovernanceBlockPanel";
 import { Link } from "react-router-dom";
 import { useExecutionMonitor } from "../../hooks/useExecutionMonitor";
@@ -16,6 +17,8 @@ export default function WorkflowRunReceipt({ initialExecution, onDismiss, extern
     <p role="alert">This run is no longer available to this account. Saved answers are hidden.</p>
   </section>;
   const execution = monitor.execution || initialExecution;
+  const rawNotes = parseWorkflowPreview(execution.workflowSnapshot?.yaml).metadata?.unresolved_requirements;
+  const requirementNotes = Array.isArray(rawNotes) ? rawNotes.filter(note => typeof note === "string" && note.trim()).slice(0, 50) : [];
   const iterationModel = projectExecutionIterationEvidence(execution, monitor.timeline || []);
   return <section aria-label="Workflow run" className="space-y-3 rounded-xl border border-gray-200 p-4 dark:border-slate-700">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -29,6 +32,11 @@ export default function WorkflowRunReceipt({ initialExecution, onDismiss, extern
     {monitor.error && <p role="status" className="text-sm text-amber-700">{monitor.error} Saved evidence may be stale; no run was restarted.</p>}
     {execution.agentSummary && <p className="text-sm text-gray-700 dark:text-gray-300">{execution.agentSummary}</p>}
     {execution.failure && <><GovernanceBlockPanel failure={execution.failure} />{execution.failure.reason && <p role="alert" className="text-sm text-red-700">{execution.failure.reason}</p>}</>}
+    {requirementNotes.length > 0 && <details aria-label="Workflow requirement notes" className="border-l-2 border-amber-400 pl-3 text-sm">
+      <summary className="cursor-pointer font-semibold">Workflow notes ({requirementNotes.length})</summary>
+      <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">Run executes the saved tool steps with your inputs. These draft notes remain available for follow-up; a completed run confirms the saved steps, not additional outcomes described in these notes.</p>
+      <ul className="mt-2 list-disc space-y-1 pl-4">{requirementNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+    </details>}
     <RecordedModelUsage counts={execution.recordedUsage} />
     <ExecutionOutputPanel execution={execution} iterationModel={iterationModel} />
   </section>;

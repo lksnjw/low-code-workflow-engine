@@ -10,9 +10,9 @@ import { prepareOperationPublication, assertOperationPublicationCurrent } from "
 import { savedDraftHistory } from "./draft-history.js";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 
-/** Shared by explicit publication and Start. Always validates and pins the exact
+/** Optional legacy publication API. Always validates and pins the exact
  * saved revision; never approves effects or dispatches an ERP call. */
-export async function publishWorkflowSnapshot(workflowId: string, body: Record<string, unknown>, request: FastifyRequest, user: CurrentUser, services: HandlerServices, preparingStart = false) {
+export async function publishWorkflowSnapshot(workflowId: string, body: Record<string, unknown>, request: FastifyRequest, user: CurrentUser, services: HandlerServices) {
   const id = workflowId;
   const current = await services.repository.read((state) => structuredClone(state.workflows[id] ?? null));
   if (current === null) throw new HandlerFailure(404, "Workflow not found");
@@ -21,7 +21,7 @@ export async function publishWorkflowSnapshot(workflowId: string, body: Record<s
     if (!Number.isInteger(body.baseVersion) || typeof body.baseHash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(body.baseHash)) throw new HandlerFailure(400, "Invalid publication revision");
     if (body.baseVersion !== current.draftVersion || body.baseHash !== workflowContentHash(current.yaml)) throw new HandlerFailure(409, "Reviewed draft changed; reload before publishing", { code: "DRAFT_REVISION_CONFLICT" });
   }
-  if (current.status === "draft-unvalidated" && !preparingStart) throw new HandlerFailure(422, "Workflow must be validated before publishing", { status: current.status });
+  if (current.status === "draft-unvalidated") throw new HandlerFailure(422, "Workflow must be validated before publishing", { status: current.status });
   const expectedHash = workflowContentHash(current.yaml);
   const traceId = requestTraceId(request, current.traceId);
   const coverageIssues = savedGeneratedReturnCoverageIssues(current);

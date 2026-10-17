@@ -4008,3 +4008,19 @@ test("Start prepares an unpublished operation automatically but still pauses for
   const replay = await s.request("POST", "/api/workflows/flow/run", payload); expect(replay.json().data.id).toBe(id);
   expect((await s.repository.snapshot()).versions.flow?.filter(version => version.artifactState === "PUBLISHED")).toHaveLength(1);
 });
+
+
+test("direct Run with draft notes still pauses for exact independent approval before the saved effect", async () => {
+  const s = await setup(null, false);
+  const value = await s.repository.mutate(state => {
+    const source = parse(state.workflows.flow!.yaml); source.metadata = { unresolved_requirements: ["Optional form contact remains in source document"] };
+    state.workflows.flow!.yaml = stringify(source); return state.workflows.flow!.yaml;
+  });
+  const response = await s.request("POST", "/api/workflows/flow/run", { mode: "async-operation", idempotencyKey: "notes-direct-effect-001", input: {}, startRevision: { baseVersion: 1, baseHash: workflowContentHash(value) } });
+  expect(response.statusCode, response.body).toBe(202); const id = response.json().data.id;
+  await s.wait(id, "AWAITING_APPROVAL"); expect(s.sdk.callTool).not.toHaveBeenCalled();
+  const approved = await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer");
+  expect(approved.statusCode, approved.body).toBe(200); await s.wait(id, "DONE");
+  expect(s.sdk.callTool).toHaveBeenCalledOnce();
+  expect((await s.repository.snapshot()).executions[id]!.workflowSnapshot!.yaml).toBe(value);
+});

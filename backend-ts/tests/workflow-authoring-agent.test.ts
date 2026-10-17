@@ -1,3 +1,4 @@
+import { systemInstructionsFor } from "../src/prompts/contracts.js";
 import { expect, test, vi } from "vitest";
 import { runWorkflowAuthoringAgent } from "../src/agent/workflow-authoring-agent.js";
 import type { AnalysisResponse } from "../src/analysisprovider/types.js";
@@ -36,4 +37,16 @@ test("active authoring prompt uses exact output bindings and treats Start prepar
   expect(prompt).toContain("RUNTIME_SAFEGUARDS_JSON.auditJournalActions");
   expect(prompt).not.toContain("Tool output references must include structuredContent;");
   expect(prompt).not.toContain("Tool/model output references include structuredContent and select a declared compatible field.");
+});
+
+
+test("current generation binds exposed schemas and delegates saved execution without treating draft notes as authority", async () => {
+  const { CANDIDATE_PROMPT_VERSION } = await import("../src/providers/runtime.js");
+  const prompt = systemInstructionsFor(CANDIDATE_PROMPT_VERSION);
+  expect(prompt).toContain("EXPOSED TOOLS AND AGENT EXECUTION");
+  expect(prompt).toContain("never create a tool");
+  expect(prompt).toContain("Pi owns the saved workflow execution turn");
+  expect(prompt).toContain("not a blanket execution prohibition");
+  expect(prompt).toContain("human approval checkpoints remain observable and authoritative");
+  expect(systemInstructionsFor("prompt/candidate/v27")).not.toContain("EXPOSED TOOLS AND AGENT EXECUTION");
 });

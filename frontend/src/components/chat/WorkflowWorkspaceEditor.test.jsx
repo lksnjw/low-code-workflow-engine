@@ -31,15 +31,12 @@ beforeEach(() => {
   jest.spyOn(operationReadbackService, "history").mockImplementation(async id => ({ ...statusHistory(), executionId: id, nodeId: "first", jobs: [], canQuery: false }));
 });
 afterEach(() => { cleanup(); sessionStorage.clear(); jest.restoreAllMocks(); });
-test("publication refreshes saved-workflow lists after authoritative readiness without running", async () => {
-  const changed = jest.fn().mockResolvedValue(undefined);
-  await open({ onChatChanged: changed });
-  workflowService.readiness.mockResolvedValue({ ...record, version: 2, published: true });
-  fireEvent.click(screen.getByRole("button", { name: "Publish reviewed draft" }));
-  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
-  expect(workflowService.publish).toHaveBeenCalledTimes(1);
-  expect(workflowService.readiness).toHaveBeenCalledTimes(2);
-  expect(workflowService.run).not.toHaveBeenCalled();
+test("Run opens inputs without a separate publication action", async () => {
+  await open();
+  expect(screen.queryByRole("button", { name: "Publish reviewed draft" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Run workflow", exact: true }));
+  expect(screen.getByRole("dialog", { name: "Run workflow" })).toBeTruthy();
+  expect(workflowService.publish).not.toHaveBeenCalled(); expect(workflowService.run).not.toHaveBeenCalled();
 });
 async function open(props = {}) {
   const view = render(<WorkflowWorkspaceEditor workflowId="report" sessionId="chat" canEdit canControl selectionStorageKey="account.chat" {...props} />);
@@ -103,7 +100,7 @@ test("chat Save reviews the exact proposal and saves one revision, without publi
   expect(within(actions).getByRole("button", { name: "Run workflow" }).disabled).toBe(true);
   fireEvent.click(within(actions).getByRole("button", { name: "Save draft" }));
   const review = screen.getByRole("dialog", { name: "Save workflow draft" });
-  expect(within(review).getByText(/Saving does not publish, run or approve/)).toBeTruthy();
+  expect(within(review).getByText(/Saving keeps these changes for future runs/)).toBeTruthy();
   expect(workflowService.command).not.toHaveBeenCalled();
   const save = within(review).getByRole("button", { name: "Save changes to draft" }); fireEvent.click(save); fireEvent.click(save);
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Save workflow draft" })).toBeNull());
@@ -181,11 +178,13 @@ test("workspace canvas fills its pane and docks controls and unsaved node fields
   expect(workflowService.run).not.toHaveBeenCalled();
 });
 
-test("historical publication with invalid current source shows blocked and cannot republish", async () => {
+test("historical readiness does not expose publication controls or prevent opening Run", async () => {
   workflowService.readiness.mockResolvedValue({ ...record, published: true, validation: { passed: false, errors: ["Duplicate node ID"] }, compilation: { state: "BLOCKED" } });
   await open();
-  expect(screen.getByText("Published · blocked")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Republish reviewed draft" }).disabled).toBe(true);
+  expect(screen.queryByText("Published · blocked")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Republish reviewed draft" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+  expect(await screen.findByRole("dialog")).toBeTruthy();
   expect(workflowService.publish).not.toHaveBeenCalled(); expect(workflowService.run).not.toHaveBeenCalled();
 });
 
@@ -740,13 +739,14 @@ test("read-only users see source and run status, never editing or proposal actio
   expect(screen.queryByRole("textbox", { name: "Node label" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Apply to draft" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Publish reviewed draft" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
 });
 
-test("publication is explicit and does not call execution", async () => {
-  await open(); fireEvent.click(screen.getByRole("button", { name: "Publish reviewed draft" }));
-  await waitFor(() => expect(workflowService.publish).toHaveBeenCalledWith("report", "Explicitly reviewed in chat workspace", record));
-  expect(workflowService.run).not.toHaveBeenCalled();
+test("saved workflows expose Run rather than validation or publication controls", async () => {
+  await open();
+  expect(screen.getByRole("button", { name: "Run workflow", exact: true }).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: /publish/i })).toBeNull();
+  expect(workflowService.publish).not.toHaveBeenCalled();
 });
 
 test.each([500, 502, 503, 504])("HTTP %s edit acknowledgement uncertainty blocks repeat Apply until an authoritative reload", async status => {
@@ -758,7 +758,7 @@ test.each([500, 502, 503, 504])("HTTP %s edit acknowledgement uncertainty blocks
   await screen.findByText("Edit save outcome is unconfirmed. Reload authoritative storage before editing again. No automatic retry was sent.");
   expect(screen.getByRole("region", { name: "Node change preview" }).textContent).toContain("Keep this pending label");
   expect(screen.getByRole("button", { name: "Apply to draft" }).disabled).toBe(true);
-  expect(screen.getByRole("button", { name: "Publish reviewed draft" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run workflow", exact: true }).disabled).toBe(true);
   expect(workflowService.command).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Reload workflow" }));
   await screen.findByText("Authoritative draft reloaded. Review the current revision before another edit.");
@@ -770,11 +770,11 @@ test.each(["manual", "saved model"])("publication waits for the %s preview to be
   await open(kind === "saved model" ? { savedProposals: [proposal] } : {});
   if (kind === "manual") { await selectNode(); fireEvent.click(screen.getByRole("button", { name: "Preview manual edit" })); }
   expect(screen.getByRole("region", { name: "Node change preview" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Publish reviewed draft" }).disabled).toBe(true);
-  expect(screen.getByText("Apply or discard the pending change before publishing. Publishing uses the saved draft only.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Run workflow", exact: true }).disabled).toBe(true);
+  expect(screen.getByText("Save or discard the pending change before running. Run uses the saved workflow.")).toBeTruthy();
   expect(workflowService.publish).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Publish reviewed draft" }).disabled).toBe(false));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Run workflow", exact: true }).disabled).toBe(false));
   expect(workflowService.publish).not.toHaveBeenCalled(); expect(workflowService.run).not.toHaveBeenCalled();
 });
 
@@ -782,7 +782,7 @@ test("a failed run retrieves actual partial node outputs and does not silently p
   workflowService.readiness.mockResolvedValue({ ...record, published: true, can_attempt_run: true, bridge: "discovery_available" });
   workflowService.run.mockRejectedValue({ response: { data: { message: "Second node failed", meta: { executionId: "run-failed" } } } });
   executionService.getTimeline.mockResolvedValue([{ nodeId: "first", status: "DONE" }, { nodeId: "last", status: "FAILED" }]);
-  await open(); fireEvent.click(screen.getByRole("button", { name: "Run published version" }));
+  await open(); fireEvent.click(screen.getByRole("button", { name: "Run saved steps" }));
   fireEvent.click(await screen.findByText("Node answer · run run-failed"));
   expect(screen.getByText(/real answer/)).toBeTruthy();
   expect(screen.getByText("Value")).toBeTruthy();
@@ -803,10 +803,10 @@ test("a save acknowledgement survives a readiness refresh failure and blocks fur
   workflowService.readiness.mockResolvedValueOnce(record).mockRejectedValue(new Error("Offline"));
   await open(); await selectNode(); fireEvent.click(screen.getByRole("button", { name: "Preview manual edit" }));
   fireEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
-  await screen.findByText("Draft saved, but readiness could not be refreshed. Reload before publishing or running.");
+  await screen.findByText("Draft saved, but readiness could not be refreshed. Reload to get the current workflow inputs.");
   expect(screen.queryByRole("region", { name: "Node change preview" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Publish reviewed draft" }).disabled).toBe(true);
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run workflow", exact: true }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
 });
 
 test("friendly parameter fields produce the same revision-bound command without a JSON editor", async () => {
@@ -827,7 +827,7 @@ test("friendly run input fields submit typed values only through explicit Run", 
   fireEvent.change(screen.getByRole("combobox", { name: "Run inputs · limit value type" }), { target: { value: "number" } });
   fireEvent.change(screen.getByRole("spinbutton", { name: "Run inputs · limit" }), { target: { value: "5" } });
   expect(workflowService.run).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Run published version" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run saved steps" }));
   await waitFor(() => expect(workflowService.run).toHaveBeenCalledWith("report", { limit: 5 }));
   expect(workflowService.publish).not.toHaveBeenCalled();
 });
@@ -836,9 +836,9 @@ test("a synchronous run request does not lock draft/node editing or send a secon
   workflowService.readiness.mockResolvedValue({ ...record, published: true, can_attempt_run: true });
   let finish;
   workflowService.run.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-  await open(); fireEvent.click(screen.getByRole("button", { name: "Run published version" }));
+  await open(); fireEvent.click(screen.getByRole("button", { name: "Run saved steps" }));
   await screen.findByText(/synchronous endpoint has not returned its run identifier/);
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
   await selectNode();
   expect(screen.getByRole("button", { name: "Preview manual edit" }).disabled).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Preview manual edit" }));
@@ -851,9 +851,9 @@ test("a synchronous run request does not lock draft/node editing or send a secon
 test("an unconfirmed run response blocks repeat dispatch and directs the user to history", async () => {
   workflowService.readiness.mockResolvedValue({ ...record, published: true, can_attempt_run: true });
   workflowService.run.mockRejectedValue(new Error("Network Error"));
-  await open(); fireEvent.click(screen.getByRole("button", { name: "Run published version" }));
+  await open(); fireEvent.click(screen.getByRole("button", { name: "Run saved steps" }));
   await screen.findByRole("link", { name: /Review execution history/ });
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
   expect(workflowService.run).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/No automatic retry was sent/)).toBeTruthy();
 });
@@ -868,7 +868,7 @@ test("recovered runs show readable saved answers and unknown nodes, never a fres
   await screen.findByText(/Outcome unknown · the read may have reached ERP/);
   fireEvent.click(screen.getByText("Node answer · run run-recovery"));
   expect(screen.getByText("retained answer")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
   expect(screen.queryByRole("button", { name: "Request cancellation" })).toBeNull();
 });
 
@@ -877,11 +877,11 @@ test("async-ready workspace admits once, receives the run ID and starts monitori
   const admitted = { id: "run-queued", status: "PENDING", readProgress: { profile: "read-progress-v1", lastSequence: 1 }, workflowSnapshot: { yaml, version: 1 }, stepOutputs: {} };
   workflowService.run.mockResolvedValue(admitted); executionService.get.mockResolvedValue(admitted);
   jest.spyOn(executionService, "getEvents").mockResolvedValue({ events: [{ version: 1, executionId: admitted.id, sequence: 1, timestamp: "2026-10-05T00:00:00Z", type: "run.queued" }], cursor: 1, lastSequence: 1, hasMore: false, status: "PENDING", profile: "read-progress-v1" });
-  await open({ canControl: true }); fireEvent.click(screen.getByRole("button", { name: "Run published version" }));
+  await open({ canControl: true }); fireEvent.click(screen.getByRole("button", { name: "Run saved steps" }));
   await screen.findByText("Read job queued");
   expect(workflowService.run).toHaveBeenCalledWith("report", {}, expect.objectContaining({ mode: "async-read", idempotencyKey: expect.stringMatching(/^[a-f0-9-]{36}$/) }));
   expect(screen.getByRole("button", { name: "Request cancellation" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
   expect(workflowService.run).toHaveBeenCalledTimes(1);
 });
 
@@ -891,12 +891,12 @@ test("operation-ready workspace uses separate admission and continues managing a
   workflowService.run.mockResolvedValue(admitted); executionService.get.mockResolvedValue(admitted);
   executionService.getTimeline.mockResolvedValue([{ nodeId: "first", status: "AWAITING_APPROVAL", sideEffect: true }]);
   jest.spyOn(executionService, "getEvents").mockResolvedValue({ events: [{ version: 1, executionId: admitted.id, sequence: 1, timestamp: "2026-10-06T00:00:00Z", type: "approval.requested" }], cursor: 1, lastSequence: 1, hasMore: false, status: admitted.status, profile: "read-progress-v1" });
-  await open({ canControl: true }); fireEvent.click(screen.getByRole("button", { name: "Run published version" }));
+  await open({ canControl: true }); fireEvent.click(screen.getByRole("button", { name: "Run saved steps" }));
   await screen.findByText("Exact operation approval requested");
   expect(workflowService.run).toHaveBeenCalledWith("report", {}, expect.objectContaining({ mode: "async-operation", idempotencyKey: expect.stringMatching(/^[a-f0-9-]{36}$/) }));
   expect(screen.getByText(/this operation has not been dispatched/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Request cancellation" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
   expect(workflowService.run).toHaveBeenCalledTimes(1);
 });
 
@@ -908,7 +908,7 @@ test("an uncertain operation node explains possible ERP effects and cannot start
   workflowService.readiness.mockResolvedValue({ ...record, published: true, can_attempt_run: true, executionProfile: "sequential-operation-v1", operation_job_admission: "operation-job/v1" });
   await open({ canControl: true }); await screen.findByText(/operation may have taken effect in ERP/);
   expect(screen.queryByText(/the read may have reached ERP/)).toBeNull();
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true); expect(workflowService.run).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true); expect(workflowService.run).not.toHaveBeenCalled();
 });
 
 test("operator-closed canvas retains external evidence beside the unknown node without fabricating a tool answer or rerun", async () => {
@@ -920,7 +920,7 @@ test("operator-closed canvas retains external evidence beside the unknown node w
   await open({ canControl: true }); await screen.findByText("Effect observed · operator attestation");
   // The optional collapsed YAML source is not the business-evidence display.
   expect(screen.getByText("ERP-123")).toBeTruthy(); expect(screen.getByText(/Not a saved tool answer/)).toBeTruthy(); expect(screen.getByLabelText("Operator evidence").querySelector("pre")).toBeNull();
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true); expect(screen.queryByText(/Node answer/)).toBeNull(); expect(workflowService.run).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true); expect(screen.queryByText(/Node answer/)).toBeNull(); expect(workflowService.run).not.toHaveBeenCalled();
   expect(await screen.findByRole("region", { name: "ERP status queries" })).toBeTruthy();
 });
 
@@ -963,19 +963,19 @@ test("changing the tool never applies the former tool schema or erases old param
   expect(workflowService.command).not.toHaveBeenCalled();
 });
 
-test("stale compiled publication can explicitly republish instead of leaving the workspace unable to repair it", async () => {
+test("stale saved tool bindings can be checked on Run without a republish control", async () => {
   workflowService.readiness.mockResolvedValue({ ...record, published: true, compilation: { state: "BLOCKED" } });
-  await open(); fireEvent.click(screen.getByRole("button", { name: "Republish reviewed draft" }));
-  await waitFor(() => expect(workflowService.publish).toHaveBeenCalledWith("report", "Explicitly reviewed in chat workspace", expect.objectContaining({ version: 1, contentHash: record.contentHash })));
-  expect(workflowService.run).not.toHaveBeenCalled();
+  await open(); fireEvent.click(screen.getByRole("button", { name: "Run workflow", exact: true }));
+  expect(screen.getByRole("dialog", { name: "Run workflow" })).toBeTruthy();
+  expect(workflowService.publish).not.toHaveBeenCalled();
 });
 
 test("compiler and publication readiness reasons are visible and not hidden behind successful original validation", async () => {
   workflowService.readiness.mockResolvedValue({ ...record, published: true, compilation: { state: "BLOCKED" }, issues: ["Published execution artifact needs current capability review and explicit re-publication"] });
   await open();
-  expect(screen.getByText("Execution readiness issues (1)")).toBeTruthy();
-  expect(screen.getByText(/Published execution artifact needs current capability review/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Run published version" }).disabled).toBe(true);
+  expect(screen.queryByText("Execution readiness issues (1)")).toBeNull();
+  expect(screen.queryByText(/Published execution artifact needs current capability review/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Run saved steps" }).disabled).toBe(true);
 });
 
 test("workspace renders confirmed branch scopes, selectable action nodes and truthful skipped-node status", async () => {
