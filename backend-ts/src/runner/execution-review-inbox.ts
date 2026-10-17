@@ -99,6 +99,7 @@ export function executionReviewInbox(state: Readonly<RepositoryState>, user: Cur
   const items = page.map(candidate => {
     const execution = state.executions[candidate.executionId]!;
     const common = { ...candidate, workflowName: text(execution.workflowName, "Workflow"), requesterName: text(execution.startedBy.name, "Requester"),
+      scheduledFor: execution.scheduleSource ? date(execution.scheduleSource.scheduledFor, "") || null : null,
       executionStatus: execution.status, canResume: false as const, noReplay: true as const };
     try {
       if (candidate.kind === "approval") {

@@ -3,7 +3,7 @@ import React, { StrictMode } from "react";
 import { jest, test, expect, afterEach } from "@jest/globals";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { workflowService } from "../../services/workflow.service";
 import { executionService } from "../../services/execution.service";
 import { settingsService } from "../../services/settings.service";
@@ -38,6 +38,7 @@ test("indexed-data chat reuses the composer without canvas or unrelated workflow
   expect(screen.queryByText("Editing:")).toBeNull();
   expect(screen.getByRole("heading", { name: "Find stored document details" })).toBeTruthy();
   expect(readiness).not.toHaveBeenCalled();
+  openWorkspaceTools();
   await screen.findByRole("combobox", { name: "Requested model" });
   fireEvent.change(screen.getByRole("textbox", { name: "Message to workflow assistant" }), { target: { value: "Find this person's stored certificate" } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
@@ -116,6 +117,7 @@ test("chat is left of canvas and first on mobile; selecting a node routes the ma
   await screen.findByText("Editing node · invoices");
   expect(screen.queryByRole("textbox", { name: "Selected node prompt" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Message to workflow assistant" }), { target: { value: "Rename this node" } });
+  openWorkspaceTools();
   await screen.findByRole("combobox", { name: "Requested model" });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() => expect(normalSend).toHaveBeenCalledWith("Rename this node", "chat", { model: "model-b", nodeContext: { workflowId: "report", nodeId: "invoices", baseVersion: 4, baseHash: record.contentHash } }));
@@ -123,6 +125,7 @@ test("chat is left of canvas and first on mobile; selecting a node routes the ma
   expect(propose).not.toHaveBeenCalled(); expect(command).not.toHaveBeenCalled(); expect(run).not.toHaveBeenCalled();
   messages = [...messages, { id: "proposal", role: "assistant", artifacts: { proposal: await propose.getMockImplementation()() } }];
   view.rerender(<QueryClientProvider client={client}><MemoryRouter><ChatPage /></MemoryRouter></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Canvas tools", exact: true }));
   await screen.findByRole("region", { name: "Node change preview" });
   await waitFor(() => expect(screen.getByRole("textbox", { name: "Message to workflow assistant" }).value).toBe(""));
   fireEvent.click(screen.getByRole("button", { name: "Exit node editing" }));
@@ -157,6 +160,7 @@ test("first-message session creation transfers the explicit model with a retaine
   jest.spyOn(chatService, "models").mockResolvedValue({ configured: true, binding: { model: "model-a" }, models: ["model-a", "model-b"] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   render(<QueryClientProvider client={client}><MemoryRouter><ChatPage /></MemoryRouter></QueryClientProvider>);
+  openWorkspaceTools();
   const picker = await screen.findByRole("combobox", { name: "Requested model" });
   await waitFor(() => expect(picker.value).toBe("model-a"));
   fireEvent.change(picker, { target: { value: "model-b" } });
@@ -206,10 +210,35 @@ test("applying a saved child proposal invalidates the active authority-scoped ch
   client.setQueryData(sessionsKey, []);
   const invalidate = jest.spyOn(client, "invalidateQueries");
   render(<QueryClientProvider client={client}><MemoryRouter><ChatPage /></MemoryRouter></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Workspace tools", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Canvas tools", exact: true }));
   fireEvent.click(await screen.findByRole("button", { name: "Apply to draft" }));
   await waitFor(() => expect(workflowService.command).toHaveBeenCalled());
   await waitFor(() => expect(client.getQueryState(sessionKey).isInvalidated).toBe(true));
   expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionKey });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionsKey });
   client.clear();
+});
+
+function openWorkspaceTools() {
+  const toggle = screen.getByRole("button", { name: "Workspace tools", exact: true });
+  if (toggle.getAttribute("aria-expanded") === "false") fireEvent.click(toggle);
+  const chatTab = screen.queryByRole("button", { name: "Chat tools", exact: true });
+  if (chatTab) fireEvent.click(chatTab);
+}
+
+test("changing the visible canvas selector keeps the chat and draft and updates the URL to the exact workflow", async () => {
+  HTMLElement.prototype.scrollIntoView = jest.fn();
+  messages = [...messages, { id: "another", role: "assistant", artifacts: { workflowId: "other", yaml: source.replace("Report", "Second report") } }];
+  jest.spyOn(workflowService, "readiness").mockImplementation(async id => ({ ...record, workflowId: id, yaml: id === "other" ? source.replace("Report", "Second report") : source }));
+  jest.spyOn(executionService, "list").mockResolvedValue([]);
+  jest.spyOn(chatService, "models").mockResolvedValue({ configured: true, binding: { model: "model-a" }, models: ["model-a"] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/chat/chat?workflow=report"]}><Routes><Route path="/chat/:sessionId" element={<><ChatPage /><Location /></>} /></Routes></MemoryRouter></QueryClientProvider>);
+  await screen.findByRole("button", { name: "Select step invoices", exact: true });
+  fireEvent.change(screen.getByRole("textbox", { name: "Message to workflow assistant" }), { target: { value: "Keep this conversation question" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Workflow draft" }), { target: { value: "workflow:other" } });
+  await waitFor(() => expect(screen.getByLabelText("Current route").textContent).toBe("/chat/chat?workflow=other"));
+  expect(screen.getByRole("textbox", { name: "Message to workflow assistant" }).value).toBe("Keep this conversation question");
+  expect(normalSend).not.toHaveBeenCalled(); client.clear();
 });

@@ -11,6 +11,56 @@ const steps = ["read", "yes", "no", "send"].map(id => ({ id, label: id, source: 
 const action = nodeId => ({ kind: "action", nodeId });
 const sequence = (...nodes) => ({ kind: "sequence", nodes });
 
+test("required human approval is an explicit display gate before the effect, without changing saved branches", () => {
+  const flow = sequence(action("read"), { id: "check", kind: "if", then: sequence(action("send")), else: sequence({ id: "finish", kind: "return" }) });
+  const before = JSON.stringify(flow);
+  const graph = miniWorkflowGraph([steps[0], steps[3]], flow, true, ["send"]);
+  expect(graph.error).toBe(""); expect(JSON.stringify(flow)).toBe(before);
+  expect(graph.edges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ from: "check", to: "approval:send", label: "Yes" }),
+    expect.objectContaining({ from: "approval:send", to: "send", label: "If approved" }),
+  ]));
+  expect(graph.nodes.filter(node => node.kind === "approval")).toHaveLength(1);
+  expect(graph.edges.some(edge => edge.from === "finish")).toBe(false);
+});
+
+test("the paused human approval node opens its exact review, never dispatches an action", () => {
+  const review = jest.fn(), select = jest.fn();
+  render(<WorkflowMiniCanvas simple steps={steps} approvalNodes={["send"]} timeline={[{ nodeId: "send", status: "AWAITING_APPROVAL" }]} onSelectCondition={select} onReviewApproval={review} />);
+  expect(screen.getByText("Paused · Review here")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Select approval Human approval · Step send" }));
+  expect(select).not.toHaveBeenCalled(); expect(review).toHaveBeenCalledTimes(1);
+  expect(screen.getAllByRole("button", { name: /^Select step/ })).toHaveLength(4);
+});
+
+test("a future human gate is not misrepresented as an active approval or a completed step", () => {
+  const review = jest.fn();
+  render(<WorkflowMiniCanvas simple steps={steps} approvalNodes={["send"]} onSelectCondition={jest.fn()} onReviewApproval={review} />);
+  expect(screen.getByText("Required before this action")).toBeTruthy(); expect(screen.queryByText("Paused · Review here")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Select approval Human approval · Step send" }));
+  expect(screen.getByRole("complementary", { name: "Human approval checkpoint details" }).textContent).toContain("not a workflow-edit approval");
+  expect(review).not.toHaveBeenCalled();
+});
+
+test("tree preview retains human checkpoints and a recorded old wait does not become a new pending review", () => {
+  const review = jest.fn();
+  render(<WorkflowMiniCanvas simple steps={steps} approvalNodes={["send"]} run={{ status: "BLOCKED" }} timeline={[{ nodeId: "send", status: "AWAITING_APPROVAL" }]} onSelectCondition={jest.fn()} onReviewApproval={review} renderAction={step => <li>{step.label}</li>} />);
+  expect(screen.queryByText("Paused · Review here")).toBeNull();
+  expect(screen.getAllByText("Review recorded · Check run")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("tab", { name: "Workflow preview" }));
+  expect(screen.getByRole("listitem", { name: "Human approval before send" }).textContent).toContain("Human approval");
+  expect(screen.queryByRole("button", { name: "Review exact transaction here" })).toBeNull();
+  expect(review).not.toHaveBeenCalled();
+});
+
+test("an empty saved draft explains its unresolved requirements instead of drawing a blank grid", () => {
+  const controls = jest.fn();
+  render(<WorkflowMiniCanvas simple savedDraft steps={[]} onSelectCondition={jest.fn()} emptyDescription="ERP report tools are not available yet." unresolvedRequirements={["Choose a reporting tool", "Confirm delivery timezone"]} onOpenControls={controls} />);
+  expect(screen.getByRole("status", { name: "Empty saved workflow" }).textContent).toContain("no steps yet");
+  expect(screen.getByText("Choose a reporting tool")).toBeTruthy(); expect(screen.queryByLabelText("Workflow node connections")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Review requirements and add steps" })); expect(controls).toHaveBeenCalledTimes(1);
+});
+
 test("decision arrows retain both declared paths and their shared continuation", () => {
   const graph = miniWorkflowGraph(steps, sequence(action("read"), { id: "check", kind: "if", then: sequence(action("yes")), else: sequence(action("no")) }, action("send")), true);
   expect(graph.error).toBe("");
@@ -21,6 +71,12 @@ test("decision arrows retain both declared paths and their shared continuation",
     expect.objectContaining({ from: "yes", to: "send" }),
     expect.objectContaining({ from: "no", to: "send" }),
   ]));
+});
+
+test("Yes and No labels occupy different positions on diverging decision arrows", () => {
+  render(<WorkflowMiniCanvas simple steps={steps} declaredStructure flow={sequence(action("read"), { id: "check", kind: "if", then: sequence(action("yes")), else: sequence(action("no")) }, action("send"))} onSelectCondition={() => {}} />);
+  const yes = screen.getByText("Yes", { selector: "text" }), no = screen.getByText("No", { selector: "text" });
+  expect([yes.getAttribute("x"), yes.getAttribute("y")]).not.toEqual([no.getAttribute("x"), no.getAttribute("y")]);
 });
 
 test("a returning branch has no edge to a later effect and unavailable structure is not flattened", () => {

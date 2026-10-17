@@ -76,8 +76,8 @@ export const executionService = {
   async get(id, options = {}) {
     return normalizeExecution(unwrap(await apiClient.get(`/executions/${encodeURIComponent(id)}`, options)));
   },
-  async getApproval(id, approvalId) {
-    const value = unwrap(await apiClient.get(`/executions/${encodeURIComponent(id)}`, { params: { view: "approval", ...(approvalId ? { approvalId } : {}) } }));
+  async getApproval(id, approvalId, options = {}) {
+    const value = unwrap(await apiClient.get(`/executions/${encodeURIComponent(id)}`, { ...options, params: { view: "approval", ...(approvalId ? { approvalId } : {}) } }));
     const protectedReview = value?.runtimeApproval?.profile === "protected-approval/v1";
     if (value?.id !== id || (protectedReview ? !validProtectedApprovalReview(value.runtimeApproval, value.status)
       : value?.runtimeApproval?.profile !== "runtime-approval/v1" || !["PENDING", "APPROVED", "REJECTED", "CONSUMED"].includes(value.runtimeApproval.state)) ||

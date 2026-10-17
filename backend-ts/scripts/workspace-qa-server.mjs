@@ -91,6 +91,20 @@ await repository.mutate((state) => {
     { id: "qa_request", role: "user", text: "Prepare an invoice review workflow (local fixture).", createdAt },
     { id: "qa_answer", role: "assistant", text: operationFixture ? "LOCAL fixture draft saved. Publish and Run use the normal read/operation worker against in-process synthetic tools. Each notification waits for the independent reviewer; no real email or ERP action is possible." : fixtureWorker ? "Local fixture draft saved. Only an injected synthetic SDK transport is available; no live ERP or provider is connected. Explicit Publish and Run exercise the real local read worker against fixture echoes." : "Local fixture draft saved. ERP connection is intentionally unavailable; no invoices have been retrieved or sent.", createdAt, artifacts: { intent: "WORKFLOW", workflowId: "qa_report", yaml, selected_workflow_yaml: yaml, validation: { passed: true }, validation_passed: true, can_execute: false } },
   ] };
+  if (process.env.WORKSPACE_QA_NAVIGATION === "1") {
+    // Saved, zero-step and older-page fixtures exercise actual list/readiness
+    // HTTP handlers. They do not connect to any model, hosted database or ERP.
+    state.workflows.qa_report.chatSessionId = "qa_chat";
+    for (let index = 1; index <= 23; index++) {
+      const id = `qa_saved_${index}`;
+      state.workflows[id] = { ...state.workflows.qa_report, id, name: `Saved report ${String(index).padStart(2, "0")}`, updatedAt: new Date(Date.parse(createdAt) - index * 1000).toISOString() };
+    }
+    const emptyYaml = stringify({ name: "Customer onboarding — incomplete draft", description: "LOCAL UI fixture: customer creation tools and required registration fields are unresolved. No ERP action has run.", trigger: { type: "manual" }, steps: [], metadata: { unresolved_requirements: ["Choose an available customer creation tool", "Review required registration fields"] } });
+    state.workflows.qa_empty = { ...state.workflows.qa_report, id: "qa_empty", name: "Customer onboarding — incomplete draft", yaml: emptyYaml, steps: 0 };
+    state.chats.qa_chat.messages.push({ id: "qa_empty_answer", role: "assistant", text: "LOCAL UI fixture: this incomplete workflow was saved as a draft, not published or executed.", createdAt,
+      artifacts: { intent: "WORKFLOW", workflowId: "qa_empty", yaml: emptyYaml, selected_workflow_yaml: emptyYaml, validation: { passed: false }, can_execute: false, blocking_errors: ["UNRESOLVED_REQUIREMENTS"] } });
+    state.chats.qa_chat.messageCount = state.chats.qa_chat.messages.length;
+  }
 });
 const registries = await RegistryService.load(resolve("tests/fixtures/chat-read-tools.json"), resolve("tests/fixtures/rules.json"));
 if (protectedSimulationCanvas) {
@@ -151,6 +165,12 @@ if (approvalFixture) {
       status: "RUNNING", startedAt: createdAt, completedAt: null, durationMs: 0, tokens: { input: 0, output: 0, total: 0 }, costUsd: 0,
       workflowSnapshot: { version: 1, yaml: approvalYAML, contentHash: plan.sourceHash, registryHash: registries.hash(), input: {}, executionProfile: "sequential-read-v1", compilation }, readProgress: newReadProgress(repository) };
     state.executions.qa_exact_approval.readProgress.attempts.review = { id: "qa-review-attempt", nodeId: "review", stepIndex: 0, status: "PREPARING", startedAt: createdAt };
+    state.timelines.qa_exact_approval = [{ id: "qa-review-timeline", nodeId: "review", attemptId: "qa-review-attempt", label: "LOCAL exact review", status: "RUNNING", phase: "PREPARING", startedAt: createdAt }];
+    if (process.env.WORKSPACE_QA_NAVIGATION === "1") {
+      state.chats.qa_chat.messages.push({ id: "qa_checkpoint_answer", role: "assistant", text: "LOCAL review-only fixture. The exact checkpoint can be reviewed in chat or canvas. No ERP worker or delivery service is connected.", createdAt,
+        artifacts: { intent: "WORKFLOW", workflowId: "qa_approval", yaml: approvalYAML, validation: { passed: true }, can_execute: false } });
+      state.chats.qa_chat.messageCount = state.chats.qa_chat.messages.length;
+    }
   });
   await requestRuntimeApproval(repository, "qa_exact_approval", { executionId: "qa_exact_approval", workflowId: "qa_approval", nodeId: "review", invocationId: "qa-review-attempt", operationKey: "qa-operation",
     sourceHash: plan.sourceHash, semanticHash: plan.semanticHash, connectionId: pin.connectionId, connectionBinding: "b".repeat(64), capabilityId: pin.capabilityId, capabilityRevision: pin.revisionId,

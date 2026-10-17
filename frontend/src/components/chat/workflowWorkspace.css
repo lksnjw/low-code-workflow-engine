@@ -19,6 +19,11 @@
 .mini-node-attention .mini-node-status { color: #b45309; }
 .mini-node-failed .mini-node-status { color: #dc2626; }
 .mini-node-running .mini-node-status { color: #2563eb; }
+.dark .mini-node-status { color: #cbd5e1; }
+.dark .mini-node-attention .mini-node-status { color: #fcd34d; }
+.dark .mini-node-done .mini-node-status { color: #6ee7b7; }
+.dark .mini-node-failed .mini-node-status { color: #fca5a5; }
+.dark .mini-node-running .mini-node-status { color: #93c5fd; }
 .mini-canvas-control { display: inline-flex; min-height: 30px; min-width: 30px; align-items: center; justify-content: center; border: 1px solid #e2e8f0; border-radius: 5px; background: white; color: #475569; }
 .mini-canvas-control:disabled { opacity: .35; }
 .dark .mini-canvas-control { border-color: #475569; background: #1f2937; color: #cbd5e1; }

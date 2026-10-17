@@ -1,8 +1,9 @@
 /** @jest-environment jsdom */
 import React from "react";
 import { test, expect, afterEach, jest } from "@jest/globals";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { ChatWorkspaceContext } from "./ChatWorkspaceContext";
 jest.unstable_mockModule("@xyflow/react", () => ({ MarkerType: { ArrowClosed: "arrow-closed" } }));
 const { default: ChatMessage } = await import("./ChatMessage");
 afterEach(cleanup);
@@ -107,4 +108,10 @@ test("historical chat exposes saved structured/attachment/failure receipts even 
   expect(screen.getByText("Saved tool responses · 2")).toBeTruthy(); expect(screen.getByText("Invoice id")).toBeTruthy(); expect(screen.getByText("INV-7")).toBeTruthy();
   expect(screen.getByText("details · Failure response")).toBeTruthy(); expect(screen.getByText("Rate limit reached")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Show image attachment" })).toBeTruthy(); expect(container.querySelector("img,pre")).toBeNull();
+});
+
+test("a saved workflow opens in the current workspace canvas without navigating to workflow details", () => {
+  const openWorkflow = jest.fn();
+  render(<MemoryRouter><ChatWorkspaceContext.Provider value={{ openWorkflow }}><ChatMessage message={{ role: "assistant", text: "Draft saved", artifacts: { intent: "WORKFLOW", workflowId: "saved", yaml: "name: Saved\nsteps: []" } }} /></ChatWorkspaceContext.Provider></MemoryRouter>);
+  fireEvent.click(screen.getByRole("button", { name: "Open in canvas" })); expect(openWorkflow).toHaveBeenCalledWith("saved");
 });

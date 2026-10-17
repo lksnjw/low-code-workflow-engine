@@ -52,6 +52,7 @@ function InboxContent({ user, authority, kind, state, onFilter }) {
             <h2 className="mt-1 break-words text-base font-semibold text-gray-950 dark:text-white">{item.workflowName}</h2>
             <p className="mt-1 break-words text-sm">{item.toolName}{item.nodeId ? <span className="text-gray-500 dark:text-gray-400"> · Node {item.nodeId}</span> : null}</p>
             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Requested by {item.requesterName} · <time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleString()}</time></p>
+            {item.scheduledFor && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Scheduled run · <time dateTime={item.scheduledFor}>{new Date(item.scheduledFor).toLocaleString()}</time></p>}
             {item.expiresAt ? <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Approval expires <time dateTime={item.expiresAt}>{new Date(item.expiresAt).toLocaleString()}</time></p> : null}
           </div>
           <div className="min-w-0"><p className="text-sm font-semibold">{item.statusLabel}</p><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{item.detail}</p>

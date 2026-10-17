@@ -2,10 +2,23 @@
 import React from "react";
 import { expect, test, afterEach, jest } from "@jest/globals";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import ChatWorkspaceLayout from "./ChatWorkspaceLayout";
 const editorProps = jest.fn();
 jest.unstable_mockModule("./WorkflowWorkspaceEditor", () => ({ default: (props) => { editorProps(props); return React.createElement("div", { "data-testid": "saved-workflow-editor" }); } }));
 const { default: WorkflowWorkspaceCanvas } = await import("./WorkflowWorkspaceCanvas");
 afterEach(() => { cleanup(); sessionStorage.clear(); editorProps.mockClear(); });
+
+test("the saved-workflow selector remains visible when the right-hand tools panel is closed", () => {
+  render(<ChatWorkspaceLayout storageKey="visible-selector" chat={<p>Chat</p>} canvas={<WorkflowWorkspaceCanvas messages={[{ id: "saved", artifacts: { workflowId: "report", yaml: "name: Report\nsteps: []" } }]} />} />);
+  expect(screen.getByRole("combobox", { name: "Workflow draft" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Workspace tools", exact: true }).getAttribute("aria-expanded")).toBe("false");
+});
+
+test("an explicit URL workflow wins over an older persisted canvas selection", () => {
+  sessionStorage.setItem("canvas.url-target", JSON.stringify({ selectedDraft: "workflow:old" }));
+  render(<WorkflowWorkspaceCanvas selectionStorageKey="canvas.url-target" initialWorkflowContext={{ workflowId: "new" }} messages={[{ id: "old-message", artifacts: { workflowId: "old" } }, { id: "new-message", artifacts: { workflowId: "new" } }]} />);
+  expect(editorProps).toHaveBeenLastCalledWith(expect.objectContaining({ workflowId: "new" }));
+});
 
 test("canvas is present before generation", () => {
   render(<WorkflowWorkspaceCanvas messages={[]} />);
@@ -14,9 +27,25 @@ test("canvas is present before generation", () => {
   expect(screen.queryByRole("button", { name: /run/i })).toBeNull();
 });
 
-test("saved workflow selector numbers identify conversations' artifacts, not current draft versions", () => {
+test("a saved selection remains available after its messages leave the latest page", () => {
+  sessionStorage.setItem("canvas.long-chat", JSON.stringify({ selectedDraft: "workflow:older" }));
+  render(<WorkflowWorkspaceCanvas messages={[{ id: "latest", artifacts: { intent: "CAPABILITIES" } }]}
+    workflowCatalog={[{ workflowId: "older", name: "Saved earlier", lastMessageIndex: 0 }, { workflowId: "newer", name: "Saved later", lastMessageIndex: 2 }]}
+    selectionStorageKey="canvas.long-chat" sessionId="long-chat" />);
+  expect(screen.getByRole("combobox", { name: "Workflow draft" }).value).toBe("workflow:older");
+  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(editorProps).toHaveBeenLastCalledWith(expect.objectContaining({ workflowId: "older", sessionId: "long-chat" }));
+});
+
+test("saved workflow selector uses a business name and stable identity, not an ambiguous draft number", () => {
   render(<WorkflowWorkspaceCanvas messages={[{ id: "saved", artifacts: { workflowId: "report", yaml: "name: Report\nsteps: []" } }]} />);
-  expect(screen.getByRole("option", { name: "Workflow 1 · report" })).toBeTruthy(); expect(screen.queryByRole("option", { name: "Draft 1 · report" })).toBeNull();
+  expect(screen.getByRole("option", { name: "Report · report" })).toBeTruthy(); expect(screen.queryByRole("option", { name: "Draft 1 · report" })).toBeNull();
+});
+
+test("the current authorized catalog name survives old source and proposal-only messages", () => {
+  render(<WorkflowWorkspaceCanvas messages={[{ id: "old", artifacts: { workflowId: "report", yaml: "name: Historical title\nsteps: []" } }, { id: "patch", artifacts: { proposal: { workflowId: "report" } } }]}
+    workflowCatalog={[{ workflowId: "report", name: "Current invoice review", lastMessageIndex: 0 }]} />);
+  expect(screen.getByRole("option", { name: "Current invoice review · report" })).toBeTruthy();
 });
 
 test("selects node parameters and retains draft after non-workflow answer", () => {

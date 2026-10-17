@@ -19,6 +19,7 @@ export function validateReviewInbox(value, params = {}) {
         !["approval", "protected-approval", "reconciliation", "report-page"].includes(item.reviewView) || item.kind === "approval" !== (["approval", "protected-approval"].includes(item.reviewView)) ||
         !value.scopes[item.kind] || !bounded(item.workflowName, 200) || !bounded(item.requesterName, 200) || !bounded(item.toolName, 200) ||
         !bounded(item.executionStatus) || !bounded(item.statusLabel, 200) || !bounded(item.detail, 2000) || !validDate(item.requestedAt) ||
+        item.scheduledFor !== undefined && item.scheduledFor !== null && !validDate(item.scheduledFor) ||
         item.expiresAt !== null && !validDate(item.expiresAt) || item.nodeId !== null && !bounded(item.nodeId) ||
         typeof item.reviewAvailable !== "boolean" || typeof item.actionable !== "boolean" || item.canResume !== false || item.noReplay !== true ||
         item.actionable && (!item.reviewAvailable || state !== "open") || keys.has(key))

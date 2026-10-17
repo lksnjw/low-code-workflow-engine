@@ -10,8 +10,8 @@ import { useNotifications } from "../../context/NotificationContext";
  *
  * Interactive human-in-the-loop checkpoint shown right in the chat when a
  * just-generated workflow contains one or more `kind: approval` steps.
- * Resolving it here — once, in chat — strips the checkpoint out of the saved
- * YAML, so running this workflow later never pauses to ask again.
+ * This accepts a build proposal only. Runtime checkpoints and exact transaction
+ * approvals stay independently enforced; a build decision never starts a run.
  ******************************************************************************/
 function PendingGenerationApprovalCard({ pending, onResolved }) {
   const [note, setNote] = useState("");
@@ -27,7 +27,7 @@ function PendingGenerationApprovalCard({ pending, onResolved }) {
     setBusy(true);
     try {
       await workflowService.approveGeneration(pending.workflowId, note);
-      notify("Approved — this workflow will now run automatically, with no further approval pauses.", "success");
+      notify("Build proposal approved. No workflow was started; runtime approvals remain required.", "success");
       setResolved("approved");
       await onResolved?.();
     } catch (error) {
@@ -57,7 +57,7 @@ function PendingGenerationApprovalCard({ pending, onResolved }) {
         <div className="flex items-center gap-2 text-sm font-semibold">
           <Icon icon={resolved === "approved" ? "mdi:check-circle" : "mdi:close-circle"} className={`h-5 w-5 ${resolved === "approved" ? "text-emerald-600" : "text-red-600"}`} />
           <span className={resolved === "approved" ? "text-emerald-800 dark:text-emerald-300" : "text-red-800 dark:text-red-300"}>
-            {resolved === "approved" ? "Approved — will run autonomously" : "Rejected — not saved for use"}
+            {resolved === "approved" ? "Build proposal approved — not executed" : "Build proposal rejected"}
           </span>
         </div>
       </Card>
@@ -72,7 +72,7 @@ function PendingGenerationApprovalCard({ pending, onResolved }) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-            This workflow needs approval before it can run
+            Workflow build review
           </p>
           <div className="mt-1 space-y-1">
             {pending.steps.map((step) => (
@@ -80,7 +80,7 @@ function PendingGenerationApprovalCard({ pending, onResolved }) {
             ))}
           </div>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-            Do you approve this? Once approved, the workflow runs automatically every time — it will not ask again.
+            Approve this build proposal only. Publishing, running and any required human transaction approvals remain separate. No ERP action starts from this decision.
           </p>
 
           <div className="mt-3">

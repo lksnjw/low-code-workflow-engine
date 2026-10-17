@@ -63,7 +63,7 @@ export const lazyRouteComponents = {
 const C = lazyRouteComponents;
 
 const allProtectedRouteDefinitions = [
-  { id: "dashboard.tasks", path: "/dashboard", Component: C.DashboardPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN, PERMISSIONS.EXECUTION_READ_OWN], feature: "dashboard" },
+  { id: "dashboard.tasks", path: "/dashboard", Component: C.DashboardPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN, PERMISSIONS.EXECUTION_READ_OWN, PERMISSIONS.EXECUTION_APPROVE], feature: "dashboard" },
   { id: "chat.home", path: "/", Component: C.ChatPage, requiredAny: [PERMISSIONS.CHAT_USE, PERMISSIONS.WORKFLOW_WRITE], feature: "chat" },
   { id: "company.overview", path: "/company", Component: C.CompanyPage, requiredAny: [], feature: "company" },
   { id: "workflows.list", path: "/workflows", Component: C.WorkflowListPage, requiredAny: [PERMISSIONS.WORKFLOW_READ, PERMISSIONS.WORKFLOW_READ_OWN], feature: "workflows" },

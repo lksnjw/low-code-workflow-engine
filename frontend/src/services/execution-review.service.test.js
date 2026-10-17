@@ -8,6 +8,13 @@ const row = { executionId: "run/one", reviewId: "review-one", kind: "approval", 
   expiresAt: "2026-10-06T11:00:00.000Z", statusLabel: "Awaiting decision", reviewAvailable: true, actionable: true, detail: "Open the exact review." };
 const page = () => ({ profile: "execution-review-inbox/v1", kind: "all", state: "open", scopes: { approval: true, reconciliation: false },
   items: [{ ...row }], nextCursor: null, hasMore: false, asOf: "2026-10-06T10:01:00.000Z", canResume: false, noReplay: true });
+
+test("scheduled occurrence time is optional metadata and must be a valid date when provided", () => {
+  const value = page(); value.items[0].scheduledFor = "2026-10-06T01:00:00Z";
+  expect(validateReviewInbox(value).items[0].scheduledFor).toBe("2026-10-06T01:00:00Z");
+  value.items[0].scheduledFor = "not-a-date";
+  expect(() => validateReviewInbox(value)).toThrow(/inconsistent tasks/);
+});
 test("inbox requests only its read endpoint with filter/cursor and cancellation signal", async () => {
   const data = page(), params = { kind: "all", state: "open", limit: 25, cursor: "signed-cursor" }, signal = new AbortController().signal;
   const get = jest.spyOn(apiClient, "get").mockResolvedValue({ data: { success: true, data } });

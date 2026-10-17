@@ -27,3 +27,19 @@ test("unrelated answers do not change choices or selected workflow", () => {
   expect(workflowChoices([...messages, { id: "answer", artifacts: { intent: "QUERY" } }])).toEqual(workflowChoices(messages));
   expect(selectedWorkflowChoice([], "stale")).toBeNull();
 });
+
+test("server workflow identities survive a latest message page containing no workflow artifacts", () => {
+  const catalog = [{ workflowId: "one", name: "Supplier review", lastMessageIndex: 1 }, { workflowId: "two", name: "Invoice review", lastMessageIndex: 5 }];
+  const choices = workflowChoices([{ id: "latest", artifacts: { intent: "CAPABILITIES" } }], catalog);
+  expect(choices.map(choice => choice.key)).toEqual(["workflow:one", "workflow:two"]);
+  expect(selectedWorkflowChoice(choices, "workflow:one").artifact.workflowId).toBe("one");
+  expect(selectedWorkflowChoice(choices, "").artifact.workflowId).toBe("two");
+  expect(choices.every(choice => choice.artifact.yaml === undefined)).toBe(true);
+});
+
+test("older loaded messages merge with the catalog without duplicates or overriding the latest proposal", () => {
+  const catalog = [{ workflowId: "flow", name: "Saved review", lastMessageIndex: 2 }];
+  const choices = workflowChoices([{ id: "draft", artifacts: { workflowId: "flow", yaml: "steps: []" } }, { id: "patch", artifacts: { proposal: { workflowId: "flow", nodeId: "read" } } }], catalog);
+  expect(choices).toHaveLength(1); expect(choices[0].artifact.proposal.nodeId).toBe("read");
+  expect(choices[0].aliases).toContain("draft");
+});

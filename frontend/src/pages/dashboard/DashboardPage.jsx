@@ -7,16 +7,18 @@ import { taskDashboardService } from "../../services/task-dashboard.service";
 import { calendarDate, calendarLabel, calendarTimezone, moveCalendarMonth } from "../../utils/taskCalendar";
 import TaskCalendar from "../../components/dashboard/TaskCalendar";
 import DashboardTaskList from "../../components/dashboard/DashboardTaskList";
+import DashboardApprovalQueue from "../../components/dashboard/DashboardApprovalQueue";
 import { ErrorState, LoadingState } from "../../components/shared/ResourceState";
 import usePermissions from "../../hooks/usePermissions";
 
 export default function DashboardPage() {
   const { user } = useAuthContext(), { hasAny } = usePermissions();
+  const canReadTasks = hasAny(["workflow:read", "workflow:read_own", "execution:read_own"]);
   const timezone = calendarTimezone(user?.timezone);
   const [month, setMonth] = useState(() => calendarDate(new Date(), timezone).slice(0, 7));
   const [selected, setSelected] = useState(null), [tab, setTab] = useState("day");
   const query = useQuery({ queryKey: ["personal-dashboard", user?.id, user?.permissions, month, timezone],
-    queryFn: ({ signal }) => taskDashboardService.load(month, timezone, signal), enabled: !!user?.id,
+    queryFn: ({ signal }) => taskDashboardService.load(month, timezone, signal), enabled: !!user?.id && canReadTasks,
     refetchInterval: 15000, refetchIntervalInBackground: false, retry: false });
   const data = query.data, date = selected ?? (data?.today?.startsWith(month) ? data.today : `${month}-01`);
   const chooseDate = date => { setSelected(date); setTab("day"); };
@@ -32,14 +34,15 @@ export default function DashboardPage() {
       <div><h1 className="page-heading">Dashboard</h1><p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Your daily tasks, ongoing runs and important dates.</p></div>
       <div className="flex items-center gap-3">
         {hasAny(["chat:use", "workflow:write"]) ? <Link to="/" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90">Open workspace</Link> : null}
-        <button type="button" aria-label="Refresh tasks" disabled={query.isFetching} onClick={() => query.refetch()} className="rounded-lg border border-gray-200 p-2.5 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 disabled:opacity-40"><RefreshCw size={17} /></button>
+        {canReadTasks && <button type="button" aria-label="Refresh tasks" disabled={query.isFetching} onClick={() => query.refetch()} className="rounded-lg border border-gray-200 p-2.5 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 disabled:opacity-40"><RefreshCw size={17} /></button>}
       </div>
     </header>
-    {query.isLoading ? <LoadingState label="Loading your saved tasks…" /> : null}
-    {query.isError ? <ErrorState message="Your current tasks could not be confirmed. Refresh to load saved status; no action has been started." onRetry={query.refetch} /> : null}
-    {data && !query.isError ? <>
-      <dl className="grid grid-cols-2 gap-y-5 border-y border-gray-200 py-6 dark:border-gray-800 sm:grid-cols-4">
-        {[["Today’s tasks", data.counts.today], ["Ongoing", data.counts.ongoing], ["Needs attention", data.counts.attention], ["Completed today", data.counts.completedToday]].map(([label, count]) => <div key={label} className="px-2 sm:px-4 first:pl-0"><dt className="text-xs text-gray-500 dark:text-gray-400">{label}</dt><dd className="mt-2 text-3xl font-semibold tracking-tight">{count}</dd></div>)}
+    <DashboardApprovalQueue />
+    {canReadTasks && query.isLoading ? <LoadingState label="Loading your saved tasks…" /> : null}
+    {canReadTasks && query.isError ? <ErrorState message="Your current tasks could not be confirmed. Refresh to load saved status; no action has been started." onRetry={query.refetch} /> : null}
+    {canReadTasks && data && !query.isError ? <>
+      <dl aria-label="Your own task totals" className="grid grid-cols-2 gap-y-5 border-y border-gray-200 py-6 dark:border-gray-800 sm:grid-cols-4">
+        {[["Today’s tasks", data.counts.today], ["Ongoing", data.counts.ongoing], ["My tasks needing attention", data.counts.attention], ["Completed today", data.counts.completedToday]].map(([label, count]) => <div key={label} className="px-2 sm:px-4 first:pl-0"><dt className="text-xs text-gray-500 dark:text-gray-400">{label}</dt><dd className="mt-2 text-3xl font-semibold tracking-tight">{count}</dd></div>)}
       </dl>
       <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-w-0" aria-label="Your task lists">

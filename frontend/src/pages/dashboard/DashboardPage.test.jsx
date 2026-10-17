@@ -55,7 +55,7 @@ test("storage/API failure does not fabricate zero tasks or retain current-lookin
 });
 test("a clipped view warns instead of suggesting a complete empty agenda", async () => {
   setup({ ...response(new Date().toISOString().slice(0, 7)), events: [], dayCounts: {}, truncated: true });
-  expect((await screen.findByRole("status")).textContent).toContain("limited task list");
+  expect(await screen.findByText(/limited task list/)).toBeTruthy();
 });
 test("clipped date records are not mislabeled as an empty saved date", async () => {
   const month = new Date().toISOString().slice(0, 7), date = `${month}-01`;

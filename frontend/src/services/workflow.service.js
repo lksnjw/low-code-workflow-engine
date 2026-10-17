@@ -61,6 +61,10 @@ export const workflowService = {
     const response = await apiClient.get("/workflows", { params });
     return (unwrap(response, []) || []).map(normalizeWorkflow);
   },
+  async listPage(params = {}, signal) {
+    const response = await apiClient.get("/workflows", { params: { limit: 20, ...params }, signal });
+    return { items: (unwrap(response, []) || []).map(normalizeWorkflow), meta: response.data.meta };
+  },
 /*******************************************************************************
  * Function: getById
  *

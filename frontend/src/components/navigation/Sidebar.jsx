@@ -1,8 +1,11 @@
 import { Icon } from "@iconify/react";
+import { useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { NAVIGATION_GROUPS, filterNavigationGroups } from "../../constants/navigation";
 import { useRoute } from "../../context/RouteContext";
 import usePermissions from "../../hooks/usePermissions";
 import { BrandMark } from "../brand/BrandLogo";
+import SidebarSavedWorkflows from "./SidebarSavedWorkflows";
 
 /*******************************************************************************
  * Function: Sidebar
@@ -12,6 +15,7 @@ import { BrandMark } from "../brand/BrandLogo";
 function Sidebar({ isCollapsed, onToggle }) {
   const { activeMain, activeSub, navigateTo, setActiveSub } = useRoute();
   const { hasAny, roleId } = usePermissions();
+  const location = useLocation();
   const visibleGroups = filterNavigationGroups(NAVIGATION_GROUPS, hasAny, roleId);
 /*******************************************************************************
  * Function: activeGroup
@@ -19,6 +23,9 @@ function Sidebar({ isCollapsed, onToggle }) {
  * Performs the active Group operation on group for the Sidebar module.
  ******************************************************************************/
   const activeGroup = visibleGroups.find((group) => group.id === activeMain) ?? visibleGroups[0];
+  const [searchState, setSearch] = useState({ group: "", value: "" });
+  const search = searchState.group === activeMain ? searchState.value : "";
+  const visiblePages = activeGroup?.subMenu.filter(item => item.label.toLowerCase().includes(search.trim().toLowerCase())) ?? [];
 
   return (
     <aside className="hidden h-screen shrink-0 md:flex">
@@ -46,6 +53,10 @@ function Sidebar({ isCollapsed, onToggle }) {
         </div>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 scrollbar-hide">
+          {hasAny(["workflow:read", "workflow:read_own", "execution:read_own", "execution:approve"]) && <Link to="/dashboard" aria-label="Dashboard" title="Dashboard" aria-current={location.pathname === "/dashboard" ? "page" : undefined}
+            className={`mb-1 flex min-h-14 w-12 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border-b border-gray-100 text-[9px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:border-gray-800 ${location.pathname === "/dashboard" ? "bg-primary/10 text-primary" : "text-gray-500 hover:bg-gray-100 hover:text-primary dark:text-gray-400 dark:hover:bg-gray-900"}`}>
+            <Icon icon="mdi:view-dashboard-outline" aria-hidden="true" className="h-5 w-5" /><span>Dashboard</span>
+          </Link>}
           {visibleGroups.map((item) => (
             <button
               key={item.id}
@@ -96,17 +107,22 @@ function Sidebar({ isCollapsed, onToggle }) {
                 />
                 <input
                   type="search"
+                  aria-label={`Search ${activeGroup.label} pages`}
+                  value={search}
+                  onChange={event => setSearch({ group: activeMain, value: event.target.value })}
                   placeholder={`Search ${activeGroup.label.toLowerCase()}...`}
                   className="w-full rounded-full border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-1 focus:ring-primary dark:border-darkBackgroundVery dark:bg-darkBackgroundVery dark:text-gray-100"
                 />
               </label>
             </div>
 
-            <nav className="flex-1 space-y-1 px-4 pb-4">
-              {activeGroup.subMenu.map((item) => (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+            <nav className="space-y-1 px-4 pb-4">
+              {visiblePages.map((item) => (
                 <button
                   key={item.id}
                   type="button"
+                  aria-current={activeSub === item.id ? "page" : undefined}
                   onClick={() => setActiveSub(item.id)}
                   className={`flex w-full items-center justify-between rounded-full px-3 py-2 text-sm transition-colors ${
                     activeSub === item.id
@@ -120,7 +136,10 @@ function Sidebar({ isCollapsed, onToggle }) {
                   )}
                 </button>
               ))}
+              {visiblePages.length === 0 && <p role="status" className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">No matching pages.</p>}
             </nav>
+            {activeMain === "chat" && hasAny(["workflow:read", "workflow:read_own"]) && <SidebarSavedWorkflows />}
+            </div>
           </div>
         )}
       </div>

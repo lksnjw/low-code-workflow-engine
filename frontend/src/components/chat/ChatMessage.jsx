@@ -11,6 +11,7 @@ import { ReadableResult } from "./ReadableValue";
 import EmailDraftPreview from "./EmailDraftPreview";
 import { InlineSources, InlineVisualisation } from "./ChatMessageVisualisation";
 import ChatRequestRevision from "./ChatRequestRevision";
+import { useChatWorkspace } from "./ChatWorkspaceContext";
 
 // ── Inline validation badge ─────────────────────────────────────────────────
 /*******************************************************************************
@@ -256,14 +257,15 @@ function CanvasHandoffButton({ workflowDraft, toolSteps, userPrompt }) {
  ******************************************************************************/
 function OpenWorkflowButton({ workflowId }) {
   const navigate = useNavigate();
+  const workspace = useChatWorkspace();
   return (
     <button
       type="button"
-      onClick={() => navigate(`/workflows/${workflowId}`)}
+      onClick={() => workspace?.openWorkflow ? workspace.openWorkflow(workflowId) : navigate(`/workflows/${encodeURIComponent(workflowId)}`)}
       className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
     >
       <Icon icon="mdi:open-in-app" className="h-3.5 w-3.5 shrink-0" />
-      Open Workflow
+      {workspace?.openWorkflow ? "Open in canvas" : "Open Workflow"}
     </button>
   );
 }

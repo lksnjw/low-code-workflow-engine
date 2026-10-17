@@ -4,7 +4,7 @@ import { executionEventLabel } from "../../utils/executionEvents";
 import ExecutionStatus from "./ExecutionStatus";
 import { iterationPositionLabel } from "../../utils/iterationEvidence";
 
-export default function ExecutionRunControls({ execution, canControl = false, monitor, onChanged }) {
+export default function ExecutionRunControls({ execution, canControl = false, monitor, onChanged, onReviewApproval }) {
   const [requesting, setRequesting] = useState(false), [acknowledged, setAcknowledged] = useState(false), [error, setError] = useState("");
   if (!execution) return monitor?.error ? <div role="alert" className="text-xs text-amber-700">{monitor.error}{monitor.reconnecting && " Reconnecting updates automatically."}<button className="ml-2 text-primary" onClick={monitor.refresh}>Refresh run</button></div> : null;
   const operation = execution.workflowSnapshot?.executionProfile === "sequential-operation-v1";
@@ -29,9 +29,9 @@ export default function ExecutionRunControls({ execution, canControl = false, mo
     {pending && <p role="status" className="text-amber-700 dark:text-amber-300">{operation ? "Cancellation is pending. An in-flight ERP operation may already have taken effect; reconcile an unconfirmed outcome before retrying." : "Cancellation is pending. An in-flight read may finish; its saved answer is retained. Further calls stop when the request is observed."}</p>}
     {operation && execution.status === "AWAITING_APPROVAL" && <aside aria-label="Approval required" role="alert" aria-live="assertive" className="workspace-reveal rounded-xl border-2 border-amber-400 bg-amber-50 p-4 shadow-sm dark:border-amber-700 dark:bg-amber-950/30">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200"><span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-200 text-base dark:bg-amber-900">!</span>Approval needed to continue</h3>
-      <p className="mt-1 leading-5 text-amber-900 dark:text-amber-200">Waiting for an independent exact approval. This run is paused before the action, not stuck. Another assigned reviewer must approve it.</p>
+      <p className="mt-1 leading-5 text-amber-900 dark:text-amber-200">Waiting for exact transaction approval. This run is paused before the action, not stuck. The current approval policy determines who can decide.</p>
       <p className="mt-1 leading-5 text-gray-600 dark:text-gray-300">Reviewers can open the request from the notification bell or Approval inbox. An approved operation is queued automatically for fresh authorization; previous saved results are retained.</p>
-      <a className="mt-2 inline-flex min-h-8 items-center font-semibold text-primary dark:text-fuchsia-300" href={`/executions/${encodeURIComponent(execution.id)}`}>View approval status</a>
+      {onReviewApproval ? <button type="button" className="mt-2 inline-flex min-h-8 items-center font-semibold text-primary dark:text-fuchsia-300" onClick={onReviewApproval}>Review approval here</button> : <a className="mt-2 inline-flex min-h-8 items-center font-semibold text-primary dark:text-fuchsia-300" href={`/executions/${encodeURIComponent(execution.id)}`}>View approval status</a>}
     </aside>}
     {recovery && <p role="status" className="text-amber-700 dark:text-amber-300">Recovery review required. Saved answers are retained; an unconfirmed call may have reached ERP. No automatic retry or replay was performed.</p>}
     {operation && execution.hasOperationReconciliation === true && ["RECONCILIATION_REQUIRED", "RECONCILED"].includes(execution.status) && <a className="inline-block min-h-8 py-1 text-primary dark:text-violet-300" href={`/executions/${encodeURIComponent(execution.id)}?view=reconciliation`}>Review external outcome evidence</a>}

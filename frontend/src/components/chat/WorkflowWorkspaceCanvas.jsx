@@ -1,18 +1,22 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { parseWorkflowPreview, workflowSource } from "./workflowPreview";
 import { workflowChoices, selectedWorkflowChoice } from "./workflowChoices";
 import { readWorkspaceValue, writeWorkspaceValue } from "../../utils/workspaceSession";
 import WorkflowWorkspaceEditor from "./WorkflowWorkspaceEditor";
 import ReadableValue from "./ReadableValue";
+import { createPortal } from "react-dom";
+import { useChatWorkspace } from "./ChatWorkspaceContext";
 const ChatArtifactPanel = lazy(() => import("./ChatArtifactPanel"));
 
-export default function WorkflowWorkspaceCanvas({ messages, initialWorkflowContext = null, selectionStorageKey, sessionId, actorId, canEdit = false, canControl = false, onChatChanged, onNodeContext, onFocusChat }) {
+export default function WorkflowWorkspaceCanvas({ messages, workflowCatalog, initialWorkflowContext = null, selectionStorageKey, sessionId, actorId, canEdit = false, canControl = false, onChatChanged, onNodeContext, onWorkflowContext, onFocusChat }) {
+  const workspace = useChatWorkspace();
+  const inTools = content => workspace ? workspace.canvasToolsHost ? createPortal(content, workspace.canvasToolsHost, "canvas-heading") : null : content;
   const drafts = useMemo(() => {
-    const saved = workflowChoices(messages);
+    const saved = workflowChoices(messages, workflowCatalog);
     const workflowId = initialWorkflowContext?.workflowId;
     if (!workflowId || saved.some((draft) => draft.artifact.workflowId === workflowId)) return saved;
     return [{ key: `workflow:${workflowId}`, aliases: [`handoff:${workflowId}`], lastSeen: -1, artifact: { workflowId, ...(initialWorkflowContext.yaml ? { yaml: initialWorkflowContext.yaml } : {}), ...(initialWorkflowContext.selectedNodeId ? { nodeId: initialWorkflowContext.selectedNodeId } : {}) } }, ...saved];
-  }, [messages, initialWorkflowContext]);
+  }, [messages, workflowCatalog, initialWorkflowContext]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [selection, setSelection] = useState(() => {
     try {
@@ -25,14 +29,25 @@ export default function WorkflowWorkspaceCanvas({ messages, initialWorkflowConte
     setSelection(next);
     writeWorkspaceValue(selectionStorageKey, JSON.stringify(next));
   };
-  const current = selectedWorkflowChoice(drafts, selectedDraft);
+  const current = selectedWorkflowChoice(drafts, initialWorkflowContext?.workflowId ? `workflow:${initialWorkflowContext.workflowId}` : selectedDraft);
+  useEffect(() => { if (!current?.artifact.workflowId) onWorkflowContext?.(null); }, [current?.artifact.workflowId, onWorkflowContext]);
   const yaml = workflowSource(current?.artifact);
-  const preview = parseWorkflowPreview(yaml);
+  const preview = useMemo(() => parseWorkflowPreview(yaml), [yaml]);
   const node = (selectedNode?.draftKey === current?.key || current?.aliases?.includes(selectedNode?.draftKey))
     ? preview.steps.find((step) => step.id === selectedNode.id) : null;
   return (
-    <section aria-label="Workflow canvas" className="flex h-full min-h-[320px] flex-col border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-darkBackgroundVery">
-      <header className="border-b border-gray-200 px-5 py-3 dark:border-gray-800">
+    <section aria-label="Workflow canvas" className="flex h-full min-h-0 flex-col border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-darkBackgroundVery">
+      {drafts.length > 0 && <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-darkBackground">
+        <select aria-label="Workflow draft" value={current.key} onChange={event => {
+          select({ selectedDraft: event.target.value, selectedNode: null });
+          const next = drafts.find(draft => draft.key === event.target.value);
+          if (next?.artifact.workflowId) workspace?.openWorkflow?.(next.artifact.workflowId);
+        }} className="min-w-0 flex-1 rounded border border-gray-200 bg-transparent px-2 py-1.5 text-xs dark:border-gray-700">
+          {drafts.map((draft, index) => <option key={draft.key} value={draft.key}>{draft.name || `${draft.artifact.workflowId ? "Workflow" : "Draft"} ${index + 1}`}{draft.artifact.workflowId ? ` · ${draft.artifact.workflowId}` : ""}</option>)}
+        </select>
+        {workspace && <button type="button" onClick={workspace.openCanvasTools} className="shrink-0 rounded px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary/10">Canvas controls</button>}
+      </div>}
+      {inTools(<header className={workspace ? "mb-4 border-b border-gray-200 pb-4 dark:border-gray-800" : "border-b border-gray-200 px-5 py-3 dark:border-gray-800"}>
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold">Workflow canvas</h2>
@@ -40,19 +55,14 @@ export default function WorkflowWorkspaceCanvas({ messages, initialWorkflowConte
           </div>
           <span className="rounded-full border border-gray-200 px-2.5 py-1 text-[10px] font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300">{current?.artifact.workflowId ? "Saved for review" : "Not running"}</span>
         </div>
-        {drafts.length > 0 && (
-          <select aria-label="Workflow draft" value={current.key} onChange={(event) => select({ selectedDraft: event.target.value, selectedNode: null })} className="mt-2 w-full rounded border border-gray-200 bg-white p-1 text-xs dark:border-gray-700 dark:bg-darkBackground">
-            {drafts.map((draft, index) => <option key={draft.key} value={draft.key}>{draft.artifact.workflowId ? "Workflow" : "Draft"} {index + 1}{draft.artifact.workflowId ? ` · ${draft.artifact.workflowId}` : ""}</option>)}
-          </select>
-        )}
-      </header>
-      {current?.artifact.workflowId ? <WorkflowWorkspaceEditor key={current.artifact.workflowId} workflowId={current.artifact.workflowId} sessionId={sessionId} actorId={actorId} simple canEdit={canEdit} canControl={canControl} initialSelectedNodeId={current.artifact.nodeId ?? current.artifact.proposal?.nodeId ?? ""} selectionStorageKey={selectionStorageKey} onChatChanged={onChatChanged} onNodeContext={onNodeContext} onFocusChat={onFocusChat} savedProposals={messages.map((item) => item.artifacts?.proposal).filter(Boolean)} /> : <div className="flex-1 overflow-y-auto px-5 py-6">
+      </header>)}
+      {current?.artifact.workflowId ? <WorkflowWorkspaceEditor key={current.artifact.workflowId} workflowId={current.artifact.workflowId} sessionId={sessionId} actorId={actorId} simple canEdit={canEdit} canControl={canControl} initialSelectedNodeId={current.artifact.nodeId ?? current.artifact.proposal?.nodeId ?? ""} selectionStorageKey={selectionStorageKey} onChatChanged={onChatChanged} onNodeContext={onNodeContext} onWorkflowContext={onWorkflowContext} onFocusChat={onFocusChat} savedProposals={messages.map((item) => item.artifacts?.proposal).filter(Boolean)} /> : <div className="flex-1 overflow-y-auto px-5 py-6">
         {!current ? (
           <div className="mx-auto max-w-sm py-12 text-center">
             <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-semibold text-primary">1</div>
             <h3 className="text-lg font-semibold">Your workflow starts here</h3>
             <p className="mt-3 text-sm leading-6 text-gray-500">Describe an outcome in chat. A draft will appear here so you can review each step before publishing or running it.</p>
-            <p className="mt-5 text-xs text-gray-500">ERP tools will remain blocked until the workspace connection is verified.</p>
+            <p className="mt-5 text-xs text-gray-500">Before running ERP steps, verify their current connection and reviewed tool access.</p>
           </div>
         ) : (
           <>

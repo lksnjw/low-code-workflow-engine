@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
+import { createPortal } from "react-dom";
+import { useChatWorkspace } from "./ChatWorkspaceContext";
 import { workflowService } from "../../services/workflow.service";
 import { executionService } from "../../services/execution.service";
 import { useRunAdmissionRecovery } from "../../hooks/useRunAdmissionRecovery";
@@ -35,6 +37,7 @@ import { projectIterationEvidence } from "../../utils/iterationEvidence";
 import AnalysisNodeInspector from "./AnalysisNodeInspector";
 import AgentNodeInspector from "./AgentNodeInspector";
 import PublishedWorkflowRunForm from "./PublishedWorkflowRunForm";
+import WorkflowRunApproval from "./WorkflowRunApproval";
 import ProtectedGroupInspector, { ProtectedWrapForm } from "./ProtectedGroupInspector";
 import { flowProtectedGroups, isOperationProfile, protectedChatUnavailable, protectedGroupPatchVersion } from "./protectedFlow";
 
@@ -42,11 +45,11 @@ const button = "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 py-1.
 const input = "w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-gray-700 dark:bg-darkBackground";
 const message = (error) => error?.response?.data?.message || error?.message || "The operation could not be completed.";
 const emptyTimeline = [];
-const stepStatus = (attempt, hasOutput) => {
+const stepStatus = (attempt, hasOutput, runStatus) => {
   if (hasOutput && attempt?.status !== "FAILED") return { label: "Answer ready", tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" };
   if (attempt?.status === "FAILED") return { label: "Stopped", tone: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300" };
   if (attempt?.status === "UNKNOWN") return { label: "Check outcome", tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" };
-  if (attempt?.status === "AWAITING_APPROVAL") return { label: "Needs approval", tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" };
+  if (attempt?.status === "AWAITING_APPROVAL") return { label: runStatus === "AWAITING_APPROVAL" ? "Needs approval" : "Review recorded", tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" };
   if (attempt?.status === "RUNNING") return { label: "Working", tone: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300" };
   if (attempt?.status === "SKIPPED") return { label: "Skipped", tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" };
   if (attempt?.status === "DONE") return { label: "Completed", tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" };
@@ -54,11 +57,12 @@ const stepStatus = (attempt, hasOutput) => {
 };
 
 function NodeAnswer({ output, attempt, runId, analysis, agent, selected }) {
-  const [open, setOpen] = useState(Boolean(selected));
-  useEffect(() => { if (selected) setOpen(true); }, [selected, runId]);
+  const scope = `${runId ?? ""}:${Boolean(selected)}`;
+  const [toggle, setToggle] = useState(null);
+  const open = toggle?.scope === scope ? toggle.open : Boolean(selected);
   const label = attempt?.status === "FAILED" ? "Node failure response" : analysis ? "Structured analysis answer" : agent ? "Agent structured answer" : "Node answer";
   return <details open={open} className="workspace-node-answer relative z-10 ml-10 mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] shadow-sm dark:border-gray-700 dark:bg-gray-900">
-    <summary onClick={event => { event.preventDefault(); setOpen(value => !value); }} className="cursor-pointer font-medium text-gray-700 dark:text-gray-200">{label} · run {runId}</summary>
+    <summary onClick={event => { event.preventDefault(); setToggle({ scope, open: !open }); }} className="cursor-pointer font-medium text-gray-700 dark:text-gray-200">{label} · run {runId}</summary>
     {open && <div className="workspace-reveal mt-2 max-h-64 overflow-auto border-t border-gray-100 pt-2 dark:border-gray-800"><ReadableResult value={output} /></div>}
   </details>;
 }
@@ -129,7 +133,12 @@ function NodeInspector({ node, canEdit, busy, onPreview, sessionId, context, onP
   </aside>;
 }
 
-export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId, canEdit = false, canControl = false, simple = false, initialSelectedNodeId = "", selectionStorageKey, onChatChanged, savedProposals = [], onNodeContext, onFocusChat }) {
+export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId, canEdit = false, canControl = false, simple = false, initialSelectedNodeId = "", selectionStorageKey, onChatChanged, savedProposals = [], onNodeContext, onWorkflowContext, onFocusChat }) {
+  const workspace = useChatWorkspace();
+  const docked = Boolean(simple && workspace);
+  const inspectorRef = useRef(null);
+  const approvalRef = useRef(null);
+  const inTools = (content, key) => docked ? workspace.canvasToolsHost ? createPortal(content, workspace.canvasToolsHost, key) : null : content;
   const [record, setRecord] = useState(null), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(() => {
     const stored = readWorkspaceValue(selectionStorageKey ? `${selectionStorageKey}.node` : null, null);
@@ -142,7 +151,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
   const [unconfirmedRun, setUnconfirmedRun] = useState(false);
   const recovery = useRunAdmissionRecovery(workflowId, actorId);
   const exactRun = recovery.denied ? null : recovery.run || (recovery.pending ? null : run);
-  const monitor = useExecutionMonitor(exactRun?.id, { enabled: exactRun?.readProgress?.profile === "read-progress-v1" || exactRun?.status === "RUNNING" });
+  const monitor = useExecutionMonitor(exactRun?.id, { enabled: exactRun?.readProgress?.profile === "read-progress-v1" || isActiveExecution(exactRun?.status) });
   const shownRun = monitor.denied ? null : monitor.execution ?? exactRun;
   const shownTimeline = monitor.denied ? emptyTimeline : monitor.execution ? monitor.timeline : exactRun?.id === run?.id ? timeline : emptyTimeline;
   const runActive = isActiveExecution(shownRun?.status);
@@ -179,6 +188,13 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
     return () => { active = false; };
   }, [workflowId]);
   const preview = useMemo(() => parseWorkflowPreview(record?.yaml), [record?.yaml]);
+  const contextVersion = record?.version, contextHash = record?.contentHash;
+  const workflowContextPending = !record || Boolean(record.readinessUnknown), workflowContextError = !record && error ? error : null;
+  useEffect(() => {
+    onWorkflowContext?.({ sessionId, workflowId, workflowName: preview.name || "Workflow", baseVersion: contextVersion,
+      baseHash: contextHash, pending: workflowContextPending, unavailableReason: workflowContextError });
+    return () => onWorkflowContext?.(null);
+  }, [onWorkflowContext, sessionId, workflowId, preview.name, contextVersion, contextHash, workflowContextPending, workflowContextError]);
   const authoring = record?.authoring?.profile === "read-authoring/v1" && !record.readinessUnknown ? record.authoring : null;
   const primaryConnectionId = authoring?.connectionChoices?.find(item => item.primary)?.id ?? authoring?.connectionChoices?.[0]?.id ?? "erpbridge-default";
   const agentConnectionId = newAgentConnectionId || primaryConnectionId;
@@ -211,7 +227,13 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
   const pendingProposal = (proposal && !resolvedProposals.includes(proposal.id) ? proposal : null) || savedProposals.findLast((item) => item.workflowId === workflowId && item.status === "PROPOSED" && item.baseVersion === record?.version && item.baseHash === record?.contentHash && !resolvedProposals.includes(item.id));
   const modelInsertionDisabled = busy || record?.readinessUnknown || Boolean(pendingProposal) || !placementModel.valid || modelInsertionStale || !supportsModelInsertion;
   const staleProposal = pendingProposal && (pendingProposal.baseVersion !== version || pendingProposal.baseHash !== contentHash);
-  const select = id => { setSelected(id); writeWorkspaceValue(selectionStorageKey ? `${selectionStorageKey}.node` : null, id); setProposal(null); };
+  const select = id => {
+    setSelected(id); writeWorkspaceValue(selectionStorageKey ? `${selectionStorageKey}.node` : null, id); setProposal(null);
+    if (docked) {
+      workspace.openCanvasTools();
+      requestAnimationFrame(() => inspectorRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }));
+    }
+  };
   const previewChange = (nodeId, command, before, after) => setProposal({ nodeId, baseVersion: record.version, baseHash: record.contentHash, command, before, after });
   const openModelInsertion = (kind, target) => {
     if (!supportsModelInsertion || !placementModel.valid || busy || record.readinessUnknown || pendingProposal || kind === "agent" && !agentReadActions.length) return;
@@ -234,7 +256,9 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
     let next;
     try { next = await workflowService.command(workflowId, revision, command); }
     catch (cause) {
-      if (!cause?.response || cause.response.data?.meta?.code === "DRAFT_SAVE_UNCONFIRMED") {
+      // A proxy/server error may arrive after the draft was committed. Keep
+      // the preview, but reload authoritative state before another Apply.
+      if (!cause?.response || cause.response.status >= 500 || cause.response.data?.meta?.code === "DRAFT_SAVE_UNCONFIRMED") {
         setRecord(current => ({ ...current, readinessUnknown: true }));
         setNotice("Edit save outcome is unconfirmed. Reload authoritative storage before editing again. No automatic retry was sent.");
       }
@@ -278,7 +302,13 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
   };
   if (!record) return <div className="p-5"><p className="text-xs text-gray-500">Loading saved workflow…</p>{error && <p role="alert" className="mt-3 text-xs text-red-600">{error}</p>}<button className={button} onClick={() => perform(load)}>Reload</button></div>;
   return <div className="flex min-h-0 flex-1 flex-col">
-    <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+    {docked && <div aria-label="Current canvas draft status" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 bg-white px-3 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-darkBackground">
+      <span>Draft v{record.version} · {preview.steps.length} {preview.steps.length === 1 ? "step" : "steps"}</span>
+      <span className={record.validation?.passed ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>{record.readinessUnknown ? "Readiness unavailable" : record.validation?.passed ? "Ready for review" : "Needs fixes · not ready to run"}</span>
+      <button type="button" onClick={workspace.openCanvasTools} className="ml-auto font-medium text-primary">Review draft controls</button>
+    </div>}
+    {shownRun && <WorkflowRunApproval ref={approvalRef} key={`${actorId || ""}:${shownRun.id}`} execution={shownRun} onChanged={monitor.refresh} />}
+    {inTools(<div className={docked ? "mb-4 border-b border-gray-200 pb-4 dark:border-gray-800" : "border-b border-gray-200 px-5 py-4 dark:border-gray-800"}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold">{preview.name}</h3>
@@ -304,10 +334,12 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
           <button className={button} disabled={busy || record.readinessUnknown || preview.error} onClick={() => setConditionMode(value => value === "add" ? null : "add")}>Add condition</button>
           <button className={button} disabled={busy || record.readinessUnknown || preview.error || !supportsReturnInsertion} onClick={() => setAddingReturn(value => !value)}>Add return</button>
           <button className={button} aria-pressed={arranging} disabled={busy || record.readinessUnknown || !placementModel.valid || Boolean(pendingProposal)} onClick={() => { setArranging(value => !value); setMoving(null); setInsertTarget(null); }}>Arrange flow</button></>}
-          <button className={`${button} ml-auto border border-gray-200 dark:border-gray-700`} disabled={busy || record.readinessUnknown || !record.validation?.passed || record.published && record.compilation?.state !== "BLOCKED"} onClick={() => perform(async () => { await workflowService.publish(workflowId, "Explicitly reviewed in chat workspace", record); setNotice("Draft published. Execution has not been requested."); await load(); })}>{record.published && record.compilation?.state === "BLOCKED" ? "Republish reviewed draft" : "Publish reviewed draft"}</button></>}
+          <button className={`${button} ml-auto border border-gray-200 dark:border-gray-700`} disabled={busy || record.readinessUnknown || Boolean(pendingProposal) || !record.validation?.passed || record.published && record.compilation?.state !== "BLOCKED"} onClick={() => perform(async () => { await workflowService.publish(workflowId, "Explicitly reviewed in chat workspace", record); setNotice("Draft published. Execution has not been requested."); await load(); })}>{record.published && record.compilation?.state === "BLOCKED" ? "Republish reviewed draft" : "Publish reviewed draft"}</button></>}
       </div>
-    </div>
-    <div className="flex-1 overflow-auto px-5 py-5">
+    </div>, "editor-heading")}
+    <div className={docked ? "flex min-h-0 flex-1 flex-col" : "flex-1 overflow-auto px-5 py-5"}>
+      {inTools(<div className="space-y-3">
+      {canEdit && pendingProposal && <p role="status" className="mb-4 text-xs text-amber-700 dark:text-amber-400">Apply or discard the pending change before publishing. Publishing uses the saved draft only.</p>}
       {notice && <p role="status" className="mb-4 text-xs text-gray-500">{notice}</p>}
       {showHistory && <WorkflowEditHistory key={`${workflowId}:${record.version}:${record.contentHash}`} workflowId={workflowId} record={record} canEdit={canEdit} busy={busy} onRestore={command => perform(() => save(command))} />}
       {error && <div role="alert" className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30">{error}{pendingProposal && <p className="mt-1">Your unsaved proposal is retained. Reload if another edit changed the draft.</p>}</div>}
@@ -317,7 +349,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       {(addingAnalysis || addingAgent) && modelInsertionStale && <p role="alert" className="mb-3 text-xs text-amber-700">The draft changed since this model editor opened. Your inputs are retained. Close and reopen the editor to deliberately select a position in the current revision.</p>}
       {!!record.validation?.errors?.length && <details className="mb-4 text-xs"><summary className="cursor-pointer text-amber-700">Validation issues ({record.validation.errors.length})</summary><ul className="mt-2 space-y-1 text-gray-500">{record.validation.errors.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
       {!!record.issues?.length && <details className="mb-4 text-xs" open><summary className="cursor-pointer text-amber-700">Execution readiness issues ({record.issues.length})</summary><ul className="mt-2 space-y-1 text-gray-500">{record.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
-      {(shownRun || monitor.denied) && (!simple || shownRun?.status !== "DONE" || !snapshotMatches) && <div className="mb-5"><ExecutionRunControls key={shownRun?.id || "unavailable"} execution={shownRun} canControl={canControl} monitor={monitor} />
+      {(shownRun || monitor.denied) && (!simple || shownRun?.status !== "DONE" || !snapshotMatches) && <div className="mb-5"><ExecutionRunControls key={shownRun?.id || "unavailable"} execution={shownRun} canControl={canControl} monitor={monitor} onReviewApproval={() => approvalRef.current?.open()} />
         {shownRun && !snapshotMatches && <p className="mt-2 text-[10px] text-gray-500">These answers belong to a different or unverified run snapshot, not the current draft.</p>}
       </div>}
       {adding && <form className="mb-5 space-y-2 border-b border-gray-200 pb-4 dark:border-gray-700" onSubmit={(event) => { event.preventDefault();
@@ -377,11 +409,17 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       {!simple && <p className="mb-4 text-[10px] leading-4 text-gray-500">{flowProtectedGroups(authoring?.controlFlow).length ? "Protected workflow · body and error handler are separate scopes. Only a reviewed ERP resource-not-found can select a handler. Saved group values do not change the failed lookup or approve an effect. Check readiness before running." : authoring?.executionProfile === "decision-operation-v1" ? "Governed decision flow · each run selects one boolean path. Unselected nodes do not run; selected effects require independent approval. Branch outputs remain in scope. Calendar activation additionally requires complete report evidence before every effect." : authoring?.controlFlow ? "Structured read flow · exactly one path per boolean condition. Branch outputs remain in scope." : preview.metadata?.controlFlow !== undefined ? "Structural view is unavailable. These are source declarations, not a confirmed execution layout; reload or repair the saved structure." : "Source-order flow · conditions and approvals are preserved, not inferred as branch paths."}</p>}
       {addingReturn && <form aria-label="Create return" className="mb-5 space-y-3 border-b pb-4" onSubmit={event => { event.preventDefault(); previewChange(returnId, { type: "addReturn", nodeId: returnId, output: returnOutput, beforeNodeId: null, ...branchDestination(returnScope, authoring?.controlFlow) }, "No return at this destination", { id: returnId, output: returnOutput, destination: returnScope }); }}><h4 className="text-xs font-semibold">Declare workflow return</h4><input aria-label="New return ID" className={input} value={returnId} onChange={event => setReturnId(event.target.value)} pattern="[A-Za-z][A-Za-z0-9_-]{0,63}" placeholder="Unique stable return ID" required /><ScopeSelect flow={authoring?.controlFlow} value={returnScope} onChange={setReturnScope} label="New return destination" /><ReadValueFields value={returnOutput} onChange={setReturnOutput} /><button disabled={busy} className={button}>Preview new return</button><button type="button" className={button} onClick={() => setAddingReturn(false)}>Cancel return creation</button></form>}
       {iterationModel && !iterationModel.valid && <p role="alert" className="mb-3 text-xs text-amber-700">{iterationModel.error}</p>}
-      <WorkflowMiniCanvas simple={simple} run={snapshotMatches && !iterationModel ? shownRun : undefined} declaredStructure={preview.metadata?.controlFlow !== undefined} flow={authoring?.controlFlow} steps={preview.steps} selectedId={selected} onSelectCondition={select} renderPlacement={canEdit && arranging && placementModel.valid ? renderPlacement : undefined} renderMoveHandle={renderMoveHandle} iterations={iterationModel} timeline={snapshotMatches ? shownTimeline : undefined} decisions={!iterationModel && snapshotMatches ? shownRun?.readProgress?.decisions : undefined} values={!iterationModel && snapshotMatches ? shownRun?.readProgress?.values : undefined} valueOutputs={!iterationModel && snapshotMatches ? shownRun?.valueOutputs : undefined} renderAction={(step, index) => {
+      </div>, "editor-forms")}
+      <WorkflowMiniCanvas simple={simple}
+        approvalWaiting={snapshotMatches && shownRun?.status === "AWAITING_APPROVAL"}
+        pendingApprovalNode={snapshotMatches && shownRun?.status === "AWAITING_APPROVAL" ? shownRun.pendingApproval?.stepId : undefined}
+        approvalNodes={authoring?.nodes?.filter(item => item.requiresIndependentApproval === true).map(item => item.nodeId)}
+        onReviewApproval={() => approvalRef.current?.open()}
+        savedDraft emptyDescription={preview.description} unresolvedRequirements={preview.metadata?.unresolved_requirements} onOpenControls={docked ? workspace.openCanvasTools : undefined} run={snapshotMatches && !iterationModel ? shownRun : undefined} declaredStructure={preview.metadata?.controlFlow !== undefined} flow={authoring?.controlFlow} steps={preview.steps} selectedId={selected} onSelectCondition={select} renderPlacement={canEdit && arranging && placementModel.valid ? renderPlacement : undefined} renderMoveHandle={renderMoveHandle} iterations={iterationModel} timeline={snapshotMatches ? shownTimeline : undefined} decisions={!iterationModel && snapshotMatches ? shownRun?.readProgress?.decisions : undefined} values={!iterationModel && snapshotMatches ? shownRun?.readProgress?.values : undefined} valueOutputs={!iterationModel && snapshotMatches ? shownRun?.valueOutputs : undefined} renderAction={(step, index) => {
           const attempt = !iterationModel ? shownTimeline.find((item) => item.nodeId === step.id) : undefined;
           const output = !iterationModel ? shownRun?.stepOutputs?.[step.id] ?? (attempt?.status === "FAILED" ? attempt.output : undefined) : undefined;
           const analysis = step.source.kind === "analysis", agent = step.source.kind === "agent", modelNode = analysis || agent;
-          const status = snapshotMatches ? stepStatus(attempt, output !== undefined) : null;
+          const status = snapshotMatches ? stepStatus(attempt, output !== undefined, shownRun?.status) : null;
           return <li key={step.id} className="relative">
             <button type="button" aria-pressed={node?.id === step.id} onClick={() => select(step.id)} className={`workspace-node relative z-10 flex w-full items-center gap-3 rounded-lg border bg-white px-4 py-3 text-left dark:bg-darkBackground ${node?.id === step.id ? "border-primary ring-1 ring-primary/20" : "border-gray-200 dark:border-gray-700"}`}>
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-50 text-xs text-gray-400 dark:bg-gray-900">{snapshotMatches && attempt?.status === "DONE" ? <Icon icon="lucide:check" /> : snapshotMatches && attempt?.status === "FAILED" ? <Icon icon="lucide:triangle-alert" /> : analysis ? <Icon icon="lucide:brain-circuit" /> : agent ? <Icon icon="lucide:bot" /> : String(index + 1).padStart(2, "0")}</span>
@@ -397,7 +435,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
             {attempt?.status === "UNKNOWN" && <p className="relative z-10 ml-10 mt-2 text-[10px] text-amber-700 dark:text-amber-300">{modelNode ? "Model or bounded agent outcome unknown · no validated structured answer was saved, no later effect ran and the call is never replayed automatically." : attempt.sideEffect ? "Outcome unknown · the operation may have taken effect in ERP, but no confirmed result was saved. Reconcile before retrying. No automatic replay." : "Outcome unknown · the read may have reached ERP, but no confirmed answer was saved. No automatic replay."}</p>}
             {attempt?.reconciliation && <div className="relative z-10 ml-10 mt-2"><OperationReconciliationEvidence record={attempt.reconciliation} /></div>}
             {snapshotMatches && shownRun?.hasOperationReconciliation === true && attempt?.status === "UNKNOWN" && attempt.sideEffect && <div className="relative z-10 ml-3 mt-3 sm:ml-10"><OperationStatusQueries executionId={shownRun.id} nodeId={step.id} onHistoryChanged={monitor.refresh} /></div>}
-            {attempt?.status === "AWAITING_APPROVAL" && <p className="relative z-10 ml-10 mt-2 text-[10px] text-amber-700 dark:text-amber-300">Waiting for an independent exact approval · this operation has not been dispatched.</p>}
+            {attempt?.status === "AWAITING_APPROVAL" && <p className="relative z-10 ml-10 mt-2 text-[10px] text-amber-700 dark:text-amber-300">{shownRun?.status === "AWAITING_APPROVAL" ? "Human approval required · this operation has not been dispatched." : "This checkpoint has a recorded review. Check the run outcome; approval does not confirm execution."} <button type="button" onClick={() => approvalRef.current?.open()} className="font-semibold underline">Review here</button></p>}
             {attempt?.status === "RUNNING" && output === undefined && <p className="relative z-10 ml-10 mt-2 text-[10px] text-gray-500">{analysis ? attempt.phase === "MODEL_DISPATCH_INTENT" ? "Model dispatch recorded · waiting for one validated structured answer" : "Checking analysis input, model and egress policy" : agent ? `Bounded agent in progress · ${String(attempt.phase || "checking limits").replaceAll("_", " ").toLowerCase()}` : attempt.phase === "DISPATCH_INTENT" ? attempt.sideEffect ? "Operation dispatch recorded · waiting for a saved result" : "Read dispatch recorded · waiting for a saved answer" : "Checking this node before dispatch"}</p>}
             {attempt?.outcome === "operation-accepted" && <p className="relative z-10 ml-10 mt-2 text-[10px] text-gray-500">Tool acceptance saved · recipient delivery is not independently verified.</p>}
             {attempt?.outcome === "operation-confirmed" && <p className="relative z-10 ml-10 mt-2 text-[10px] text-gray-500">Tool-reported operation confirmation saved.</p>}
@@ -405,7 +443,8 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
             {attempt?.status === "SKIPPED" && <p className="relative z-10 ml-10 mt-2 text-[10px] text-gray-500">Skipped in this run · {attempt.outcome === "AFTER_RETURN" ? `workflow returned at ${attempt.returnId}` : attempt.outcome === "BODY_SUCCEEDED" ? "protected body completed; handler not needed" : attempt.outcome === "BODY_ABORTED" ? "protected body stopped after its recorded failure" : "another branch was selected"}. This node was not called and has no answer.</p>}
           </li>;
         }} />
-      {node && <><details key={`${node.id}:${record.version}`} open={!onNodeContext} className="mt-5 border-t border-gray-200 pt-3 text-xs dark:border-gray-700"><summary className="cursor-pointer font-medium">{node.source.kind === "analysis" ? "Analysis settings" : node.source.kind === "agent" ? "Bounded agent settings" : "Node settings"} · {node.id}</summary>{node.source.kind === "analysis" ? <AnalysisNodeInspector node={node} canEdit={canEdit} busy={busy} sessionId={sessionId} context={{ workflowId, nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${node.id}` : null} authoring={authoring?.nodes?.find(item => item.nodeId === node.id)} onPreview={(patch) => setProposal({ nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash, command: { type: "updateAnalysis", nodeId: node.id, patch }, before: node.source, after: { ...node.source, ...patch } })} /> : node.source.kind === "agent" ? <AgentNodeInspector node={node} canEdit={canEdit} busy={busy} sessionId={sessionId} context={{ workflowId, nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${node.id}` : null} authoring={authoring?.nodes?.find(item => item.nodeId === node.id)} connections={authoring?.connectionChoices} onPreview={(patch) => setProposal({ nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash, command: { type: "updateAgent", nodeId: node.id, patch }, before: node.source, after: { ...node.source, ...patch } })} /> : <NodeInspector node={node} canEdit={canEdit} busy={busy} sessionId={sessionId} context={{ workflowId, nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${node.id}` : null} authoring={authoring?.nodes?.find(item => item.nodeId === node.id)} connections={authoring?.connectionChoices} onPreview={(patch) => setProposal({ nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash, command: { type: "updateNode", nodeId: node.id, patch }, before: node.source, after: { ...node.source, ...patch } })} />}</details>
+      {inTools(<div ref={inspectorRef} className="space-y-3">
+      {node && <><details key={`${node.id}:${record.version}`} open={docked || !onNodeContext} className="mt-5 border-t border-gray-200 pt-3 text-xs dark:border-gray-700"><summary className="cursor-pointer font-medium">{node.source.kind === "analysis" ? "Analysis settings" : node.source.kind === "agent" ? "Bounded agent settings" : "Node settings"} · {node.id}</summary>{node.source.kind === "analysis" ? <AnalysisNodeInspector node={node} canEdit={canEdit} busy={busy} sessionId={sessionId} context={{ workflowId, nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${node.id}` : null} authoring={authoring?.nodes?.find(item => item.nodeId === node.id)} onPreview={(patch) => setProposal({ nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash, command: { type: "updateAnalysis", nodeId: node.id, patch }, before: node.source, after: { ...node.source, ...patch } })} /> : node.source.kind === "agent" ? <AgentNodeInspector node={node} canEdit={canEdit} busy={busy} sessionId={sessionId} context={{ workflowId, nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${node.id}` : null} authoring={authoring?.nodes?.find(item => item.nodeId === node.id)} connections={authoring?.connectionChoices} onPreview={(patch) => setProposal({ nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash, command: { type: "updateAgent", nodeId: node.id, patch }, before: node.source, after: { ...node.source, ...patch } })} /> : <NodeInspector node={node} canEdit={canEdit} busy={busy} sessionId={sessionId} context={{ workflowId, nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${node.id}` : null} authoring={authoring?.nodes?.find(item => item.nodeId === node.id)} connections={authoring?.connectionChoices} onPreview={(patch) => setProposal({ nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash, command: { type: "updateNode", nodeId: node.id, patch }, before: node.source, after: { ...node.source, ...patch } })} />}</details>
         {canEdit && <div className="mt-3 flex flex-wrap gap-1">{onFocusChat && <button className={`${button} text-primary lg:hidden`} onClick={onFocusChat}>Edit this node in chat</button>}{authoring?.controlFlow && <ScopeSelect flow={authoring.controlFlow} value={moveScope} onChange={setMoveScope} label="Move node destination" />}<button className={button} disabled={busy || record.readinessUnknown || !placementModel.valid || !authoring?.controlFlow && preview.steps.at(-1)?.id === node.id} onClick={() => previewMove(node.id, `${moveScope}|$end`)}>{authoring?.controlFlow ? "Move to selected scope end" : "Move to end"}</button>{(!["analysis", "agent"].includes(node.source.kind) || authoring?.modelNodesSupported) && <button className={button} disabled={busy} onClick={() => setConditionMode("wrap")}>Wrap node in condition</button>}<button className={`${button} text-red-600`} disabled={busy} onClick={() => setProposal({ nodeId: node.id, baseVersion: record.version, baseHash: record.contentHash, command: { type: "removeNode", nodeId: node.id }, before: node.source, after: null })}>Remove node…</button></div>}</>}
       {condition && <><ConditionInspector key={`${condition.id}:${record.version}`} node={condition} canEdit={canEdit} busy={busy} operationFlow={operationFlow} mergesSupported={authoring?.mergeNodesSupported === true} sessionId={sessionId} context={{ workflowId, nodeId: condition.id, baseVersion: record.version, baseHash: record.contentHash }} onProposal={setProposal} sharedChat={Boolean(onNodeContext)} draftStorageKey={selectionStorageKey ? `${selectionStorageKey}.node-prompt.${condition.id}` : null} authoring={authoring?.conditions?.find(item => item.nodeId === condition.id)} onPreview={patch => previewChange(condition.id, { type: "updateCondition", nodeId: condition.id, patch }, condition.predicate, patch.predicate)} onMergePreview={merge => previewChange(condition.id, { type: "setConditionMerge", nodeId: condition.id, merge }, condition.merge || "No declared output", merge)} />
         {canEdit && <><button className={`${button} mt-3 text-red-600`} disabled={busy || condition.then.nodes.length > 0 || condition.else.nodes.length > 0} onClick={() => previewChange(condition.id, { type: "removeCondition", nodeId: condition.id }, condition, null)}>Remove empty condition…</button>{(condition.then.nodes.length > 0 || condition.else.nodes.length > 0) && <p className="mt-1 text-[10px] text-gray-500">Move or remove both paths' contents before removing this condition. Nothing is silently flattened.</p>}</>}
@@ -433,6 +472,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       {shownRun?.hasOperationReconciliation === true && !snapshotMatches && <div className="mt-4"><OperationStatusQueries executionId={shownRun.id} onHistoryChanged={monitor.refresh} /></div>}
       <WorkflowSourcePreview source={record.yaml} />
       {busy && <p role="status" className="mt-4 text-xs text-gray-500">Working… no completed result is assumed.</p>}
+      </div>, "editor-inspector")}
     </div>
   </div>;
 }

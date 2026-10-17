@@ -7,6 +7,8 @@ const loadModels = jest.fn().mockResolvedValue({ configured: true, binding: { mo
 jest.unstable_mockModule("../../services/chat.service", () => ({ chatService: { models: loadModels } }));
 jest.unstable_mockModule("../../utils/workflowCanvas.utils", () => ({ peekWorkflowForChatEdit: () => null, clearWorkflowForChatEdit: () => {} }));
 const { default: ChatWindow } = await import("./ChatWindow");
+const { default: ChatWorkspaceLayout } = await import("./ChatWorkspaceLayout");
+HTMLElement.prototype.scrollIntoView = jest.fn();
 afterEach(() => { cleanup(); sessionStorage.clear(); });
 
 test("shows immediate thinking feedback before the saved operation arrives", async () => {
@@ -126,4 +128,27 @@ test("model intent is isolated between account and conversation storage scopes",
   render(<ChatWindow messages={[]} savedModel="model-a" draftStorageKey="second.chat" />);
   await waitFor(() => expect(screen.getByRole("combobox").value).toBe("model-a"));
   expect(sessionStorage.getItem("first.chat.model")).toBe("model-b");
+});
+
+test("focus mode hides the heading and keeps the same draft, model selector and right-side tools", async () => {
+  const onSend = jest.fn();
+  render(<ChatWorkspaceLayout storageKey="focus.qa" chat={<ChatWindow messages={[]} onSend={onSend} draftStorageKey="focus.draft" />} canvas={<p>Saved canvas</p>} />);
+  const composer = screen.getByRole("textbox", { name: "Message to workflow assistant" });
+  fireEvent.change(composer, { target: { value: "My unsent question" } });
+  fireEvent.click(screen.getByRole("button", { name: "Workspace tools", exact: true }));
+  const model = await screen.findByRole("combobox", { name: "Requested model" });
+  fireEvent.change(model, { target: { value: "model-b" } });
+  fireEvent.click(screen.getByRole("button", { name: "Full screen split view" }));
+  expect(screen.getByText("Saved canvas")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Workflow assistant" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Requested model" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message to workflow assistant" })).toBe(composer);
+  expect(composer.value).toBe("My unsent question");
+  fireEvent.click(screen.getByRole("button", { name: "Workspace tools", exact: true }));
+  expect(screen.getByRole("combobox", { name: "Requested model" })).toBe(model);
+  expect(model.value).toBe("model-b");
+  fireEvent.click(screen.getByRole("button", { name: "Exit full screen split view" }));
+  expect(screen.getByRole("heading", { name: "Workflow assistant" })).toBeTruthy();
+  expect(composer.value).toBe("My unsent question");
+  expect(onSend).not.toHaveBeenCalled();
 });

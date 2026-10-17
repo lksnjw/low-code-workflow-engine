@@ -4,6 +4,7 @@ import ChatHistory from "../../components/chat/ChatHistory";
 import ChatWindow from "../../components/chat/ChatWindow";
 import ChatCreationState from "../../components/chat/ChatCreationState";
 import WorkflowWorkspaceCanvas from "../../components/chat/WorkflowWorkspaceCanvas";
+import ChatWorkspaceLayout from "../../components/chat/ChatWorkspaceLayout";
 import { useAuthContext } from "../../context/AuthContext";
 import { workspaceKey, writeWorkspaceValue } from "../../utils/workspaceSession";
 import { useChat } from "../../hooks/useChat";
@@ -46,17 +47,22 @@ function ChatWorkspace({ routeBase, historyPath, workspaceLabel, showCanvas }) {
   // Keep only identity in the URL. Source and permissions are reloaded from
   // the backend after a refresh, including when another account opens a link.
   const initialWorkflowContext = showCanvas ? (/^[A-Za-z0-9_-]{1,128}$/.test(requestedWorkflowId) ? { workflowId: requestedWorkflowId } : handoffWorkflowContext) : null;
-  const chatPaneRef = useRef(null);
+  const layoutRef = useRef(null);
   const firstCreationRef = useRef(null);
   const focusChat = useCallback(() => {
-    chatPaneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    chatPaneRef.current?.querySelector('textarea[aria-label="Message to workflow assistant"]')?.focus({ preventScroll: true });
+    layoutRef.current?.focusChat();
   }, []);
   const activeNodeContext = nodeContext?.sessionId === sessions.selectedSessionId ? nodeContext : null;
   const onNodeContext = useCallback(value => { if (isAuthorityCurrent(authority)) setNodeContext(value); }, [authority]);
+  const openWorkflowInCanvas = useCallback(workflowId => {
+    if (!isAuthorityCurrent(authority) || !/^[A-Za-z0-9_-]{1,128}$/.test(workflowId)) return;
+    setNodeContext(null);
+    const next = new URLSearchParams(searchParams); next.set("workflow", workflowId);
+    navigate(`${sessionId ? `${routeBase}/${encodeURIComponent(sessionId)}` : routeBase}?${next.toString()}`);
+  }, [authority, navigate, routeBase, sessionId, searchParams]);
   const onChatChanged = useCallback(async () => {
     if (!isAuthorityCurrent(authority)) return;
-    await Promise.all([queryClient.invalidateQueries({ queryKey: chatQueryKeys.session(authority.scope, sessions.selectedSessionId) }), queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions(authority.scope) })]);
+    await Promise.all([queryClient.invalidateQueries({ queryKey: chatQueryKeys.session(authority.scope, sessions.selectedSessionId) }), queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions(authority.scope) }), queryClient.invalidateQueries({ queryKey: ["workflows", authority.scope] })]);
   }, [authority, queryClient, sessions.selectedSessionId]);
 
   const handleCreateSession = async () => {
@@ -149,10 +155,7 @@ function ChatWorkspace({ routeBase, historyPath, workspaceLabel, showCanvas }) {
   />;
 
   return (
-    <div className="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-row">
-      <div ref={chatPaneRef} className={showCanvas
-        ? "flex h-[65svh] min-h-[420px] min-w-0 shrink-0 flex-col border-b border-gray-200 dark:border-gray-700 lg:h-full lg:min-h-0 lg:w-[45%] lg:border-b-0 lg:border-r"
-        : "flex h-[calc(100svh-140px)] min-h-[640px] min-w-0 flex-1 flex-col lg:h-full lg:min-h-0"} data-testid="workspace-chat-pane">
+    <ChatWorkspaceLayout ref={layoutRef} showCanvas={showCanvas} onOpenWorkflow={openWorkflowInCanvas} storageKey={workspaceKey(user, `chat.layout.${routeBase}`)} tools={<>
       {workspaceLabel && (
         <div className="shrink-0 border-b border-primary/15 bg-primary/[0.04] px-4 py-3">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">{workspaceLabel}</p>
@@ -173,6 +176,8 @@ function ChatWorkspace({ routeBase, historyPath, workspaceLabel, showCanvas }) {
           onRetry={sessions.reload}
         />
       </details>
+      </>}
+      chat={<>
         <ChatWindow
           variant={showCanvas ? "workflow" : "indexed"}
           onChatChanged={onChatChanged}
@@ -197,11 +202,11 @@ function ChatWorkspace({ routeBase, historyPath, workspaceLabel, showCanvas }) {
           nodeContext={activeNodeContext}
           onClearNodeContext={() => activeNodeContext?.clear()}
         />
-      </div>
-      {showCanvas && <div className="h-[75svh] min-h-[520px] min-w-0 shrink-0 lg:h-full lg:min-h-0 lg:flex-1" data-testid="workspace-canvas-pane">
+      </>}
+      canvas={showCanvas && <>
         <WorkflowWorkspaceCanvas key={draftKey || sessions.selectedSessionId || "new"} messages={chat.messages} initialWorkflowContext={initialWorkflowContext} sessionId={sessions.selectedSessionId} actorId={user?.id} canEdit={user?.permissions?.includes("workflow:write")} canControl={user?.permissions?.some((key) => ["workflow:run", "workflow:run_own"].includes(key))} onChatChanged={onChatChanged} onNodeContext={onNodeContext} onFocusChat={focusChat} selectionStorageKey={workspaceKey(user, `canvas.${sessions.selectedSessionId || "new"}`)} />
-      </div>}
-    </div>
+      </>}
+    />
   );
 }
 

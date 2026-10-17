@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Icon } from "@iconify/react";
 import ChatMessage from "./ChatMessage";
+import { createPortal } from "react-dom";
+import { useChatWorkspace } from "./ChatWorkspaceContext";
 import ChatWelcome from "./ChatWelcome";
 import ChatOperationProgress from "./ChatOperationProgress";
 import { chatService } from "../../services/chat.service";
@@ -82,6 +84,8 @@ const INDEXED_PROMPTS = [
  * Performs the Chat Window operation on window for the ChatWindow module.
  ******************************************************************************/
 function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessages, loadingMore, onLoadMore, draftStorageKey, savedModel, nodeContext, onClearNodeContext, onChatChanged, operation, operationEvents, operationError, reconnecting, onCancelOperation, cancelling, onRefreshOperation, variant = "workflow" }) {
+  const workspace = useChatWorkspace();
+  const inTools = (content, key) => workspace ? workspace.toolsHost ? createPortal(content, workspace.toolsHost, key) : null : content;
   const indexed = variant === "indexed";
   const quickPrompts = indexed ? INDEXED_PROMPTS : QUICK_PROMPTS;
   const [draft, setDraft] = useState(() => readWorkspaceValue(draftStorageKey));
@@ -187,7 +191,7 @@ function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessage
   return (
     <section aria-label="Workflow chat" className="flex h-full min-h-0 flex-col overflow-hidden bg-white dark:bg-darkBackground">
       {/* ── Header ── */}
-      <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+      <div hidden={workspace?.fullScreen} className={workspace?.fullScreen ? "hidden" : "flex shrink-0 items-center gap-3 border-b border-gray-100 px-4 py-3 dark:border-gray-800"}>
         <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
           <Icon icon="hugeicons:ai-magic" className="h-4 w-4 text-primary" />
         </div>
@@ -231,7 +235,7 @@ function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessage
 
       {/* ── Messages ── */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto max-w-3xl space-y-5">
+        <div className={`mx-auto space-y-5 ${workspace?.fullScreen ? "w-full" : "max-w-3xl"}`}>
           {isEmpty && <ChatWelcome onPrompt={setDraft} prompts={quickPrompts} variant={variant} />}
 
           {hasMoreMessages && (
@@ -271,8 +275,8 @@ function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessage
       </div>
 
       {/* ── Input area ── */}
-      <div className="shrink-0 border-t border-gray-100 p-4 dark:border-gray-800">
-        <div className="mx-auto max-w-3xl">
+      <div className={`shrink-0 border-t border-gray-100 dark:border-gray-800 ${workspace ? "px-4 py-3" : "p-4"}`}>
+        <div className={`mx-auto ${workspace?.fullScreen ? "w-full" : "max-w-3xl"}`}>
           <div className={`rounded-2xl border bg-white px-4 py-3 transition dark:bg-darkBackgroundVery ${
             loading
               ? "border-gray-200 dark:border-gray-700"
@@ -288,7 +292,7 @@ function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessage
               />
             </div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-1.5">
+              {inTools(<div className={`flex flex-wrap gap-1.5 ${workspace ? "my-4" : ""}`}>
                 {!nodeContext && quickPrompts.slice(0, 2).map((p) => (
                   <button
                     key={p.label}
@@ -301,17 +305,17 @@ function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessage
                     {p.label}
                   </button>
                 ))}
-              </div>
+              </div>, "prompts")}
               <div className="ml-auto flex items-center gap-2">
                 {(availableModels.length > 0 || selectedModel) && (
-                  <div className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800/60">
+                  inTools(<div className={`flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800/60 ${workspace ? "my-3" : ""}`}>
                     <Icon icon="mdi:chip" className="h-3 w-3 shrink-0 text-gray-400" />
                     <select
                       aria-label="Requested model"
                       value={selectedModel}
                       onChange={(e) => { modelChosenByUser.current = true; writeWorkspaceValue(modelStorageKey, e.target.value); setSelectedModel(e.target.value); }}
                       disabled={busy}
-                      className="bg-transparent text-[10px] font-semibold text-gray-600 outline-none disabled:opacity-50 dark:text-gray-300"
+                      className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-gray-600 outline-none disabled:opacity-50 dark:text-gray-300"
                     >
                       {selectedModel && !availableModels.some((model) => model.id === selectedModel) && <option value={selectedModel}>{selectedModel} · unavailable</option>}
                       {availableModels.map((m) => (
@@ -319,7 +323,7 @@ function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessage
                       ))}
                     </select>
                     <button type="button" aria-label="Refresh configured models" title="Refresh configured models" disabled={busy} onClick={() => setCatalogRetry((value) => value + 1)} className="rounded p-1 text-gray-500 disabled:opacity-50"><Icon icon="mdi:refresh" className="h-3 w-3" /></button>
-                  </div>
+                  </div>, "model")
                 )}
                 <button
                   type="button"
@@ -336,7 +340,7 @@ function ChatWindow({ messages, onSend, onRevise, loading, error, hasMoreMessage
               </div>
             </div>
             {modelError && <p role="status" className="mt-2 text-xs text-gray-600 dark:text-gray-300">{modelError} <button type="button" disabled={busy} className="underline" onClick={() => setCatalogRetry((value) => value + 1)}>Reload models</button></p>}
-            <p className="mt-2 text-[10px] text-gray-500 dark:text-gray-400">{indexed ? "Answers use retrieved text from reviewed ERPBridge tools, not the original file bytes." : "Chat model applies to new messages and edit proposals. Saved runtime nodes keep their reviewed models."}</p>
+            {inTools(<p className="mt-2 text-[10px] text-gray-500 dark:text-gray-400">{indexed ? "Answers use retrieved text from reviewed ERPBridge tools, not the original file bytes." : "Chat model applies to new messages and edit proposals. Saved runtime nodes keep their reviewed models."}</p>, "model-help")}
           </div>
           <p className="mt-1.5 text-center text-[10px] text-gray-400">
             {nodeContext ? "Changes are prepared for your review. Nothing runs automatically." : indexed ? "Check the saved tool results for the source evidence." : "Follow your request’s progress. Drafts never run automatically."}

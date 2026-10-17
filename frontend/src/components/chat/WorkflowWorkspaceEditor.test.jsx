@@ -16,6 +16,7 @@ let messages = [];
 const send = jest.fn();
 jest.unstable_mockModule("../../hooks/useChat", () => ({ useChat: () => ({ messages, send, loading: false }) }));
 const { default: WorkflowWorkspaceEditor } = await import("./WorkflowWorkspaceEditor");
+const { default: ChatWorkspaceLayout } = await import("./ChatWorkspaceLayout");
 beforeEach(() => {
   messages = []; send.mockReset(); send.mockResolvedValue({ operation: { id: "saved" } });
   jest.spyOn(workflowService, "readiness").mockResolvedValue(record);
@@ -35,6 +36,35 @@ async function open(props = {}) {
   return view;
 }
 async function selectNode() { fireEvent.click(screen.getByRole("button", { name: /01 first/ })); }
+
+test("workspace canvas fills its pane and docks controls and unsaved node fields without executing anything", async () => {
+  HTMLElement.prototype.scrollIntoView = jest.fn();
+  render(<ChatWorkspaceLayout storageKey="dock.layout" chat={<textarea aria-label="Message to workflow assistant" />} canvas={<WorkflowWorkspaceEditor workflowId="report" sessionId="chat" canEdit simple selectionStorageKey="dock.selection" />} />);
+  const first = await screen.findByRole("button", { name: "Select step first", exact: true });
+  const surface = screen.getByLabelText("Workflow node connections");
+  expect(surface.style.height).toBe("");
+  expect(surface.className).toContain("flex-1");
+  expect(screen.queryByRole("heading", { name: "Report", exact: true })).toBeNull();
+  fireEvent.click(first);
+  const tools = screen.getByRole("complementary", { name: "Workspace tools", exact: true });
+  expect(within(tools).getByRole("heading", { name: "Report", exact: true })).toBeTruthy();
+  const label = within(tools).getByRole("textbox", { name: "Node label", exact: true });
+  fireEvent.change(label, { target: { value: "Keep this unsaved edit" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close workspace tools" }));
+  expect(screen.queryByRole("textbox", { name: "Node label" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace tools", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Canvas only", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Full screen canvas", exact: true }));
+  expect(screen.getByTestId("chat-workspace-layout").dataset.view).toBe("canvas");
+  fireEvent.click(screen.getByRole("button", { name: "Workspace tools", exact: true }));
+  expect(screen.getByRole("textbox", { name: "Node label", exact: true })).toBe(label);
+  expect(label.value).toBe("Keep this unsaved edit");
+  fireEvent.click(screen.getByRole("button", { name: "Exit full screen canvas", exact: true }));
+  expect(screen.getByRole("textbox", { name: "Node label", exact: true })).toBe(label);
+  expect(workflowService.command).not.toHaveBeenCalled();
+  expect(workflowService.publish).not.toHaveBeenCalled();
+  expect(workflowService.run).not.toHaveBeenCalled();
+});
 
 test("historical publication with invalid current source shows blocked and cannot republish", async () => {
   workflowService.readiness.mockResolvedValue({ ...record, published: true, validation: { passed: false, errors: ["Duplicate node ID"] }, compilation: { state: "BLOCKED" } });
@@ -568,6 +598,35 @@ test("publication is explicit and does not call execution", async () => {
   await open(); fireEvent.click(screen.getByRole("button", { name: "Publish reviewed draft" }));
   await waitFor(() => expect(workflowService.publish).toHaveBeenCalledWith("report", "Explicitly reviewed in chat workspace", record));
   expect(workflowService.run).not.toHaveBeenCalled();
+});
+
+test.each([500, 502, 503, 504])("HTTP %s edit acknowledgement uncertainty blocks repeat Apply until an authoritative reload", async status => {
+  workflowService.command.mockRejectedValueOnce({ response: { status, data: { message: "Upstream unavailable" } } });
+  await open(); await selectNode();
+  fireEvent.change(screen.getByRole("textbox", { name: "Node label" }), { target: { value: "Keep this pending label" } });
+  fireEvent.click(screen.getByRole("button", { name: "Preview manual edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
+  await screen.findByText("Edit save outcome is unconfirmed. Reload authoritative storage before editing again. No automatic retry was sent.");
+  expect(screen.getByRole("region", { name: "Node change preview" }).textContent).toContain("Keep this pending label");
+  expect(screen.getByRole("button", { name: "Apply to draft" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Publish reviewed draft" }).disabled).toBe(true);
+  expect(workflowService.command).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Reload workflow" }));
+  await screen.findByText("Authoritative draft reloaded. Review the current revision before another edit.");
+  expect(screen.getByRole("button", { name: "Apply to draft" }).disabled).toBe(false);
+  expect(workflowService.command).toHaveBeenCalledTimes(1);
+});
+
+test.each(["manual", "saved model"])("publication waits for the %s preview to be applied or discarded", async kind => {
+  await open(kind === "saved model" ? { savedProposals: [proposal] } : {});
+  if (kind === "manual") { await selectNode(); fireEvent.click(screen.getByRole("button", { name: "Preview manual edit" })); }
+  expect(screen.getByRole("region", { name: "Node change preview" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Publish reviewed draft" }).disabled).toBe(true);
+  expect(screen.getByText("Apply or discard the pending change before publishing. Publishing uses the saved draft only.")).toBeTruthy();
+  expect(workflowService.publish).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Publish reviewed draft" }).disabled).toBe(false));
+  expect(workflowService.publish).not.toHaveBeenCalled(); expect(workflowService.run).not.toHaveBeenCalled();
 });
 
 test("a failed run retrieves actual partial node outputs and does not silently publish", async () => {

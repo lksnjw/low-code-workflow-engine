@@ -84,7 +84,10 @@ export function useChat(sessionId) {
           if (operationStatus !== "ANSWERED" || saved?.messages?.some(message =>
             message.role === "assistant" && (assistantMessageId ? message.id === assistantMessageId : message.operationId === operationId))) break;
         }
-        if (!disposed && isAuthorityCurrent(capture)) void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions(scope) });
+        if (!disposed && isAuthorityCurrent(capture)) {
+          void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions(scope) });
+          void queryClient.invalidateQueries({ queryKey: ["workflows", scope] });
+        }
       })();
       return () => { disposed = true; };
     }
@@ -130,6 +133,7 @@ export function useChat(sessionId) {
       if (!isAuthorityCurrent(request)) return;
       void queryClient.invalidateQueries({ queryKey: targetOperationsKey });
       void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions(variables.scope) });
+      void queryClient.invalidateQueries({ queryKey: ["workflows", variables.scope] });
     },
   });
 
