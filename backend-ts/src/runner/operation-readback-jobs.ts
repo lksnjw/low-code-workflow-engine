@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { randomBytes } from "node:crypto";
 import { captureUserMcpBinding, withUserMcpBinding } from "../tools/user-mcp-credentials.js";
 import { stringify } from "yaml";
@@ -56,7 +57,7 @@ function historicalQuery(state: Readonly<RepositoryState>, job: OperationReadbac
 }
 function currentQuery(state: Readonly<RepositoryState>, services: HandlerServices, job: OperationReadbackJob) {
   const { source, target } = historicalQuery(state, job), actor = queryActor(state, job.executionId, job.actorId), session = boundMcpConnection(services, job.admission.connectionId).session;
-  if (source.resolved || source.version !== job.baseVersion || source.factsHash !== job.factsHash || actor.roleId !== job.roleId || actor.role !== job.admittedRole || !target.allowed_roles.includes(actor.role))
+  if (source.resolved || source.version !== job.baseVersion || source.factsHash !== job.factsHash || actor.roleId !== job.roleId || actor.role !== job.admittedRole || !toolRoleAllowed(target.allowed_roles, actor.role))
     deny("Current query case or actor authority changed");
   if (!session?.requiresReviewedRevision || session.dispatchBoundary !== "sdk-entry/v1" || session.available === false || session.admissionBinding !== job.connectionBinding)
     deny("The exact reviewed ERPBridge connection is unavailable", 503);
@@ -102,7 +103,7 @@ export function operationReadbackHistory(state: Readonly<RepositoryState>, servi
     const actor = queryActor(state, executionId, actorId), binding = source.node.readback, session = binding ? boundMcpConnection(services, binding.admission.connectionId).session : undefined;
     const target = binding && services.registries.snapshot().tools.filter(tool => tool.tool_id === binding.toolId);
     if (!source.resolved && binding && session?.available !== false && session?.requiresReviewedRevision && session.dispatchBoundary === "sdk-entry/v1" && session.admissionBinding === source.connectionBinding &&
-        target?.length === 1 && target[0]!.allowed_roles.includes(actor.role)) {
+        target?.length === 1 && toolRoleAllowed(target[0]!.allowed_roles, actor.role)) {
       resolveOperationReadbackArguments(source.tool, target[0]!, source.args);
       captureReadAdmissionPin(state, services.registries, target[0]!, session.admissionBinding, binding.admission, binding.admission.connectionId);
       canQuery = readbackTaskAdmissionAvailable(services.repository) && supportsOperationJobs(services) && jobs.length < 100 && !jobs.some(pending);

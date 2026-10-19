@@ -202,7 +202,7 @@ export class ReadCheckpoints implements ReadExecutionHooks {
       appendExecutionEvent(state, item, done ? "node.completed" : attempt.status === "UNKNOWN" ? "node.outcome_unknown" : "node.failed", { stepIndex: index, outcome: attempt.status, outputRef: done ? entry.nodeId : null }, entry.nodeId, attempt.id);
     });
   }
-  async finish(failed: boolean): Promise<Execution> {
+  async finish(failed: boolean, preflightDiagnostic?: { code: string; stage: string; message: string; retryable: boolean }): Promise<Execution> {
     return this.commit((state) => {
       const item = this.current(state), progress = item.readProgress;
       const unknown = Object.values(progress.attempts).find((attempt) => attempt.status === "UNKNOWN");
@@ -239,6 +239,14 @@ export class ReadCheckpoints implements ReadExecutionHooks {
       } else item.agentSummary = item.status === "DONE" ? "Published read workflow completed with deterministic execution." : "Read workflow stopped. No automatic replay was performed; saved completed answers are retained.";
       if (item.status === "RECOVERY_REQUIRED") progress.recoveryReason = "READ_OUTCOME_UNKNOWN";
       if (failed || unknown) item.failure = { failureCategory: unknown ? "READ_OUTCOME_UNKNOWN" : "READ_EXECUTION_FAILED", failedStepId: unknown?.nodeId ?? stopped?.nodeId ?? Object.entries(progress.values ?? {}).findLast(([, value]) => value.status === "FAILED")?.[0] ?? Object.entries(progress.decisions ?? {}).findLast(([, decision]) => decision.status === "FAILED")?.[0] ?? "preflight" };
+      if (item.failure) {
+        const log = (state.executionLogs[item.id] ?? []).findLast(log => log.nodeId === item.failure!.failedStepId && log.level === "error");
+        const metadata = log?.metadata as { action?: string; diagnostic?: { code: string; stage: string; message: string; retryable: boolean } } | undefined;
+        const diagnostic = metadata?.diagnostic ?? preflightDiagnostic;
+        if (diagnostic) Object.assign(item.failure, { reason: diagnostic.message, code: diagnostic.code,
+          stage: diagnostic.stage, retryable: diagnostic.retryable, ...(metadata?.action ? { failedToolName: metadata.action } : {}),
+          timestamp: log?.timestamp ?? item.completedAt, workflowId: item.workflowId, executionId: item.id });
+      }
       appendExecutionEvent(state, item, item.status === "RECOVERY_REQUIRED" ? "run.recovery_required" : "run.completed", { status: item.status, nextStepIndex: progress.nextStepIndex });
       appendRunAudit(state, item, "execution.completed");
       return structuredClone(item);

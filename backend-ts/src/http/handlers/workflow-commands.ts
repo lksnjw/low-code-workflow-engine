@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../../governance/tool-access.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { ok, fail, type Workflow } from "../../models/schemas.js";
@@ -89,7 +90,7 @@ export async function handleWorkflowCommand(kind: "commands" | "node-proposals" 
           }
         } else if (operationProfile) {
           try { const prepared = await prepareOperationPublication(services, current.yaml, user); if (prepared) issues.push(...operationModelReadinessIssues(prepared.stored.plan, services.providerRuntime)); if (!supportsOperationJobs(services)) issues.push("Operation checkpoint persistence is not qualified"); }
-          catch (error) { issues.push(error instanceof HandlerFailure && error.meta !== null && typeof error.meta === "object" && "code" in error.meta && error.meta.code === "PROTECTED_COLLECTION_RUNTIME_PENDING" ? error.message : "Operation requires a supported reviewed artifact and current connection"); }
+          catch (error) { issues.push(error instanceof HandlerFailure && error.meta !== null && typeof error.meta === "object" && "code" in error.meta && error.meta.code === "PROTECTED_COLLECTION_RUNTIME_PENDING" ? error.message : "A workflow step's reviewed tool contract or selected ERP connection could not be verified. Check its tool access and connection, then check again."); }
         } else issues = inspectReadWorkflow(blueprint, services.registries.snapshot().tools, user.role, supportsCollectionReads(services));
         const connectionIds = [...new Set(blueprint.steps.filter(step => effectiveStepKind(step) !== "analysis").map(step => selectedMcpConnectionId(services, step.connection_id)))];
         if (connectionIds.length) {
@@ -121,9 +122,9 @@ export async function handleWorkflowCommand(kind: "commands" | "node-proposals" 
         const version = (state.versions[workflowId] ?? []).findLast(value => value.artifactState === "PUBLISHED" && value.version === current.publishedVersion && value.yaml === current.yaml);
         if (!version) return { state: "NOT_PUBLISHED" };
         try { return { state: "CURRENT", receipt: operationProfile ? prepareOperationExecution(state, services, version, current.yaml, user.role).receipt : prepareCompiledExecution(state, services, version, current.yaml, user.role).receipt }; }
-        catch { return { state: "BLOCKED", reason: "Review and explicitly republish current capability bindings" }; }
+        catch (error) { return { state: "BLOCKED", reason: error instanceof HandlerFailure ? error.message : "The saved workflow's tool bindings could not be verified. Check its connection and tool access, then check again." }; }
       });
-      if (compilation.state === "BLOCKED") issues.push("Published execution artifact needs current capability review and explicit re-publication");
+      if (compilation.state === "BLOCKED") issues.push(compilation.reason!);
       const canAttempt = user.permissions.some((permission) => ["workflow:run", "workflow:run_own"].includes(permission)) &&
         (user.permissions.includes("workflow:run") || current.owner.id === user.id || (current.assignedUserIds ?? []).includes(user.id));
       const workspace = await services.repository.readAuthoritative(state => {
@@ -141,9 +142,14 @@ export async function handleWorkflowCommand(kind: "commands" | "node-proposals" 
       const { authoring, editHistory } = workspace;
       if ("protectedIssues" in authoring && Array.isArray(authoring.protectedIssues)) issues.push(...authoring.protectedIssues);
       const protectedRuntimePending = "executionProfile" in authoring && authoring.executionProfile === "protected-draft-runtime-pending";
+      // A run-capable editor may prepare a new draft snapshot by pressing Start.
+      // Assigned runners retain the existing immutable publication boundary.
+      const startDraft = !published && (operationProfile ? supportsOperationJobs(services) : supportsReadJobs(services)) && permitted(current, user, true) && canAttempt && validation.passed && !issues.length && bridge === "discovery_available" && !current.pendingGenerationApproval?.steps.length;
+      const canStart = startDraft || canAttempt && published && compilation.state === "CURRENT" && validation.passed && !issues.length && bridge === "discovery_available" && !current.pendingGenerationApproval?.steps.length;
       return reply.send(ok({ ...record(current), validation, issues: [...new Set(issues)], bridge, published, compilation, authoring,
         editHistory, effectProfile, ...(protectedCompilation ? { protectedCompilation } : {}),
-        can_attempt_run: canAttempt && published && compilation.state === "CURRENT" && validation.passed && !issues.length && bridge === "discovery_available" && !current.pendingGenerationApproval?.steps.length,
+        can_attempt_run: canStart,
+        ...(canStart && !current.emailDeliverySource && !current.recoverySource ? { start_revision: { baseVersion: current.draftVersion, baseHash: workflowContentHash(current.yaml) } } : {}),
         read_job_admission: supportsReadJobs(services) ? "read-job-v1" : "unavailable",
         read_snapshot_schedule_admission: supportsReadJobs(services) && published && compilation.state === "CURRENT" && !operationProfile &&
           effectProfile === "read-only" && "receipt" in compilation && compilation.receipt?.schemaVersion !== "workflow-read-ir/v4" && validation.passed ? "read-snapshot/v1" : "unavailable",
@@ -167,7 +173,7 @@ export async function handleWorkflowCommand(kind: "commands" | "node-proposals" 
       const structural = ["if", "return", "foreach", "protect"].includes(node.kind ?? "");
       const authoring = structural ? readAuthoringContract(parseWorkflowYAMLStrict(current.yaml), services.registries.snapshot().tools, user.role, services.registries.hash(), connectionCatalog(services)) : undefined;
       const collection = authoring?.collections?.find(value => value.nodeId === node.id);
-      const availableTools = services.registries.snapshot().tools.filter((tool) => tool.allowed_roles.includes(user.role));
+      const availableTools = services.registries.snapshot().tools.filter((tool) => toolRoleAllowed(tool.allowed_roles, user.role));
       const promptTools = node.kind === "agent" ? availableTools.filter(tool => tool.is_read_only && (node.allowed_actions ?? []).some(action => action === tool.name || action === tool.mcp_tool_name)) : availableTools;
       const prompt = promptData({ instruction: value.prompt, node: withoutSecretFields(node),
         ...(node.kind === "if" ? selectedConditionGuidance(node.id, authoring) : {}),

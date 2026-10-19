@@ -72,6 +72,7 @@ import {
 } from "./handlers/workflow-runtime.js";
 import { routePolicy } from "./route-policy.js";
 import { attachSystemHealthSocket } from "./system-health-websocket.js";
+import { withToolAccess, ensureSharedWorkflowAccess } from "../governance/tool-access.js";
 import { isMcpConfigured } from "../config/config.js";
 import { EXECUTION_QUERY_UNHANDLED, handleExecutionQueryRoute } from "./handlers/execution-queries.js";
 import { handleNotificationRoute, NOTIFICATION_UNHANDLED } from "./handlers/notifications.js";
@@ -158,6 +159,7 @@ export async function buildApp(
   options: { executionHost?: ExecutionHostMode } = {},
 ): Promise<FastifyInstance> {
   assertApplicationServices(services);
+  await ensureSharedWorkflowAccess(services.repository, services.config.toolAccessMode);
   // Bind before constructing queues. This cannot be changed by request data,
   // a services spread, or another HTTP host sharing the same repository.
   const residentHost = bindExecutionHost(services.repository, options.executionHost) === "resident-server";
@@ -168,23 +170,23 @@ export async function buildApp(
   const resourceMutations = new ResourceMutations();
   if (supportsChatJobs(services)) {
     const queue = chatJobQueue(services);
-    if (residentHost) app.addHook("onReady", () => queue.start());
+    if (residentHost) app.addHook("onReady", () => withToolAccess(services.config.toolAccessMode, () => queue.start()));
     app.addHook("onClose", () => queue.stop());
   }
   if (supportsReadJobs(services)) {
     const queue = readJobQueue(services);
-    if (residentHost) app.addHook("onReady", () => queue.start());
+    if (residentHost) app.addHook("onReady", () => withToolAccess(services.config.toolAccessMode, () => queue.start()));
     app.addHook("onClose", () => queue.stop());
   }
   if (supportsOperationJobs(services)) {
     const queue = operationJobQueue(services);
-    if (residentHost) app.addHook("onReady", () => queue.start());
+    if (residentHost) app.addHook("onReady", () => withToolAccess(services.config.toolAccessMode, () => queue.start()));
     app.addHook("onClose", () => queue.stop());
     const readbacks = operationReadbackQueue(services);
-    if (residentHost) app.addHook("onReady", () => readbacks.start());
+    if (residentHost) app.addHook("onReady", () => withToolAccess(services.config.toolAccessMode, () => readbacks.start()));
     app.addHook("onClose", () => readbacks.stop());
     const schedules = workflowScheduleRunner(services);
-    if (residentHost) app.addHook("onReady", () => schedules.start());
+    if (residentHost) app.addHook("onReady", () => withToolAccess(services.config.toolAccessMode, () => schedules.start()));
     app.addHook("onClose", () => schedules.stop());
   }
   app.removeContentTypeParser("application/json");
@@ -275,7 +277,8 @@ export async function buildApp(
        *
        * Dispatches the registered HTTP route to its application handler.
        ******************************************************************************/
-      handler: async (request, reply) => {
+      handler: async (request, reply) => withToolAccess(services.config.toolAccessMode, async () => {
+        await ensureSharedWorkflowAccess(services.repository, services.config.toolAccessMode);
         if (route.method === "GET" || route.path.includes("/settings/mcp-connections") || /\/(commands|node-proposals|run|retry)$/.test(route.path))
           return handleRoute(route, request, reply, services);
         const params = request.params as Record<string, unknown>;
@@ -287,7 +290,7 @@ export async function buildApp(
           ? `chat-document:${String(params?.id)}:${String(params?.uploadId ?? (route.path.endsWith("/preview") ? "preview" : "uploads"))}`
           : `${family}:${String(params?.id ?? params?.userId ?? "collection")}`;
         return resourceMutations.run(key, () => handleRoute(route, request, reply, services));
-      },
+      }),
     });
   }
   if (routeTable.length !== 233)

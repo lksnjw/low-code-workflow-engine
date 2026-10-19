@@ -1,3 +1,4 @@
+import { allRolesToolAccess } from "../governance/tool-access.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, createHmac } from "node:crypto";
 import { z } from "zod";
@@ -58,7 +59,7 @@ export class UserMcpCredentials {
     return { id, status: actor!.status, role: role!.name, roleId: actor!.roleId };
   }
   private environmentAdmin(actor: ReturnType<UserMcpCredentials["actor"]>) {
-    return this.config.erpbridgeAdminEnvironmentAccess === true && actor.roleId === "role_admin" && actor.role === "Platform Admin";
+    return this.config.erpbridgeAdminEnvironmentAccess === true && (allRolesToolAccess() || actor.roleId === "role_admin" && actor.role === "Platform Admin");
   }
   private environmentFingerprint(actorId: string, id: string) {
     const connection = this.connection(id);

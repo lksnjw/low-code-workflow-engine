@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "./tool-access.js";
 import { readFile } from "node:fs/promises";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -78,7 +79,7 @@ async function checkRemote(services: HandlerServices, user: CurrentUser, input: 
   const tool = matches.find(tool => tool.mcp_tool_name === "policy-gate-evaluate") ?? matches[0];
   if (!tool) return { decision: "unavailable", source, reason: "No reviewed ERPBridge policy-checker contract is configured." };
   if (matches.filter(item => item.mcp_tool_name === tool.mcp_tool_name).length !== 1 || !tool.bridge_contract || !tool.is_read_only ||
-      !tool.allowed_roles.includes(user.role) || hasReservedBridgeRole(tool))
+      !toolRoleAllowed(tool.allowed_roles, user.role) || hasReservedBridgeRole(tool))
     return { decision: "deny", source, reason: "ERPBridge policy-checker contract or role grant is invalid." };
   const args = tool.mcp_tool_name === "check_policy"
     ? { tool_name: input.action, user_id: user.id, user_role: user.role, arguments: { prompt: input.prompt, ...input.context } }

@@ -1,0 +1,707 @@
+{
+  "startedAt": "2026-10-19T13:08:34.094Z",
+  "status": "NEEDS_ATTENTION",
+  "erpWrites": 0,
+  "cases": [
+    {
+      "name": "all stored roles have workflow and document access",
+      "status": "PASS",
+      "evidence": {
+        "roles": [
+          {
+            "id": "role_admin",
+            "name": "Platform Admin"
+          },
+          {
+            "id": "role_client",
+            "name": "Client"
+          },
+          {
+            "id": "role_builder",
+            "name": "Workflow Builder"
+          },
+          {
+            "id": "role_536_1992ef72",
+            "name": "Manager"
+          },
+          {
+            "id": "role_system_admin",
+            "name": "System Admin"
+          }
+        ],
+        "allRequiredPermissionsPresent": true
+      }
+    },
+    {
+      "name": "catalog role filter includes the same tools for Client and Platform Admin",
+      "status": "FAIL",
+      "reason": "The expression evaluated to a falsy value:\n\n  assert(admin.length > 0)\n"
+    },
+    {
+      "name": "saved customer draft uses reviewed runtime fields and real tools",
+      "status": "FAIL",
+      "reason": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   \"A workflow step's reviewed tool contract or selected ERP connection could not be verified. Check its tool access and connection, then check again.\"\n+ ]\n- []\n"
+    },
+    {
+      "name": "real document preparation: customer-registration-complete.png",
+      "status": "PASS",
+      "evidence": {
+        "filename": "customer-registration-complete.png",
+        "fields": {
+          "customer_name": "QA Gemini 20261017 Customer 01",
+          "customer_type": "Company",
+          "customer_group": "Demo Customer Group",
+          "territory": "Sri Lanka",
+          "email": "registration-demo@example.test",
+          "customer_details": "Demo customer for registration and inventory planning."
+        },
+        "storage": "STAGED",
+        "uploadId": "upload_02c1bf40e543d6e894c20c111c32ca80fcfd4b3c",
+        "reviewAvailable": true,
+        "pipelineStorageConfirmed": true,
+        "vectorIndexConfirmed": false
+      }
+    },
+    {
+      "name": "real document preparation: customer-registration-complete.pdf",
+      "status": "PASS",
+      "evidence": {
+        "filename": "customer-registration-complete.pdf",
+        "fields": {
+          "customer_name": "QA Gemini 20261017 Customer 01",
+          "customer_type": "Company",
+          "customer_group": "Demo Customer Group",
+          "territory": "Sri Lanka",
+          "email": "registration-demo@example.test",
+          "customer_details": "Demo customer for registration and inventory planning."
+        },
+        "storage": "STAGED",
+        "uploadId": "upload_9190627fcc245ab80dffb51046060004b92553fd",
+        "reviewAvailable": true,
+        "pipelineStorageConfirmed": true,
+        "vectorIndexConfirmed": false
+      }
+    },
+    {
+      "name": "hosted frontend equals the verified release artifact",
+      "status": "PASS",
+      "evidence": {
+        "artifactMatched": true
+      }
+    }
+  ],
+  "readiness": {
+    "validation": {
+      "candidate_id": "WorkspaceReadiness",
+      "passed": true,
+      "score": 1,
+      "schema_ok": true,
+      "tool_validity_ok": true,
+      "parameters_ok": true,
+      "rbac_ok": true,
+      "policy_ok": true,
+      "process_order_ok": true,
+      "risk_ok": true,
+      "errors": [],
+      "warnings": [],
+      "failed_rules": [],
+      "registry_versions": {
+        "tools": "sha256:e25b2ebbb5a560c0",
+        "rules": "sha256:e689e1176f117b0f"
+      },
+      "estimated_risk_level": "medium",
+      "step_count": 3,
+      "tool_risks": {
+        "discovered.erpbridge-default.get_customer_group_f2c30098e68bcd4e": "low",
+        "discovered.erpbridge-default.get_territory_303efef813a7d8c9": "low",
+        "discovered.erpbridge-default.create_customer_89b6f5a21d50a910": "medium"
+      },
+      "metadata": {
+        "auditMechanism": "operation-job/v1:consumed-approval-and-dispatch-journal"
+      },
+      "deferred_checks": []
+    },
+    "issues": [
+      "A workflow step's reviewed tool contract or selected ERP connection could not be verified. Check its tool access and connection, then check again."
+    ],
+    "bridge": "discovery_available",
+    "compilation": {
+      "state": "NOT_PUBLISHED"
+    },
+    "published": false,
+    "authoring": {
+      "profile": "read-authoring/v1",
+      "registryHash": "sha256:3ac7d04158176988aadc3a86d2a253f8046738c1bb97129fff53d61fe7fa5c94",
+      "executionProfile": "sequential-read-v1",
+      "protectedSimulationProfile": null,
+      "modelNodesSupported": true,
+      "returnNodesSupported": true,
+      "mergeNodesSupported": true,
+      "connectionChoices": [
+        {
+          "id": "erpbridge-default",
+          "primary": true
+        }
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customer_name": {
+            "type": "string"
+          },
+          "customer_type": {
+            "type": "string",
+            "enum": [
+              "Company",
+              "Individual"
+            ]
+          },
+          "customer_group": {
+            "type": "string",
+            "enum": [
+              "Commercial",
+              "Demo Customer Group",
+              "Government",
+              "Individual",
+              "Non Profit"
+            ]
+          },
+          "territory": {
+            "type": "string",
+            "enum": [
+              "Sri Lanka",
+              "Rest Of The World"
+            ]
+          }
+        },
+        "required": [
+          "customer_name",
+          "customer_type",
+          "customer_group",
+          "territory"
+        ],
+        "additionalProperties": false
+      },
+      "nodes": [
+        {
+          "nodeId": "check_customer_group",
+          "sourceAction": "discovered.erpbridge-default.get_customer_group_f2c30098e68bcd4e",
+          "connectionId": "erpbridge-default",
+          "state": "LOCAL_CONTRACT",
+          "simulatedBusinessReadErrorCodes": [],
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "outputSchema": {
+            "type": "object",
+            "properties": {}
+          },
+          "contractHash": "sha256:dea95b60330ad69f8520f2a9e2a574af347dc81cfe790f9af38094ac3b25d16b",
+          "actions": [
+            "discovered.erpbridge-default.get_customer_group_f2c30098e68bcd4e",
+            "get_customer_group"
+          ],
+          "effectClass": "read",
+          "requiresIndependentApproval": false,
+          "dataSources": [
+            {
+              "label": "Workflow input",
+              "expression": "{{input}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": []
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "customer_name": {
+                    "type": "string"
+                  },
+                  "customer_type": {
+                    "type": "string",
+                    "enum": [
+                      "Company",
+                      "Individual"
+                    ]
+                  },
+                  "customer_group": {
+                    "type": "string",
+                    "enum": [
+                      "Commercial",
+                      "Demo Customer Group",
+                      "Government",
+                      "Individual",
+                      "Non Profit"
+                    ]
+                  },
+                  "territory": {
+                    "type": "string",
+                    "enum": [
+                      "Sri Lanka",
+                      "Rest Of The World"
+                    ]
+                  }
+                },
+                "required": [
+                  "customer_name",
+                  "customer_type",
+                  "customer_group",
+                  "territory"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "label": "Workflow input · customer_name",
+              "expression": "{{input.customer_name}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_name"
+                ]
+              },
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "label": "Workflow input · customer_type",
+              "expression": "{{input.customer_type}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_type"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Company",
+                  "Individual"
+                ]
+              }
+            },
+            {
+              "label": "Workflow input · customer_group",
+              "expression": "{{input.customer_group}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_group"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Commercial",
+                  "Demo Customer Group",
+                  "Government",
+                  "Individual",
+                  "Non Profit"
+                ]
+              }
+            },
+            {
+              "label": "Workflow input · territory",
+              "expression": "{{input.territory}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "territory"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Sri Lanka",
+                  "Rest Of The World"
+                ]
+              }
+            }
+          ],
+          "reason": "Local schema guidance only; live admission and runtime checks are separate"
+        },
+        {
+          "nodeId": "check_territory",
+          "sourceAction": "discovered.erpbridge-default.get_territory_303efef813a7d8c9",
+          "connectionId": "erpbridge-default",
+          "state": "LOCAL_CONTRACT",
+          "simulatedBusinessReadErrorCodes": [],
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "outputSchema": {
+            "type": "object",
+            "properties": {}
+          },
+          "contractHash": "sha256:5125e4bb9029d29ac7c53a90d9ae5535a55646089d17d6b43197cf5410f9e79b",
+          "actions": [
+            "discovered.erpbridge-default.get_territory_303efef813a7d8c9",
+            "get_territory"
+          ],
+          "effectClass": "read",
+          "requiresIndependentApproval": false,
+          "dataSources": [
+            {
+              "label": "Workflow input",
+              "expression": "{{input}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": []
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "customer_name": {
+                    "type": "string"
+                  },
+                  "customer_type": {
+                    "type": "string",
+                    "enum": [
+                      "Company",
+                      "Individual"
+                    ]
+                  },
+                  "customer_group": {
+                    "type": "string",
+                    "enum": [
+                      "Commercial",
+                      "Demo Customer Group",
+                      "Government",
+                      "Individual",
+                      "Non Profit"
+                    ]
+                  },
+                  "territory": {
+                    "type": "string",
+                    "enum": [
+                      "Sri Lanka",
+                      "Rest Of The World"
+                    ]
+                  }
+                },
+                "required": [
+                  "customer_name",
+                  "customer_type",
+                  "customer_group",
+                  "territory"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "label": "Workflow input · customer_name",
+              "expression": "{{input.customer_name}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_name"
+                ]
+              },
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "label": "Workflow input · customer_type",
+              "expression": "{{input.customer_type}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_type"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Company",
+                  "Individual"
+                ]
+              }
+            },
+            {
+              "label": "Workflow input · customer_group",
+              "expression": "{{input.customer_group}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_group"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Commercial",
+                  "Demo Customer Group",
+                  "Government",
+                  "Individual",
+                  "Non Profit"
+                ]
+              }
+            },
+            {
+              "label": "Workflow input · territory",
+              "expression": "{{input.territory}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "territory"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Sri Lanka",
+                  "Rest Of The World"
+                ]
+              }
+            },
+            {
+              "label": "Node check_customer_group",
+              "expression": "{{check_customer_group.jsonContent}}",
+              "binding": {
+                "kind": "ref",
+                "source": "nodeOutput",
+                "nodeId": "check_customer_group",
+                "path": [
+                  "jsonContent"
+                ]
+              },
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          ],
+          "reason": "Local schema guidance only; live admission and runtime checks are separate"
+        },
+        {
+          "nodeId": "create_customer",
+          "sourceAction": "discovered.erpbridge-default.create_customer_89b6f5a21d50a910",
+          "connectionId": "erpbridge-default",
+          "state": "LOCAL_CONTRACT",
+          "simulatedBusinessReadErrorCodes": [],
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "customer_group": {
+                "type": "string"
+              },
+              "customer_name": {
+                "type": "string"
+              },
+              "customer_type": {
+                "type": "string"
+              },
+              "territory": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "customer_name",
+              "customer_group",
+              "territory"
+            ],
+            "additionalProperties": false
+          },
+          "outputSchema": {
+            "type": "object",
+            "properties": {}
+          },
+          "contractHash": "sha256:02fb7fb28224352c9e13ce44251ae95dedb91705f05bec6abf8fab6f07b2e6bc",
+          "actions": [
+            "discovered.erpbridge-default.create_customer_89b6f5a21d50a910",
+            "create_customer"
+          ],
+          "effectClass": "write",
+          "requiresIndependentApproval": true,
+          "dataSources": [
+            {
+              "label": "Workflow input",
+              "expression": "{{input}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": []
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "customer_name": {
+                    "type": "string"
+                  },
+                  "customer_type": {
+                    "type": "string",
+                    "enum": [
+                      "Company",
+                      "Individual"
+                    ]
+                  },
+                  "customer_group": {
+                    "type": "string",
+                    "enum": [
+                      "Commercial",
+                      "Demo Customer Group",
+                      "Government",
+                      "Individual",
+                      "Non Profit"
+                    ]
+                  },
+                  "territory": {
+                    "type": "string",
+                    "enum": [
+                      "Sri Lanka",
+                      "Rest Of The World"
+                    ]
+                  }
+                },
+                "required": [
+                  "customer_name",
+                  "customer_type",
+                  "customer_group",
+                  "territory"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "label": "Workflow input · customer_name",
+              "expression": "{{input.customer_name}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_name"
+                ]
+              },
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "label": "Workflow input · customer_type",
+              "expression": "{{input.customer_type}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_type"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Company",
+                  "Individual"
+                ]
+              }
+            },
+            {
+              "label": "Workflow input · customer_group",
+              "expression": "{{input.customer_group}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "customer_group"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Commercial",
+                  "Demo Customer Group",
+                  "Government",
+                  "Individual",
+                  "Non Profit"
+                ]
+              }
+            },
+            {
+              "label": "Workflow input · territory",
+              "expression": "{{input.territory}}",
+              "binding": {
+                "kind": "ref",
+                "source": "workflowInput",
+                "path": [
+                  "territory"
+                ]
+              },
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "Sri Lanka",
+                  "Rest Of The World"
+                ]
+              }
+            },
+            {
+              "label": "Node check_customer_group",
+              "expression": "{{check_customer_group.jsonContent}}",
+              "binding": {
+                "kind": "ref",
+                "source": "nodeOutput",
+                "nodeId": "check_customer_group",
+                "path": [
+                  "jsonContent"
+                ]
+              },
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            },
+            {
+              "label": "Node check_territory",
+              "expression": "{{check_territory.jsonContent}}",
+              "binding": {
+                "kind": "ref",
+                "source": "nodeOutput",
+                "nodeId": "check_territory",
+                "path": [
+                  "jsonContent"
+                ]
+              },
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          ],
+          "reason": "Local schema guidance only; live admission and runtime checks are separate"
+        }
+      ]
+    }
+  },
+  "chatId": "chat_1777_95403cba",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "finishedAt": "2026-10-19T13:09:43.250Z"
+}

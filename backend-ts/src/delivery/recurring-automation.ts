@@ -1,3 +1,4 @@
+import { allRolesToolAccess, toolRoleAllowed } from "../governance/tool-access.js";
 import { stringify } from "yaml";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import type { ToolDefinition } from "../registry/schemas.js";
@@ -316,6 +317,7 @@ function record(value: unknown): Record<string, unknown> | null {
 function sameJSON(left: unknown, right: unknown): boolean { return JSON.stringify(left) === JSON.stringify(right); }
 
 function grantsRole(tool: ToolDefinition, userRole: string): boolean {
+  if (allRolesToolAccess()) return toolRoleAllowed(tool.allowed_roles, userRole);
   const role = userRole.trim().toLowerCase();
   return role.length > 0 && tool.allowed_roles.some(allowed => allowed.trim().toLowerCase() === role);
 }

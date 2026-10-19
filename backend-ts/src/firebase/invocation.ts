@@ -15,10 +15,11 @@ import { setTimeout as pause } from "node:timers/promises";
 import { FirestoreRecordPersistence } from "../storage/firestore-records.js";
 import { FirestoreChatCancellation } from "../storage/firestore-chat-cancellation.js";
 import { configureChatCancellation } from "../agent/chat-cancellation.js";
+import { withToolAccess, ensureSharedWorkflowAccess } from "../governance/tool-access.js";
 
 export type FunctionComposition = { config: AppConfig; root: string; transport: ReadTaskTransport; chatTransport?: ChatTaskTransport;
   readbackTransport?: ReadbackTaskTransport; operationTransport?: OperationTaskTransport; workflowLifecycle?: "workflow-lifecycle/v1"; signal?: AbortSignal | undefined;
-  runtimePurpose?: "chat-admission" | "document-services" };
+  runtimePurpose?: "chat-admission" | "document-services" | "authentication" };
 
 /** Admission-only contention wait, never a retry wrapper around business work.
  * Storage reports WRITER_HELD/WRITER_HANDOFF only before any lease transition and after the
@@ -72,7 +73,8 @@ export async function withFunctionResources<T>(input: FunctionComposition, work:
       if (input.workflowLifecycle !== "workflow-lifecycle/v1") throw new Error("Unsupported workflow lifecycle composition");
       configureWorkflowLifecycle(resources.repository);
     }
-    return await work(resources);
+    await ensureSharedWorkflowAccess(resources.repository, resources.config.toolAccessMode);
+    return await withToolAccess(resources.config.toolAccessMode, () => work(resources));
   } finally { try { await cancellation?.close(); } finally { await resources.close(); } }
 }
 
@@ -80,7 +82,7 @@ export async function withFunctionResources<T>(input: FunctionComposition, work:
  * The buffered HTTP response is sent only after this scope fully closes. */
 export function withFunctionRuntime<T>(input: FunctionComposition, work: (context: { services: ApplicationServices; app: FastifyInstance }) => Promise<T>): Promise<T> {
   return withFunctionResources(input, async resources => {
-    const runtime = await constructApplicationRuntime(resources,{deferMcpConnection:input.runtimePurpose==="chat-admission" || input.runtimePurpose==="document-services"});
+    const runtime = await constructApplicationRuntime(resources,{deferMcpConnection:input.runtimePurpose==="chat-admission" || input.runtimePurpose==="document-services" || input.runtimePurpose==="authentication"});
     const app = await buildApp(runtime.services, { executionHost: "bounded-invocation" });
     try { return await work({ services: runtime.services, app }); }
     finally { await app.close(); }

@@ -36,3 +36,17 @@ test("formatting/key order comparison does not equate a changed requirement or p
   expect(sameWorkflowSource(workflow.yaml, dump({ ...blueprint, metadata: {} }))).toBe(false);
 });
 test.each(["steps: not-a-list", "steps: [{id: same}, {id: same}]", "!!js/function 'function(){}'"])("malformed or duplicate import %s is rejected", (yaml) => { expect(() => readCanvasBlueprint(yaml)).toThrow(); });
+
+test("new catalog tools retain exact input types, required fields and choices across save and validation", () => {
+  const inputSchema = { type: "object", properties: { customer_name: { type: "string" }, customer_type: { type: "string", enum: ["Company", "Individual"] }, count: { type: "integer" } }, required: ["customer_name", "customer_type", "count"], additionalProperties: false };
+  const added = [{ id: "create", data: { action: "real.create_customer", inputSchema, parameters: { customer_name: "{{input.customer_name}}", customer_type: "{{input.customer_type}}", count: "{{input.count}}" } } }];
+  const source = readCanvasBlueprint(serializeSourceOrderCanvas({ name: "Reusable" }, added, []));
+  expect(source.trigger.config.inputSchema).toEqual(inputSchema);
+  expect(source.steps[0].parameters).toEqual(added[0].data.parameters);
+  expect(sourceOrderCanvasValidationPayload({ name: "Reusable" }, added, []).trigger).toEqual(source.trigger);
+});
+
+test("two tool contracts cannot silently overwrite a shared input with a different type", () => {
+  const added = ["string", "integer"].map((type, index) => ({ id: `tool_${index}`, data: { action: `real.${index}`, inputSchema: { type: "object", properties: { value: { type } }, required: ["value"] }, parameters: { value: "{{input.value}}" } } }));
+  expect(() => serializeSourceOrderCanvas({ name: "Conflicting" }, added, [{ source: "tool_0", target: "tool_1" }])).toThrow(/Conflicting tool input/);
+});

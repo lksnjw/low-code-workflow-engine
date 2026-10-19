@@ -1,0 +1,23 @@
+{
+  "checkedAt": "2026-10-19T14:01:47.318Z",
+  "providerId": "provider_2_bd4ce2ee",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "egressPolicy": {
+    "profile": "model-egress-policy/v1",
+    "approvedOrigin": "https://openrouter.ai",
+    "runtimeAnalysisDataClasses": [],
+    "runtimeAgentDataClasses": [
+      "restricted"
+    ],
+    "interactiveDataClasses": [
+      "restricted"
+    ],
+    "reviewedAt": "2026-10-19T14:01:46.953Z",
+    "reviewedBy": {
+      "id": "usr_1_admin",
+      "name": "Platform Administrator"
+    }
+  },
+  "authorization": "Workspace owner explicitly requested Pi-controlled execution of saved customer form workflows, including checks and tool handling on future runs.",
+  "erpWrites": 0
+}

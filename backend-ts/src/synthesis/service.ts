@@ -1,3 +1,5 @@
+import { supportedOperation } from "../registry/capability-admission.js";
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { parseWorkflowYAMLStrict } from "../parser/workflow.js";
 import { CANDIDATE_PROMPT_VERSION, type ProviderRuntime } from "../providers/runtime.js";
 import { promptData, generationPromptHash } from "../prompts/contracts.js";
@@ -11,6 +13,8 @@ import type { ReviewedModelSourceContext } from "./reviewed-model-sources.js";
 import { generatedReturnCoverageIssues } from "./return-coverage.js";
 import type { AnalysisResponse } from "../analysisprovider/types.js";
 import { reviewedReadOutputKey } from "../tools/mcp-result.js";
+import { generatedInputBindingIssues } from "../workflows/generated-input-validation.js";
+import { runWorkflowAuthoringAgent } from "../agent/workflow-authoring-agent.js";
 
 export type SynthesisInput = { prompt: string; userRole: string; user?: GovernanceUser; model?: string; providerRuntime?: ProviderRuntime; priorMessages?: string[]; caseContext?: Record<string, unknown>; candidateContext?: Record<string, unknown>; modelSourceContext?: ReviewedModelSourceContext; candidateValidator?: (yaml: string) => void; signal?: AbortSignal; traceId?: string; sessionId?: string; messageId?: string; liveTools?: readonly ToolDefinition[] };
 export type PreparedCandidate = { prompt: string; liveTools: readonly ToolDefinition[]; candidateId: "candidate_1" };
@@ -68,7 +72,8 @@ export class SynthesisService {
   constructor(readonly providers: ProviderRuntime, readonly registries: RegistryService, readonly validator: RegistryValidator, readonly validationGate?: ValidationGate) {}
 
   prepareCandidate(input: SynthesisInput): PreparedCandidate {
-    const liveTools = structuredClone(input.liveTools ?? this.registries.snapshot().tools);
+    const liveTools = structuredClone((input.liveTools ?? this.registries.snapshot().tools).filter(tool => toolRoleAllowed(tool.allowed_roles, input.userRole)));
+    if (!liveTools.length) throw new SynthesisFailure("No reviewed ERP tools are available for your role. Check the connection and tool access before building; no workflow was generated.", 503);
     const prompt = assembleCandidatePrompt(input.prompt, input.userRole, this.registries, input.priorMessages ?? [], liveTools, input.candidateContext, input.modelSourceContext);
     return { prompt, liveTools, candidateId: "candidate_1" };
   }
@@ -105,8 +110,8 @@ export class SynthesisService {
     }
     const blueprint = parseWorkflowYAMLStrict(yaml);
     const executionIssues = [
-      ...(blueprint.metadata?.controlFlow !== undefined || blueprint.steps.some(step => ["analysis", "agent"].includes(step.kind ?? "")) ?
-        inspectWorkflowDraft(blueprint, prepared.liveTools, input.userRole).issues : []),
+      ...inspectWorkflowDraft(blueprint, prepared.liveTools, input.userRole).issues,
+      ...generatedInputBindingIssues(blueprint),
       ...generatedReturnCoverageIssues(blueprint),
     ];
     if (executionIssues.length) withWorkspaceCompilationIssues(gate.result, executionIssues);
@@ -158,16 +163,16 @@ export class SynthesisService {
     const providers = baseProvider.snapshot?.(input.model) ?? baseProvider;
     const prepared = this.prepareCandidate(input);
     let generated;
-    try { generated = await providers.generateCandidate(prepared.prompt, CANDIDATE_PROMPT_VERSION, (response) => {
+    try { generated = await runWorkflowAuthoringAgent({ prompt: prepared.prompt, version: CANDIDATE_PROMPT_VERSION, ...(input.signal ? { signal: input.signal } : {}) }, signal => providers.generateCandidate(prepared.prompt, CANDIDATE_PROMPT_VERSION, (response) => {
       this.validateCandidateOutput(input, response);
-    }, input.signal, {
+    }, signal, {
       ...(input.traceId === undefined ? {} : { traceId: input.traceId }),
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       ...(input.messageId === undefined ? {} : { messageId: input.messageId }),
       candidateId: "candidate_1",
       ...(input.user === undefined ? {} : { actor: { id: input.user.id, role: input.user.role } }),
       egress: { purpose: "interactive", dataClass: "restricted" },
-    }); }
+    })); }
     catch (error) { throw new SynthesisFailure(`Candidate generation failed: ${errorText(error)}`); }
     // Preserve the exact proposal: deterministic verification reports unknown
     // actions. Renaming/removing steps requires a separate reviewed revision.
@@ -184,12 +189,17 @@ export class SynthesisService {
  ******************************************************************************/
 export function assembleCandidatePrompt(userText: string, userRole: string, registries: RegistryService, priorMessages: string[] = [], liveTools?: readonly ToolDefinition[], candidateContext?: Record<string, unknown>, modelSourceContext?: ReviewedModelSourceContext): string {
   const snapshot = registries.snapshot();
+  const offeredTools = (liveTools ?? snapshot.tools).filter(tool => toolRoleAllowed(tool.allowed_roles, userRole));
   const applicableRules = snapshot.rules.filter((rule) => rule.enabled && (rule.applies_to_roles.length === 0 || rule.applies_to_roles.some((role) => normalizeRole(role) === normalizeRole(userRole))));
   // An explicitly empty live catalog is unavailable, not a reason to fall
   // back to registered tools that this connection did not advertise.
   return promptData({ USER_ROLE: userRole, PRIOR_MESSAGES_JSON: priorMessages, USER_REQUEST: userText,
-    TOOL_REGISTRY_JSON: liveTools ?? snapshot.tools, APPLICABLE_RULES_JSON: applicableRules,
-    TOOL_RESULT_BINDINGS_JSON: (liveTools ?? snapshot.tools).filter(tool => tool.bridge_contract?.output_schema).map(tool => ({
+    TOOL_REGISTRY_JSON: offeredTools.map(tool => Object.fromEntries(Object.entries(tool).filter(([, value]) => value !== "" && value !== undefined && !(Array.isArray(value) && !value.length)))), APPLICABLE_RULES_JSON: applicableRules,
+    RUNTIME_SAFEGUARDS_JSON: { auditJournalActions: offeredTools.filter(tool => {
+      if (tool.is_read_only) return false;
+      try { supportedOperation(tool); return true; } catch { return false; }
+    }).map(tool => tool.name) },
+    TOOL_RESULT_BINDINGS_JSON: offeredTools.filter(tool => tool.bridge_contract?.output_schema).map(tool => ({
       action: tool.name, remoteName: tool.mcp_tool_name, path: [reviewedReadOutputKey(tool)], schema: tool.bridge_contract!.output_schema,
     })),
     ...(candidateContext === undefined ? {} : { SERVER_DERIVED_CONTEXT_JSON: candidateContext }),

@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-19",
+  "timezone": "Asia/Colombo",
+  "target": "https://workflow-automation-44201.web.app",
+  "qualification": "Targeted deployed UI/API verification, not full production acceptance or an all-workflows-pass claim",
+  "data": "Fictional customer and inventory fixtures only",
+  "implemented": [
+    "Saved workflow Run dialog can prepare a new document using existing private pipeline upload, background OCR and selected-model fallback",
+    "Ten-second pipeline handoff starts model assistance; it is not a ten-second extraction completion guarantee",
+    "Only exact declared non-secret scalar fields can populate run inputs; batches cannot silently become one record",
+    "Missing fields, wrong types and declared choices remain subject to client guidance and authoritative server validation",
+    "Source confirmation is required after extraction, and any edit resets that confirmation",
+    "Replacing or removing a file clears old run inputs; repeated preparation retains the original idempotency key",
+    "Chat-based blocked drafts permit input typing and file preparation, while actual Run admission stays blocked",
+    "Declared workflow input enums and supported array bounds reach the UI; secret enum values/defaults/examples are omitted",
+    "Candidate prompt v23 instructs reusable forms to declare per-run input fields instead of fixing the example record's identity"
+  ],
+  "uiChecks": [
+    { "scenario": "Customer form missing customer_name", "chat": "chat_1071_b40db57c", "result": "PASS_NEGATIVE", "evidence": "Required name remained blank; pipeline confirmation disabled; no ERP write" },
+    { "scenario": "Saved Run uploads missing-name image", "workflow": "wf_1092_e8aa1a22", "result": "PASS_NEGATIVE", "evidence": "Group and territory populated, name remained blank, source checkbox and Start blocked; OCR later completed" },
+    { "scenario": "Replace saved-Run source with complete form", "workflow": "wf_1092_e8aa1a22", "result": "PASS_INPUT_PREPARATION", "evidence": "Previous input values cleared; complete fields extracted, reviewed and OCR status confirmed; no customer created by upload" },
+    { "scenario": "Ordinary-language edit adds customer type", "chat": "chat_1087_2d4331bf", "workflow": "wf_1092_e8aa1a22", "draftVersion": 2, "result": "PASS_SAVED_EDIT", "evidence": "Exact proposal_1104_6631cc17 applied; draft v2 confirmed by UI and API; not published or run" },
+    { "scenario": "Blocked draft in chat allows typing and image selection", "workflow": "wf_1092_e8aa1a22", "result": "PASS_UI_FIX", "evidence": "Typed customer name, chose Company/customer group/territory, uploaded PNG with DeepSeek, extracted and applied all four fields, confirmed source review, refreshed OCR to completed; Start remained blocked", "sourceConversation": "chat_1129_a6541dda" },
+    { "scenario": "Fresh customer lookup workflow from ordinary-language request", "chat": "chat_1111_cb0f7665", "workflow": "wf_1116_e80cca22", "result": "PASS", "evidence": "Generated/saved, explicitly published, uploaded form, extracted customer_name, source-confirmed, started once, displayed real ERP answer" },
+    { "scenario": "Inventory form with missing unit", "chat": "chat_1079_427b366f", "result": "PARTIAL_NOT_PASSED", "evidence": "Model identified missing unit; get_item lookup was unconfirmed and no write occurred. Full item-create/edit/stock mutation is not verified." },
+    { "scenario": "Older stock snapshot readiness", "workflow": "wf_616_fc766a74", "result": "BLOCKED", "evidence": "Saved published capability artifact is stale and needs explicit current review/re-publication; did not bypass or execute it" }
+  ],
+  "verifiedRun": {
+    "id": "run-1cda90bb899eb2fa",
+    "workflow": "wf_1116_e80cca22",
+    "status": "DONE",
+    "publishedVersion": 1,
+    "durationMs": 13011,
+    "sourceConversation": "chat_1125_65400063",
+    "ocrCompletedInUI": true,
+    "selectedExtractionModel": "deepseek/deepseek-v4.1-flash",
+    "remoteTool": "list_customers",
+    "returnedCustomer": "Greenfield Stationery 1019-E",
+    "uiResultsVisible": true,
+    "confirmedByIndependentSavedExecutionGET": true,
+    "automaticResubmissions": 0,
+    "note": "Original admission receipt was recovered through GET; no second run was dispatched. Read-only lookup did not create this already-existing customer."
+  },
+  "remainingBlockers": [
+    "Reusable customer-create workflow wf_1092_e8aa1a22 remains an unpublished draft: transaction reviewers are not configured and its saved audit-tool requirement remains unresolved",
+    "No reviewer policy was silently configured and no approval requirement was removed",
+    "Inventory create/edit/stock-mutation and email delivery are not qualified by these tests",
+    "No new vector index is created by the Run input step itself; explicit document-library review/indexing remains separate"
+  ],
+  "automatedChecks": {
+    "frontendFinalFocusedRun": { "suites": 3, "testsPassed": 132, "failed": 0, "includes": ["WorkflowWorkspaceEditor", "WorkflowDocumentInput", "WorkflowRunDialog"] },
+    "backendFinalFocusedRun": { "suites": 3, "testsPassed": 104, "failed": 0, "includes": ["read-authoring", "workflow-commands", "document-run-input-prompt"] },
+    "otherRuns": [ { "frontendSuites": 4, "passed": 30 }, { "backendSuites": 3, "passed": 97 }, { "backendSuites": 5, "passed": 93 } ],
+    "note": "Counts overlap; do not add them as unique tests. Unit checks are distinct from hosted UI checks.",
+    "backendTypecheck": "PASS",
+    "changedFrontendSourceLint": "PASS",
+    "functionsArtifactVerification": "PASS",
+    "hostingArtifactVerification": "PASS",
+    "gitDiffCheck": "PASS_WITH_EXISTING_LINE_ENDING_WARNINGS"
+  },
+  "deployment": {
+    "firebaseProject": "workflow-automation-44201",
+    "region": "asia-south1",
+    "hosting": "RELEASED",
+    "apiRevision": "api-00037-taf",
+    "chatRevision": "executechattask-00033-jid",
+    "functionsHash": "002c3955f291cad922d6c298a10ac28961e442ab",
+    "apiAndChatState": "ACTIVE",
+    "privateTaskWorkersVerified": 4,
+    "publicTaskWorkers": false,
+    "erpbridgeRagPipelineSourceChangedForThisFeature": false,
+    "gitCommitOrPushPerformed": false
+  },
+  "screenshots": [
+    "saved-run-missing-name-20261019.png",
+    "saved-run-complete-document-20261019.png",
+    "chat-run-inputs-editable-20261019.png",
+    "document-run-erp-result-20261019.png"
+  ]
+}

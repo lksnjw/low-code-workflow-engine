@@ -17,6 +17,12 @@ test("only an exact async-chat admission may defer the ERP connection",()=>{
   expect(isAsyncChatAdmission({...base,method:"GET",body})).toBe(false);
   expect(isAsyncChatAdmission({...base,rawBody:Buffer.from("{invalid")})).toBe(false);
 });
+
+test.each(["login", "logout", "register", "refresh"])("authentication %s does not depend on ERP connection initialization", async action => {
+  const f = await setup();
+  await handleFunctionHttp(f.input, { method: "POST", url: `/api/auth/${action}`, headers: { "content-type": "application/json" }, rawBody: Buffer.from("{}") });
+  expect(fixtures.invoke.mock.calls[0]![0].runtimePurpose).toBe("authentication");
+});
 afterEach(async () => { await Promise.all(closers.splice(0).map(close => close())); });
 async function setup(options: Parameters<typeof boundedReadFixture>[0] = {}) {
   const f = await boundedReadFixture(options); closers.push(f.close);

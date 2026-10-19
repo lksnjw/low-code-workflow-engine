@@ -28,6 +28,7 @@ import { executionService } from "../../services/execution.service";
 import { apiErrorDetails, apiErrorMessage } from "../../services/api";
 import { useNotifications } from "../../context/NotificationContext";
 import GateRejectionAlert from "../workflows/GateRejectionAlert";
+import WorkflowRunDialog from "../workflows/WorkflowRunDialog";
 import { BuilderSidebar, WorkflowToolNode } from "./WorkflowBuilderCatalog";
 import {
   BuilderHeader,
@@ -94,6 +95,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
   const [canvasValidation, setCanvasValidation] = useState(null);
   const [isValidating, setIsValidating] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [runReview, setRunReview] = useState(null);
   const structuredCanvas = workflow.canvasProfile === "structured-control-flow/v1";
   const effectiveSelectedNodeId = selectedNodeId && nodes.some((node) => node.id === selectedNodeId) ? selectedNodeId : null;
   const { notify } = useNotifications();
@@ -259,7 +261,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
  *
  * Executes workflow for the WorkflowBuilderCanvas module.
  ******************************************************************************/
-  const executeWorkflow = useCallback(async () => {
+  const executeWorkflow = useCallback(async (input) => {
     if (isExecuting || nodes.length === 0) return;
     setIsExecuting(true);
     setExecutionState("running");
@@ -275,8 +277,19 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
       if (!workflow.id) throw new Error("Save and explicitly publish this draft before requesting execution. Run does not publish.");
       const readiness = await workflowService.readiness(workflow.id);
       if (!sameWorkflowSource(workflowYAML(), readiness.yaml)) throw new Error("Canvas has unsaved changes. Review and publish them explicitly before running.");
+      // A click opens the same input/OCR/source review as saved workflows.
+      // React passes an event to button handlers; only the review form supplies
+      // business input. No empty-object admission is sent by opening Run.
+      if (!input || typeof input.preventDefault === "function") { setRunReview(readiness); setExecutionState("idle"); return; }
       if (!readiness.can_attempt_run) throw new Error("The saved workflow is not ready: check publication, validation, supported semantics and ERP connection in the chat workspace.");
-      const execution = await workflowService.run(workflow.id, {});
+      const mode = readiness.operation_job_admission === "operation-job/v1" ? "async-operation" : readiness.read_job_admission === "read-job-v1" ? "async-read" : null;
+      if (!mode) throw new Error("Queued execution is unavailable. Check the saved workflow's execution profile.");
+      const execution = await workflowService.run(workflow.id, input, { mode, idempotencyKey: crypto.randomUUID() });
+      if (!execution?.id) throw new Error("The run receipt was not confirmed. Check Execution History before another run.");
+      setRunReview(null);
+      if (!["DONE", "FAILED", "CANCELLED"].includes(execution.status)) {
+        setExecutionState("idle"); navigate(`/executions/${encodeURIComponent(execution.id)}`); return execution;
+      }
       const timeline = await executionService.getTimeline(execution.id);
 /*******************************************************************************
  * Function: statusByNode
@@ -295,6 +308,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
       setExecutionResult({ execution, timeline });
       setShowResultPanel(true);
       notify(`Execution ${execution.id} finished with status ${execution.status}.`, succeeded ? "success" : "warning");
+      return execution;
     } catch (error) {
       setExecutionState("error");
       const details = error?.response ? apiErrorDetails(error, "Workflow execution failed.") : { message: error.message || "Workflow execution failed.", meta: null };
@@ -312,7 +326,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
     } finally {
       setIsExecuting(false);
     }
-  }, [isExecuting, nodes.length, notify, workflow, workflowYAML]);
+  }, [isExecuting, nodes.length, notify, workflow, workflowYAML, navigate]);
 
 /*******************************************************************************
  * Function: handleDeploy
@@ -419,6 +433,7 @@ function WorkflowBuilderSurface({ readOnly = false, initialState = null, embedde
           onClose={() => setShowResultPanel(false)}
         />
       ) : null}
+      <WorkflowRunDialog open={Boolean(runReview)} workflowId={workflow.id} initialRecord={runReview} onClose={() => setRunReview(null)} onRun={input => executeWorkflow(input)} disabled={isExecuting} />
     </div>
   );
 }

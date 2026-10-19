@@ -92,15 +92,19 @@ export function safeMcpResult(value: unknown, outputSchema?: Record<string, unkn
 
 /** The same declared data path is used by runtime, compiler and canvas hints. */
 export function reviewedReadOutputKey(tool: ToolDefinition): "jsonContent" | "structuredContent" {
-  return tool.is_read_only && tool.bridge_contract?.selector === "digest-pinned-alias" && tool.bridge_contract.output_schema
+  return (tool.is_read_only && tool.bridge_contract?.selector === "digest-pinned-alias" || tool.bridge_contract?.selector === "digest-pinned-mcp-operation-alias") && tool.bridge_contract?.output_schema
     ? "jsonContent" : "structuredContent";
 }
 
 /** Use the same reviewed read profile at dispatch, checkpoints and simulation.
  * Merely receiving text or a remote hint never enables this compatibility. */
 export function safeMcpToolResult(value: unknown, tool?: ToolDefinition): Record<string, unknown> {
-  return safeMcpResult(value, tool?.bridge_contract?.output_schema,
-    { allowReadJsonText: tool?.is_read_only === true && tool.bridge_contract?.selector === "digest-pinned-alias" });
+  const generic = tool?.bridge_contract?.selector === "digest-pinned-mcp-operation-alias" && tool.operation_contract?.confirmation.source === "mcp-envelope";
+  const result = safeMcpResult(value, tool?.bridge_contract?.output_schema,
+    { allowReadJsonText: generic || tool?.is_read_only === true && tool.bridge_contract?.selector === "digest-pinned-alias" });
+  // Mint transport acknowledgement only after the real MCP envelope and its
+  // declared output schema validate. This is not proof of a business outcome.
+  return generic ? { ...result, acknowledged: result.isError !== true } : result;
 }
 
 /** Receipt and model context are separate: never feed binary data or resource

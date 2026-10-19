@@ -13,6 +13,7 @@ import { resolve } from "node:path";
 import jwt from "jsonwebtoken";
 import { createErpbridgeMcpSession } from "../src/tools/erpbridge-mcp-client.js";
 import { executionTransaction } from "../src/repository/execution-transaction.js";
+import { withToolAccess } from "../src/governance/tool-access.js";
 import { operationReadbackJobSchema } from "../src/runner/operation-readback-state.js";
 
 const cleanup: (() => unknown)[] = [];
@@ -58,6 +59,17 @@ test("parallel users dispatch with their own tokens, never the catalog token", a
   expect(f.calls.map(c => c.token).sort()).toEqual(["ALICE-PRIVATE-ERP-TOKEN", "BOB-PRIVATE-ERP-TOKEN"]);
   expect(f.adapters.every(a => a.close.mock.calls.length === 1)).toBe(true);
 });
+
+test("shared mode binds the configured server credential to each real active role without exposing it", async () => withToolAccess("all-authenticated", async () => {
+  const f = await fixture(); f.config.erpbridgeAdminEnvironmentAccess = true;
+  const alice = await f.binding(), bob = await f.binding("bob");
+  expect(alice.actorId).toBe("alice"); expect(bob.actorId).toBe("bob");
+  expect(alice.environmentSecret?.[f.id]).not.toBe(bob.environmentSecret?.[f.id]);
+  expect(JSON.stringify(alice)).not.toContain(f.config.erpbridgeMcpToken);
+  await f.credentials.scope("alice", alice, () => f.call());
+  expect(f.calls[0]!.token).toBe(f.config.erpbridgeMcpToken);
+  await expect(f.credentials.scope("bob", alice, () => f.call("bob"))).rejects.toThrow(/original user/);
+}));
 test("missing token cannot fall back to environment or another actor", async () => {
   const f = await fixture(); await f.credentials.save("alice", f.id, { baseRevision: 0, token: "ALICE-PRIVATE-ERP-TOKEN" });
   await expect(f.credentials.scope("bob", await f.binding("bob"), () => f.call("bob"))).rejects.toThrow(/own ERPBridge token/);

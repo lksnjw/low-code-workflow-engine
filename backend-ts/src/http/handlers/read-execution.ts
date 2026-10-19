@@ -111,6 +111,6 @@ export async function runVerifiedRead(workflow: Workflow, input: Record<string, 
     ? await completeCheckpointedCollectionRead(services, initial, input, token, compilation.plan, bindingKey!, request.signal)
     : await completeCheckpointedRead(services, initial, input, token, request.signal, undefined, compilation.plan); }
   catch { return reply.status(503).send(fail("Execution stopped because a checkpoint could not be confirmed. Inspect recovery state; do not automatically retry.", { executionId, code: "CHECKPOINT_NOT_COMMITTED", traceId })); }
-  if (["FAILED", "RECOVERY_REQUIRED"].includes(execution.status)) return reply.status(422).send(fail("Read workflow stopped; inspect recorded node outcomes before starting another run", { executionId, status: execution.status, traceId }));
+  if (["FAILED", "RECOVERY_REQUIRED"].includes(execution.status)) return reply.status(422).send(fail(typeof execution.failure?.reason === "string" ? execution.failure.reason : "Read workflow stopped; inspect recorded node outcomes before starting another run", { executionId, status: execution.status, failure: execution.failure, traceId }));
   return reply.send(ok(publicExecution(execution), execution.status === "CANCELLED" ? "Read workflow cancelled at a tool boundary" : "Published read workflow completed", { traceId, executionProfile: profile }));
 }

@@ -1,0 +1,291 @@
+{
+  "startedAt": "2026-10-19T14:13:26.589Z",
+  "status": "PASSED",
+  "erpWrites": 0,
+  "pages": [
+    {
+      "offset": 0,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 10,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 20,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 30,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 40,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 50,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 60,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 70,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 80,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 90,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 100,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 110,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 120,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 130,
+      "admitted": 10,
+      "unsupported": []
+    },
+    {
+      "offset": 140,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 141,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 142,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 143,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 144,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 145,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 146,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 147,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 148,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 149,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 150,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 151,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 152,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 153,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 154,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 155,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 156,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 157,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 158,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 159,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 160,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 161,
+      "admitted": 1,
+      "unsupported": []
+    },
+    {
+      "offset": 162,
+      "admitted": 1,
+      "unsupported": []
+    }
+  ],
+  "result": {
+    "catalogCount": 163,
+    "admittedCount": 163,
+    "tools": [
+      {
+        "name": "list_timesheets",
+        "state": "CURRENT"
+      },
+      {
+        "name": "list_uoms",
+        "state": "CURRENT"
+      },
+      {
+        "name": "list_warehouses",
+        "state": "CURRENT"
+      },
+      {
+        "name": "list_work_orders",
+        "state": "CURRENT"
+      },
+      {
+        "name": "pipeline-library-discover",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "pipeline-library-resolve",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "pipeline-library-search",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "rag-policy-actions",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "rag-policy-assist",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "rag-policy-evaluate",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "remove_assignment",
+        "state": "CURRENT"
+      },
+      {
+        "name": "reopen_assignment",
+        "state": "CURRENT"
+      },
+      {
+        "name": "resend-email-get",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "resend-email-schedule",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "resend-email-send",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "resend-email-send-with-attachment",
+        "state": "AVAILABLE"
+      },
+      {
+        "name": "run_report",
+        "state": "CURRENT"
+      },
+      {
+        "name": "search_assignable_users",
+        "state": "CURRENT"
+      },
+      {
+        "name": "search_link",
+        "state": "CURRENT"
+      },
+      {
+        "name": "search_records",
+        "state": "CURRENT"
+      },
+      {
+        "name": "submit_document",
+        "state": "CURRENT"
+      },
+      {
+        "name": "update_document",
+        "state": "CURRENT"
+      },
+      {
+        "name": "update_item",
+        "state": "CURRENT"
+      }
+    ],
+    "unsupported": []
+  }
+}

@@ -79,7 +79,8 @@ export async function handleFunctionHttp(input: FunctionComposition, request: Fu
       return { ...result, headers: Object.fromEntries(Object.entries(result.headers).filter(([name]) => !hopHeaders.has(name.toLowerCase()))) };
     }
     const documentServiceRequest = /^\/api\/(?:pipeline(?:\/|$)|chat\/sessions\/[^/?]+\/attachments(?:\/|\?|$)|settings\/rag-policy(?:\/|\?|$))/.test(request.url);
-    return await withFunctionRuntime({ ...input, signal: request.signal, ...(isAsyncChatAdmission(request)?{runtimePurpose:"chat-admission" as const}: documentServiceRequest ? { runtimePurpose: "document-services" as const } : {}) }, async ({ app, services }) => {
+    const authenticationOnly = request.method === "POST" && /^\/api\/auth\/(?:login|logout|register|refresh)$/.test(request.url);
+    return await withFunctionRuntime({ ...input, signal: request.signal, ...(isAsyncChatAdmission(request)?{runtimePurpose:"chat-admission" as const}: documentServiceRequest ? { runtimePurpose: "document-services" as const } : authenticationOnly ? { runtimePurpose: "authentication" as const } : {}) }, async ({ app, services }) => {
       invocationEntered = true;
       const result = await app.inject({ method: request.method as "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS", url: request.url, headers,
         ...(payload?.length ? { payload } : {}), ...(request.ip ? { remoteAddress: request.ip } : {}) });

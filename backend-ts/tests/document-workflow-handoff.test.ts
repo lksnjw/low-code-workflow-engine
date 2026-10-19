@@ -84,11 +84,38 @@ test("stale or unowned reviewed-document handoffs cannot reach workflow drafting
   expect(s.synthesize).not.toHaveBeenCalled(); expect(isolated.read).not.toHaveBeenCalled();
 });
 
-test("reviewed document workflow context preserves snapshot and scheduling limits", async () => {
+test("reviewed forms become per-run inputs without forcing another publication for new files", async () => {
   const s = await setup();
   const context = await reviewedDocumentChatContext(s.services, s.user, "chat", s.documentContext, async () => isolated.read());
-  expect(context).toContain("not a live file watcher"); expect(context).toContain("new workflow revision");
+  expect(context).toContain("not a live file watcher"); expect(context).toContain("do not need a new workflow revision or publication");
+  expect(context).toContain("trigger.config.inputSchema"); expect(context).toContain("{{input.field}}");
+  expect(context).not.toContain("as reviewed literal inputs"); expect(context).toContain("fresh exact human runtime approval");
   expect(context).toContain("cadence, time, timezone and execution identity"); expect(context).toContain("Do not invent a cron tool");
+});
+
+test("multiple reviewed source versions are all checked and kept in the builder context", async () => {
+  const s = await setup();
+  vi.mocked(fetch).mockImplementation(async url => Response.json({ session_id: "chat", status: "READY", document_id: String(url).includes("upload-two") ? "doc-two" : "doc", version: 2 }));
+  const read = vi.fn(async (_name, args) => ({ structuredContent: { document_id: args.document_id, upload_id: args.document_id === "doc-two" ? "upload-two" : "upload", version: 2,
+    form_rows: [{ customer_name: args.document_id === "doc-two" ? "Customer PDF" : "Customer Image" }] } }));
+  const context = await reviewedDocumentChatContext(s.services, s.user, "chat", { purpose: "erp_record_proposal", documents: [s.documentContext, { uploadId: "upload-two", documentId: "doc-two", version: 2 }].map(({ uploadId, documentId, version }) => ({ uploadId, documentId, version })) }, read);
+  expect(read).toHaveBeenCalledTimes(2); expect(context).toContain("Customer PDF"); expect(context).toContain("Customer Image");
+  expect(context).toContain("same published workflow and tools"); expect(s.queryWithTools).not.toHaveBeenCalled();
+});
+
+test("one stale source blocks the entire source set before document resolution", async () => {
+  const s = await setup(), read = vi.fn();
+  await expect(reviewedDocumentChatContext(s.services, s.user, "chat", { purpose: "erp_record_proposal", documents: [
+    { uploadId: "upload", documentId: "doc", version: 2 }, { uploadId: "other", documentId: "other-doc", version: 3 },
+  ] }, read)).rejects.toMatchObject({ status: 409 });
+  expect(read).not.toHaveBeenCalled(); expect(s.synthesize).not.toHaveBeenCalled();
+});
+
+test("duplicate selected sources and excessive files cannot enter generation", async () => {
+  const s = await setup(), read = vi.fn(), identity = { uploadId: "upload", documentId: "doc", version: 2 };
+  for (const documents of [[identity, identity], Array.from({ length: 7 }, (_, at) => ({ ...identity, uploadId: `u-${at}`, documentId: `d-${at}` }))])
+    await expect(reviewedDocumentChatContext(s.services, s.user, "chat", { purpose: "erp_record_proposal", documents }, read)).rejects.toMatchObject({ status: 422 });
+  expect(read).not.toHaveBeenCalled();
 });
 
 test("a pre-dispatch document admission failure saves actionable guidance, not an empty workflow or generic failed chat", async () => {

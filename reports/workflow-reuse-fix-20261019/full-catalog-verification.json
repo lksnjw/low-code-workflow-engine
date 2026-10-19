@@ -1,0 +1,1378 @@
+{
+  "checkedAt": "2026-10-19T13:24:56.555Z",
+  "count": 163,
+  "inventory": [
+    {
+      "name": "cancel_document",
+      "description": "Cancel one submitted document",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "complete_assignment",
+      "description": "Complete a document assignment",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "count_records",
+      "description": "Count records of one DocType",
+      "effect": "READ"
+    },
+    {
+      "name": "create_assignment",
+      "description": "Assign a permitted business document to users",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "create_customer",
+      "description": "Create one Customer master record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "create_item",
+      "description": "Create one Item master record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "create_item_price",
+      "description": "Create one Item Price record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "create_supplier",
+      "description": "Create one Supplier master record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "delete_customer",
+      "description": "Delete one Customer record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "delete_document",
+      "description": "Delete one draft document",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "delete_item",
+      "description": "Delete one Item master record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "delete_item_price",
+      "description": "Delete one Item Price record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "delete_supplier",
+      "description": "Delete one Supplier record",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "get_account",
+      "description": "Get one Account by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_address",
+      "description": "Get one Address by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset",
+      "description": "Get one Asset by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset_capitalization",
+      "description": "Get one Asset Capitalization by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset_category",
+      "description": "Get one Asset Category by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset_depreciation_schedule",
+      "description": "Get one Asset Depreciation Schedule by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset_maintenance",
+      "description": "Get one Asset Maintenance by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset_movement",
+      "description": "Get one Asset Movement by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset_repair",
+      "description": "Get one Asset Repair by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_asset_value_adjustment",
+      "description": "Get one Asset Value Adjustment by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_assignment",
+      "description": "Get one ToDo record by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_bank_account",
+      "description": "Get one Bank Account by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_batch",
+      "description": "Get one Batch by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_bin",
+      "description": "Get one Bin by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_bom",
+      "description": "Get one BOM by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_company",
+      "description": "Get one Company by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_contact",
+      "description": "Get one Contact by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_cost_center",
+      "description": "Get one Cost Center by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_currency",
+      "description": "Get one Currency by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_current_user",
+      "description": "Identify the shared ERP integration account",
+      "effect": "READ"
+    },
+    {
+      "name": "get_customer",
+      "description": "Get one Customer by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_customer_group",
+      "description": "Get one Customer Group by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_delivery_note",
+      "description": "Get one Delivery Note by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_department",
+      "description": "Get one Department by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_designation",
+      "description": "Get one Designation by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_employee",
+      "description": "Get one Employee by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_fiscal_year",
+      "description": "Get one Fiscal Year by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_gender",
+      "description": "Get one Gender by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_gl_entry",
+      "description": "Get one GL Entry by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_item",
+      "description": "Get one Item by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_item_group",
+      "description": "Get one Item Group by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_item_price",
+      "description": "Get one Item Price by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_journal_entry",
+      "description": "Get one Journal Entry by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_lead",
+      "description": "Get one Lead by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_location",
+      "description": "Get one Location by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_mode_of_payment",
+      "description": "Get one Mode of Payment by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_opportunity",
+      "description": "Get one Opportunity by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_payment_entry",
+      "description": "Get one Payment Entry by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_payment_terms_template",
+      "description": "Get one Payment Terms Template by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_price_list",
+      "description": "Get one Price List by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_project",
+      "description": "Get one Project by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_purchase_invoice",
+      "description": "Get one Purchase Invoice by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_purchase_order",
+      "description": "Get one Purchase Order by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_purchase_receipt",
+      "description": "Get one Purchase Receipt by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_quotation",
+      "description": "Get one Quotation by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_request_for_quotation",
+      "description": "Get one Request for Quotation by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_sales_invoice",
+      "description": "Get one Sales Invoice by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_sales_order",
+      "description": "Get one Sales Order by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_sales_order_with_ai_review",
+      "description": "Read a Sales Order with an advisory Clef-flash review.",
+      "effect": "READ"
+    },
+    {
+      "name": "get_sales_taxes_and_charges_template",
+      "description": "Get one Sales Taxes and Charges Template by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_salutation",
+      "description": "Get one Salutation by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_serial_no",
+      "description": "Get one Serial No by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_stock_entry",
+      "description": "Get one Stock Entry by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_stock_ledger_entry",
+      "description": "Get one Stock Ledger Entry by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_supplier",
+      "description": "Get one Supplier by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_supplier_group",
+      "description": "Get one Supplier Group by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_supplier_quotation",
+      "description": "Get one Supplier Quotation by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_task",
+      "description": "Get one Task by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_terms_and_conditions",
+      "description": "Get one Terms and Conditions by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_territory",
+      "description": "Get one Territory by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_timesheet",
+      "description": "Get one Timesheet by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_uom",
+      "description": "Get one UOM by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_user_details",
+      "description": "Read minimal user profiles by exact ERP login",
+      "effect": "READ"
+    },
+    {
+      "name": "get_value",
+      "description": "Read selected fields of one record",
+      "effect": "READ"
+    },
+    {
+      "name": "get_warehouse",
+      "description": "Get one Warehouse by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "get_work_order",
+      "description": "Get one Work Order by exact name",
+      "effect": "READ"
+    },
+    {
+      "name": "insert_document",
+      "description": "Create one draft document of any granted DocType",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "list_accounts",
+      "description": "List Account records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_addresses",
+      "description": "List Address records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_asset_capitalizations",
+      "description": "List Asset Capitalization records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_asset_categories",
+      "description": "List Asset Category records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_asset_depreciation_schedules",
+      "description": "List Asset Depreciation Schedule records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_asset_maintenance",
+      "description": "List Asset Maintenance records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_asset_movements",
+      "description": "List Asset Movement records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_asset_repairs",
+      "description": "List Asset Repair records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_asset_value_adjustments",
+      "description": "List Asset Value Adjustment records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_assets",
+      "description": "List Asset records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_assignable_users",
+      "description": "List assignable user candidates",
+      "effect": "READ"
+    },
+    {
+      "name": "list_assignments",
+      "description": "List ToDo assignment records",
+      "effect": "READ"
+    },
+    {
+      "name": "list_bank_accounts",
+      "description": "List Bank Account records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_batches",
+      "description": "List Batch records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_bins",
+      "description": "List Bin records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_boms",
+      "description": "List BOM records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_companies",
+      "description": "List Company records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_contacts",
+      "description": "List Contact records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_cost_centers",
+      "description": "List Cost Center records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_currencies",
+      "description": "List Currency records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_customer_groups",
+      "description": "List Customer Group records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_customers",
+      "description": "List Customer records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_delivery_notes",
+      "description": "List Delivery Note records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_departments",
+      "description": "List Department records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_designations",
+      "description": "List Designation records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_document_assignments",
+      "description": "List ToDo assignments for one document",
+      "effect": "READ"
+    },
+    {
+      "name": "list_employees",
+      "description": "List Employee records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_fiscal_years",
+      "description": "List Fiscal Year records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_genders",
+      "description": "List Gender records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_gl_entries",
+      "description": "List GL Entry records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_item_groups",
+      "description": "List Item Group records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_item_prices",
+      "description": "List Item Price records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_items",
+      "description": "List Item records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_journal_entries",
+      "description": "List Journal Entry records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_leads",
+      "description": "List Lead records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_locations",
+      "description": "List Location records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_modes_of_payment",
+      "description": "List Mode of Payment records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_opportunities",
+      "description": "List Opportunity records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_payment_entries",
+      "description": "List Payment Entry records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_payment_terms_templates",
+      "description": "List Payment Terms Template records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_price_lists",
+      "description": "List Price List records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_projects",
+      "description": "List Project records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_purchase_invoices",
+      "description": "List Purchase Invoice records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_purchase_orders",
+      "description": "List Purchase Order records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_purchase_receipts",
+      "description": "List Purchase Receipt records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_quotations",
+      "description": "List Quotation records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_request_for_quotations",
+      "description": "List Request for Quotation records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_sales_invoices",
+      "description": "List Sales Invoice records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_sales_orders",
+      "description": "List Sales Order records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_sales_taxes_and_charges_templates",
+      "description": "List Sales Taxes and Charges Template records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_salutations",
+      "description": "List Salutation records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_serial_nos",
+      "description": "List Serial No records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_stock_entries",
+      "description": "List Stock Entry records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_stock_ledger_entries",
+      "description": "List Stock Ledger Entry records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_supplier_groups",
+      "description": "List Supplier Group records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_supplier_quotations",
+      "description": "List Supplier Quotation records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_suppliers",
+      "description": "List Supplier records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_tasks",
+      "description": "List Task records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_terms_and_conditions",
+      "description": "List Terms and Conditions records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_territories",
+      "description": "List Territory records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_timesheets",
+      "description": "List Timesheet records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_uoms",
+      "description": "List UOM records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_warehouses",
+      "description": "List Warehouse records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "list_work_orders",
+      "description": "List Work Order records with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "pipeline-library-discover",
+      "description": "Discover the caller's permitted document library.",
+      "effect": "READ"
+    },
+    {
+      "name": "pipeline-library-resolve",
+      "description": "Retrieve a current permitted document by identifier.",
+      "effect": "READ"
+    },
+    {
+      "name": "pipeline-library-search",
+      "description": "Search the caller's permitted documents.",
+      "effect": "READ"
+    },
+    {
+      "name": "rag-policy-actions",
+      "description": "List the action vocabulary recognized by the policy gate.",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "rag-policy-assist",
+      "description": "Plan read-only tool calls or answer from supplied results without executing tools.",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "rag-policy-evaluate",
+      "description": "Evaluate a finance request against company policy without executing it.",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "remove_assignment",
+      "description": "Cancel a document assignment without deleting the document",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "reopen_assignment",
+      "description": "Reopen a completed assignment",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "resend-email-get",
+      "description": "Retrieve one Resend email by its ID.",
+      "effect": "READ"
+    },
+    {
+      "name": "resend-email-schedule",
+      "description": "Schedule an email for future delivery through Resend after explicit user confirmation.",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "resend-email-send",
+      "description": "Send a plain-text email with optional HTML through Resend after explicit user confirmation.",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "resend-email-send-with-attachment",
+      "description": "Send an email with Base64 attachments through Resend after explicit user confirmation.",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "run_report",
+      "description": "Run one native ERPNext report",
+      "effect": "READ"
+    },
+    {
+      "name": "search_assignable_users",
+      "description": "Search users by display name",
+      "effect": "READ"
+    },
+    {
+      "name": "search_link",
+      "description": "Resolve a Link field value by partial text",
+      "effect": "READ"
+    },
+    {
+      "name": "search_records",
+      "description": "Search any granted DocType with filters and paging",
+      "effect": "READ"
+    },
+    {
+      "name": "submit_document",
+      "description": "Submit one existing draft document",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "update_document",
+      "description": "Update fields on one existing document of any granted DocType",
+      "effect": "CHANGE_OR_OTHER"
+    },
+    {
+      "name": "update_item",
+      "description": "Update one Item master record",
+      "effect": "CHANGE_OR_OTHER"
+    }
+  ],
+  "selectedSchemas": [
+    {
+      "name": "cancel_document",
+      "description": "Cancel one submitted document",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "doctype": {
+            "type": "string",
+            "description": "DocType such as Sales Invoice."
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "doctype",
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Cancel Sales Invoice SINV-0003."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not cancel a document that has later documents depending on it; cancel those first, newest to oldest."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use to reverse a posted document. Cancelling restores the stock and accounting effect of the original submission."
+        ],
+        "toolplane.resourceDigest": "67e6fd11ee164bc2b0ac2341b7559dda208cb7f7948ad138454a6980b56f3fb2",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "create_customer",
+      "description": "Create one Customer master record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "customer_group": {
+            "type": "string",
+            "enum": [
+              "Commercial",
+              "Demo Customer Group",
+              "Government",
+              "Individual",
+              "Non Profit"
+            ]
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Trading name, also the record name."
+          },
+          "customer_type": {
+            "type": "string",
+            "enum": [
+              "Company",
+              "Individual"
+            ]
+          },
+          "territory": {
+            "type": "string",
+            "enum": [
+              "Sri Lanka",
+              "Rest Of The World"
+            ]
+          }
+        },
+        "required": [
+          "customer_name",
+          "customer_group",
+          "territory"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Add Cargills Food City as a Commercial customer in Sri Lanka."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Customer Group and Territory must be existing leaf values; this tool cannot create them."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use when a human asks to add a customer, for example a retail chain or a distributor."
+        ],
+        "toolplane.resourceDigest": "dfca5caeb0ffc717d6bf45e91f7879c10718a1f20fa8dc5df9cdab8064be9034",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "create_item",
+      "description": "Create one Item master record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "is_stock_item": {
+            "type": "integer"
+          },
+          "item_code": {
+            "type": "string"
+          },
+          "item_group": {
+            "type": "string"
+          },
+          "item_name": {
+            "type": "string"
+          },
+          "stock_uom": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_stock_item",
+          "item_code",
+          "item_group",
+          "item_name",
+          "stock_uom"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Create a stock item \"DEMO-ITEM-002\" in group Products with UOM Nos."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not create items to test connectivity; use a read tool for that."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use when a human asks to add a new Item with a known code, name, group, and stock UOM."
+        ],
+        "toolplane.resourceDigest": "484533cfc491510729f44a02d1636aab88f5d0b1cc13e0625419e42596b0c059",
+        "toolplane.resourceVersion": "1.1.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "create_item_price",
+      "description": "Create one Item Price record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "string"
+          },
+          "item_code": {
+            "type": "string"
+          },
+          "price_list": {
+            "type": "string",
+            "enum": [
+              "Standard Selling",
+              "Standard Buying"
+            ]
+          },
+          "price_list_rate": {
+            "type": "number",
+            "description": "Rate in the price list currency (LKR)."
+          },
+          "supplier": {
+            "type": "string"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "valid_from": {
+            "type": "string",
+            "description": "Date in YYYY-MM-DD form."
+          }
+        },
+        "required": [
+          "item_code",
+          "price_list",
+          "price_list_rate"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Set Standard Selling to 850 for FG-DET-1KG."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not use to change a rate; delete the price and create a new one. One price per item, price list and UOM."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use to give an existing item a selling or buying rate on a price list. Prices are what makes item lists and reports look real."
+        ],
+        "toolplane.resourceDigest": "0f67762ca35fa534dbf20d7c4111fb876f0553ec801ba5ccedde9aa953e64d08",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "delete_customer",
+      "description": "Delete one Customer record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact Customer record name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Delete the Customer named \"<name>\"."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not delete a record that carries transactions."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use only for a Customer record created by mistake, on explicit instruction."
+        ],
+        "toolplane.resourceDigest": "d876839c1a260970aaddf6dbabbd08b95a07298b4f6b9f578aef1a988640ac30",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "delete_document",
+      "description": "Delete one draft document",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "doctype": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "doctype",
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Delete the draft Sales Order SAL-ORD-0004."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not use on a submitted document; cancel it first."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use to remove a draft created by mistake. Drafts carry no accounting or stock effect."
+        ],
+        "toolplane.resourceDigest": "874c470d90fe503ee151999c63a63d1df0146bec7160247d87ab6e0b97d94d07",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "delete_item",
+      "description": "Delete one Item master record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "properties": {
+          "data": {
+            "enum": [
+              "ok"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Delete the disposable Item \"DEMO-ITEM-002\"."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not delete items that carry transactions."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use only for a disposable test Item, on explicit instruction."
+        ],
+        "toolplane.resourceDigest": "450e1f8f213763f6d82bc23e460fcd1aaf4a6ba13ce7f51439f5d4a12c8f560e",
+        "toolplane.resourceVersion": "1.1.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "delete_item_price",
+      "description": "Delete one Item Price record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact Item Price record name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Delete the Item Price named \"<name>\"."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not delete a record that carries transactions."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use only for a Item Price record created by mistake, on explicit instruction."
+        ],
+        "toolplane.resourceDigest": "28bdaf493fe82ffb2391552a9b8bf71e202ab1e2d3eb1759639cb7ba91299d2a",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "delete_supplier",
+      "description": "Delete one Supplier record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact Supplier record name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Delete the Supplier named \"<name>\"."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not delete a record that carries transactions."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use only for a Supplier record created by mistake, on explicit instruction."
+        ],
+        "toolplane.resourceDigest": "a5ffcfc70ddb05556085313165600010f45311aebcc1cdb8cbaad6278b090791",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "update_document",
+      "description": "Update fields on one existing document of any granted DocType",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "doctype": {
+            "type": "string",
+            "description": "DocType such as Customer."
+          },
+          "fieldname": {
+            "type": "string",
+            "description": "A field name, or a JSON object of field names to values, for example {\"customer_group\":\"Commercial\"}."
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact document name."
+          },
+          "value": {
+            "type": "string",
+            "description": "Value when fieldname is a single field. Not used for the JSON object form."
+          }
+        },
+        "required": [
+          "doctype",
+          "name",
+          "fieldname"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Set customer_group to Commercial on Customer Cargills Food City."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not use to change a submitted document's amounts; cancel and amend instead. Do not use to rename a record."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use to change field values on an existing record, for example a Customer group, an Item Price rate, or the status fields of a draft order or account."
+        ],
+        "toolplane.resourceDigest": "fee099c5e4e247bbb17862d04ccd349c9c5855196452a0952110ba52f7612ecc",
+        "toolplane.resourceVersion": "1.0.0",
+        "toolplane.serving": true
+      }
+    },
+    {
+      "name": "update_item",
+      "description": "Update one Item master record",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "is_stock_item": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "item_group": {
+            "type": "string"
+          },
+          "item_name": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stock_uom": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "_meta": {
+        "io.erpbridge/examples": [
+          "Rename Item DEMO-ITEM-001 to \"Demo Item (renamed)\"."
+        ],
+        "io.erpbridge/whenNotToUse": [
+          "Do not update an item without an explicit human instruction."
+        ],
+        "io.erpbridge/whenToUse": [
+          "Use to change the name, group, stock UOM, stock flag, or description of an existing Item."
+        ],
+        "toolplane.resourceDigest": "7a49d2ff340b3a8e26882c42772ff977d46fa7ca202faaa20c1c8484de9c999c",
+        "toolplane.resourceVersion": "1.1.0",
+        "toolplane.serving": true
+      }
+    }
+  ]
+}

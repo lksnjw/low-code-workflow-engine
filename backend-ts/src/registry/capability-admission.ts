@@ -63,7 +63,7 @@ function supportedReadErrorReview(tool: ToolDefinition) {
   catch { throw new HandlerFailure(422, "Business error mappings require an explicit low-risk ERP read without effects", { code: "ADMISSION_REVIEW_UNSUPPORTED" }); }
 }
 export function supportedRead(tool: ToolDefinition) {
-  if (tool.bridge_contract?.selector === "digest-pinned-operation-alias" || tool.operation_contract?.receipt_profile)
+  if (["digest-pinned-operation-alias", "digest-pinned-mcp-operation-alias"].includes(tool.bridge_contract?.selector ?? "") || tool.operation_contract?.receipt_profile)
     throw new HandlerFailure(422, "An ERPNext operation profile cannot be admitted as a read", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
   supportedReadErrorReview(tool);
   if (!tool.tool_id.trim() || !tool.name.trim() || !tool.bridge_contract || !tool.allowed_roles.length ||
@@ -84,9 +84,17 @@ export function supportedOperation(tool: ToolDefinition): void {
   supportedReadErrorReview(tool);
   const contract = tool.operation_contract, output = tool.bridge_contract?.output_schema;
   if (!tool.tool_id.trim() || !tool.name.trim() || !tool.bridge_contract || !tool.allowed_roles.length || tool.is_read_only || !tool.side_effects.length ||
-      !["low", "medium"].includes(tool.risk_level.toLowerCase()) || !contract || !output || output.type !== "object" ||
-      validateToolSchemaProfile(tool.input_schema).length || validateToolSchemaProfile(output).length || /^system\..*_test$/i.test(tool.name))
+      !["low", "medium"].includes(tool.risk_level.toLowerCase()) || !contract ||
+      (contract.confirmation.source !== "mcp-envelope" && (!output || output.type !== "object")) ||
+      validateToolSchemaProfile(tool.input_schema).length || (output && validateToolSchemaProfile(output).length) || /^system\..*_test$/i.test(tool.name))
     throw new HandlerFailure(422, "Operations require an explicit reviewed effect/result contract, supported schemas and low/medium risk; retry is never", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
+  if (contract.confirmation.source === "mcp-envelope") {
+    if (tool.bridge_contract.selector !== "digest-pinned-mcp-operation-alias" || contract.receipt_profile || contract.readback ||
+        canonicalJSONBytes(contract.confirmation).toString() !== canonicalJSONBytes({ source: "mcp-envelope", path: ["acknowledged"], expected: true, meaning: "operation-accepted" }).toString())
+      throw new HandlerFailure(422, "Generic MCP operations require exact acknowledged-return evidence, independent approval and no replay", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
+    return;
+  }
+  if (tool.bridge_contract.selector === "digest-pinned-mcp-operation-alias") throw new HandlerFailure(422, "Generic MCP operations cannot claim business confirmation", { code: "ADMISSION_REVIEW_UNSUPPORTED" });
   let schema: unknown = erpnextReceiptSchema(tool) ?? output;
   for (const part of contract.confirmation.path) schema = (schema as { properties?: Record<string, unknown> } | undefined)?.properties?.[part];
   const expectedType = typeof contract.confirmation.expected;
@@ -117,7 +125,12 @@ export async function observeCapabilities(input: { repository: Repository; regis
   await repository.readAuthoritative(state => administrator(state, user));
   const connectionBinding = activeBinding(session), generation = session!.discoveryGeneration ?? 0;
   const connectionId = input.connectionId ?? DEFAULT_BRIDGE_CONNECTION;
-  const registryHash = registries.hash(), definitions = registries.snapshot().tools.filter(tool => !tool.connection_id || tool.connection_id === connectionId);
+  // Unidentified legacy release rows are not reviewable capabilities. Do not
+  // fabricate IDs for them or let them block review of real bridge contracts.
+  // Connection-owned rows still go through the strict identity checks below,
+  // as do duplicate nonblank IDs; neither can be silently ignored or admitted.
+  const registryHash = registries.hash(), definitions = registries.snapshot().tools.filter(tool =>
+    (!tool.connection_id || tool.connection_id === connectionId) && (tool.connection_id || tool.tool_id.trim()));
   const remote = await session!.listTools(input.signal);
   if (remote.length > 2048 || canonicalJSONBytes(remote).length > 2000000 || remote.some(tool => typeof tool.name !== "string" || !tool.name.trim() || tool.name.length > 256) || new Set(remote.map(tool => tool.name)).size !== remote.length ||
       registryHash !== registries.hash() || generation !== (session!.discoveryGeneration ?? 0) || activeBinding(session) !== connectionBinding)

@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { createHash } from "node:crypto";
 import type { WorkflowBlueprint } from "../models/schemas.js";
 import { effectiveStepKind } from "../models/schemas.js";
@@ -103,7 +104,7 @@ function buildActionBindingsIR(blueprint: WorkflowBlueprint, tools: readonly Too
     if (kind !== "tool" && !(operations && (kind === "analysis" || kind === "agent")) || Object.keys(step).some(key => !(kind === "analysis" ? analysisSupported : kind === "agent" ? agentSupported : supported).has(key))) issues.push(`Step ${step.id} uses unsupported execution semantics`);
     const matches = kind === "tool" ? tools.filter(tool => tool.name === step.action || tool.mcp_tool_name === step.action) : [], tool = matches.length === 1 ? matches[0] : undefined;
     if (kind === "tool") {
-      if (!tool || !tool.tool_id || !tool.mcp_tool_name || (!tool.is_read_only && !operations) || !tool.allowed_roles.includes(role)) issues.push(`Step ${step.id} requires a unique role-granted registered ${operations ? "operation" : "read"} tool`);
+      if (!tool || !tool.tool_id || !tool.mcp_tool_name || (!tool.is_read_only && !operations) || !toolRoleAllowed(tool.allowed_roles, role)) issues.push(`Step ${step.id} requires a unique role-granted registered ${operations ? "operation" : "read"} tool`);
       else issues.push(...validateToolSchemaProfile(tool.input_schema));
     }
     const reference = (expression: string): ReadReference => {
@@ -183,7 +184,7 @@ function buildActionBindingsIR(blueprint: WorkflowBlueprint, tools: readonly Too
       const capabilities: OperationAgentCapability[] = [];
       for (const action of allowedActions.slice(0, 8)) {
         const matches = tools.filter(tool => tool.name === action || tool.mcp_tool_name === action), allowed = matches.length === 1 ? matches[0] : undefined;
-        if (!allowed || !allowed.tool_id || !allowed.mcp_tool_name || !allowed.is_read_only || !allowed.allowed_roles.includes(role)) {
+        if (!allowed || !allowed.tool_id || !allowed.mcp_tool_name || !allowed.is_read_only || !toolRoleAllowed(allowed.allowed_roles, role)) {
           issues.push(`Step ${step.id} allowed action ${action} must be one unique role-granted read-only tool`); continue;
         }
         issues.push(...validateToolSchemaProfile(allowed.input_schema));

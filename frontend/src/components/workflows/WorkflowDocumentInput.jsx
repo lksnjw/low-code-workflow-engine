@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { chatService } from "../../services/chat.service";
 import { documentWorkspaceService as documents } from "../../services/document-workspace.service";
 import Button from "../shared/ui/Button";
-import { documentInputInstruction, documentInputProposal, mergeDocumentInputProposals } from "./workflowDocumentMapping";
+import { documentInputInstruction, documentInputProposal, documentRecordProposals, mergeDocumentInputProposals } from "./workflowDocumentMapping";
 import { documentNotice } from "../../utils/documentPresentation";
 
 /** Private source preparation only. No ERP call, indexing confirmation or run
@@ -11,6 +11,7 @@ export default function WorkflowDocumentInput({ schema, workflowName, disabled, 
   const [expanded, setExpanded] = useState(false), [files, setFiles] = useState([]), [models, setModels] = useState(null), [model, setModel] = useState("");
   const [session, setSession] = useState(null), [results, setResults] = useState([]), [receipts, setReceipts] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [sameRecord, setSameRecord] = useState(false), [readingIndex, setReadingIndex] = useState(0);
+  const [separateRecords, setSeparateRecords] = useState(false), [selectedRecord, setSelectedRecord] = useState("");
   const epoch = useRef(0), pending = useRef(false), uploadKeys = useRef([]), preparedCache = useRef([]), sessionKey = useRef(crypto.randomUUID());
   useEffect(() => () => { epoch.current++; }, []);
   useEffect(() => {
@@ -20,7 +21,7 @@ export default function WorkflowDocumentInput({ schema, workflowName, disabled, 
       .catch(() => { if (active) setError("Document reading is unavailable. You can still enter run inputs manually."); });
     return () => { active = false; };
   }, [expanded]);
-  const clear = () => { epoch.current++; setFiles([]); setResults([]); setReceipts([]); setSameRecord(false); preparedCache.current = []; setError(""); onReset(); onGate({ selected: false, ready: false }); };
+  const clear = () => { epoch.current++; setFiles([]); setResults([]); setReceipts([]); setSameRecord(false); setSeparateRecords(false); setSelectedRecord(""); preparedCache.current = []; setError(""); onReset(); onGate({ selected: false, ready: false }); };
   const choose = event => {
     const chosen = Array.from(event.target.files || []);
     if (!chosen.length) return;
@@ -67,12 +68,17 @@ export default function WorkflowDocumentInput({ schema, workflowName, disabled, 
     catch (cause) { if (current === epoch.current) setError(cause.message); }
     finally { pending.current = false; if (current === epoch.current) setBusy(false); }
   };
-  const proposal = complete ? files.length === 1 ? { ...documentInputProposal(schema, results[0].attachment), blocked: !!results[0].attachment.rows?.length } : mergeDocumentInputProposals(schema, results.map(result => result.attachment)) : null;
+  const hasRows = complete && results.some(result => result.attachment.rows?.length);
+  const chooseRecord = hasRows || separateRecords;
+  const records = complete && chooseRecord ? documentRecordProposals(schema, results.map((result, index) => ({ ...result.attachment, filename: files[index].name }))) : [];
+  const proposal = complete ? chooseRecord
+    ? records[Number(selectedRecord)] && selectedRecord !== "" ? records[Number(selectedRecord)] : { values: {}, warnings: [], blocked: true }
+    : files.length === 1 ? documentInputProposal(schema, results[0].attachment) : mergeDocumentInputProposals(schema, results.map(result => result.attachment)) : null;
   return <section aria-label="Document run inputs" className="space-y-3 border-y border-gray-200 py-4 text-sm dark:border-gray-700">
     {!expanded ? <Button variant="secondary" disabled={disabled} onClick={() => setExpanded(true)}>Fill inputs from a document</Button> : <>
       <div><h3 className="font-semibold">Use a new document for this run</h3><p className="mt-1 text-xs text-gray-500">Upload → review fields → run. A new file clears earlier run inputs. No ERP record is changed by uploading.</p></div>
       <label className="block">Documents or images<input aria-label="Workflow input document" key={files.length ? "chosen" : "empty"} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.txt,.csv,.tsv,.json,.docx,.xlsx" disabled={disabled || busy} onChange={choose} className="mt-2 block w-full text-xs" /></label>
-      <p className="text-xs text-gray-500">Up to six files, 16 MiB total. Multiple images must be pages or supporting documents for the same record. Separate customers or items need a batch workflow.</p>
+      <p className="text-xs text-gray-500">Up to six files, 16 MiB total. Combine supporting pages for one record, or select one customer or item at a time from separate forms. Reuse this saved workflow for each record.</p>
       {files.map((file, index) => <p key={index} className="break-all text-xs">Selected: {file.name}{files.length > 1 ? ` · ${results[index] ? "read" : "pending"}` : ""}</p>)}
       <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={disabled || busy || !files.length || complete || !models?.configured} onClick={prepare}>{busy ? "Preparing document…" : files.length > 1 ? "Read documents" : "Read document"}</Button>{files.length > 0 && <Button variant="secondary" disabled={disabled || busy} onClick={clear}>Remove document</Button>}</div>
       {busy && files.length > 1 && <p role="status" className="text-xs">Reading file {readingIndex} of {files.length}. Every file must finish before inputs can be used.</p>}
@@ -83,9 +89,11 @@ export default function WorkflowDocumentInput({ schema, workflowName, disabled, 
         {results.map((result, index) => <div key={index} className="space-y-1"><p className="text-xs font-semibold">{files[index].name}</p><details><summary className="cursor-pointer text-xs text-gray-500">Document reading notes</summary><p className="mt-2 text-xs leading-5 text-gray-500">{result.attachment.summary}</p></details>
           <p role="status" className="text-xs">{receipts[index]?.extraction_state === "SUCCEEDED" ? "OCR completed." : receipts[index]?.status === "EXTRACTING" ? "OCR is still processing. Review the provisional fields against the original." : "OCR completion is not confirmed."} {result.pipelineStorageConfirmed ? "Source uploaded privately; not indexed by this step." : "Pipeline storage is not confirmed; keep the original file."}</p>
           {!!result.attachment.warnings?.length && <details><summary className="cursor-pointer text-xs text-amber-700 dark:text-amber-300">Initial reading notes</summary><p className="mt-1 text-xs text-gray-500">Recorded during initial reading. The current OCR status is shown above.</p>{result.attachment.warnings.map((warning, at) => <p className="text-xs text-amber-700 dark:text-amber-300" key={at}>{documentNotice(warning, result.attachment.model || model)}</p>)}</details>}</div>)}
+        {files.length > 1 && !hasRows && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={separateRecords} disabled={disabled || busy} onChange={event => { setSeparateRecords(event.target.checked); setSelectedRecord(""); setSameRecord(false); onGate({ selected: true, ready: false }); onReset(); }} />These files contain separate customers or records.</label>}
+        {chooseRecord && <div className="space-y-2" aria-label="Choose document record"><p className="text-xs">{records.length} extracted record(s). Choose the record for this run. Every other record stays in the source; it will need its own run and approval.</p><label className="block text-xs">Record for this run<select aria-label="Record for this run" value={selectedRecord} disabled={disabled || busy} className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent p-2 dark:border-gray-600" onChange={event => { setSelectedRecord(event.target.value); onReset(); onGate({ selected: true, ready: false }); }}><option value="">Choose a record…</option>{records.map((record, index) => <option key={index} value={String(index)}>{record.source} · Row {record.row} · {String(record.values.customer_name || record.values.item_name || record.values.item_code || `Record ${index + 1}`).slice(0, 120)}</option>)}</select></label></div>}
         {proposal.warnings.map((warning, index) => <p className="text-xs text-amber-700 dark:text-amber-300" key={index}>{warning}</p>)}
-        {files.length > 1 && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={sameRecord} disabled={disabled || busy} onChange={event => { setSameRecord(event.target.checked); onGate({ selected: true, ready: false }); onReset(); }} />These files all belong to the same record.</label>}
-        <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={disabled || busy || proposal.blocked || files.length > 1 && !sameRecord} onClick={() => { onPrepared(proposal.values); onGate({ selected: true, ready: true }); }}>Use extracted values</Button>{results.some(result => result.attachment.uploadId) && <Button variant="secondary" disabled={disabled || busy} onClick={refresh}>Check OCR status</Button>}</div>
+        {files.length > 1 && !chooseRecord && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={sameRecord} disabled={disabled || busy} onChange={event => { setSameRecord(event.target.checked); onGate({ selected: true, ready: false }); onReset(); }} />These files all belong to the same record.</label>}
+        <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={disabled || busy || proposal.blocked || files.length > 1 && !chooseRecord && !sameRecord} onClick={() => { onPrepared(proposal.values); onGate({ selected: true, ready: true }); }}>Use extracted values</Button>{results.some(result => result.attachment.uploadId) && <Button variant="secondary" disabled={disabled || busy} onClick={refresh}>Check OCR status</Button>}</div>
         <p className="text-xs text-gray-500">Only exact declared fields are copied. Review and correct the inputs below; missing mandatory fields still block Run.</p>
       </div>}
       {session && <a href={`/chat/${encodeURIComponent(session.id)}`} target="_blank" rel="noopener noreferrer" className="inline-block text-xs font-semibold text-primary underline">Open source conversation</a>}

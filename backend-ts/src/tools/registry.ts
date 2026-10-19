@@ -1,3 +1,4 @@
+import { allRolesToolAccess } from "../governance/tool-access.js";
 import type { DispatchCapability } from "../validator/registry-validator.js";
 
 export type DispatchIdentity = Readonly<{
@@ -22,7 +23,7 @@ export function createDispatchIdentity(
   return Object.freeze({
     userId,
     localRole,
-    erpbridgeRole: roleMap[localRole]?.trim() || null,
+    erpbridgeRole: (allRolesToolAccess() ? roleMap["Platform Admin"] ?? roleMap[localRole] : roleMap[localRole])?.trim() || null,
   });
 }
 

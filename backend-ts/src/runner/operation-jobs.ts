@@ -328,7 +328,9 @@ export class OperationJobQueue {
       const run: Execution = { id, workflowId: workflow.id, workflowName: workflow.name, status: "PENDING", startedAt: now, completedAt: null, durationMs: 0,
         ...(this.services.userMcpCredentials ? { erpCredentialSecret: captureUserMcpBinding(this.services, state, user.id)! } : {}),
         startedBy: { id: user.id, name: user.name }, tokens: { input: 0, output: 0, total: 0 }, costUsd: 0, traceId,
-        workflowSnapshot: { yaml: workflow.yaml, version: workflow.publishedVersion, contentHash: compiled.plan.sourceHash, registryHash: compiled.receipt.registryHash, input,
+        // This run uses today's policy registry; the immutable compilation
+        // receipt separately retains the registry observed at publication.
+        workflowSnapshot: { yaml: workflow.yaml, version: workflow.publishedVersion, contentHash: compiled.plan.sourceHash, registryHash: this.services.registries.hash(), input,
           executionProfile: "sequential-operation-v1", operationCompilation: compiled.receipt }, readProgress: newReadProgress(this.services.repository), stepOutputs: {},
         operationSecret: { profile: "operation-job/v1", actorId: user.id, roleId: state.users[user.id]!.roleId, admittedRole: user.role, state: "QUEUED", idempotencyScope: scope, requestFingerprint: fingerprint, createdAt: now, intents: {},
           ...(analysisProvider ? { analysisProvider } : {}), ...(agentProvider ? { agentProvider } : {}) },
@@ -1115,7 +1117,7 @@ export function confirmedOperationResult(tool: ToolDefinition, output: Record<st
     if (!args) return false;
     try { assertErpnextWriteReceipt(tool, args, output.structuredContent); } catch { return false; }
   }
-  let value: unknown = output.structuredContent;
+  let value: unknown = contract.confirmation.source === "mcp-envelope" ? output : output.structuredContent;
   for (const key of contract.confirmation.path) {
     if (!value || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(value, key)) return false;
     value = (value as Record<string, unknown>)[key];

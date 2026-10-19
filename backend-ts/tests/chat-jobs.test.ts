@@ -159,12 +159,12 @@ async function nodeSetup(options: Parameters<typeof setup>[0] = {}) {
 }
 
 async function workflowEditSetup(result: unknown = { kind: "proposal", yaml: yaml.replace("description: Read", "description: Show the directory here"), summary: "Show the directory in this workspace." }) {
-  const s = await nodeSetup({ noBridge: true }); s.services.config.chatIntentRouting = "agent";
+  const s = await nodeSetup(); s.services.config.chatIntentRouting = "agent";
   const context = { workflowId: "report", baseVersion: 1, baseHash: workflowContentHash(yaml) };
   s.fetchImplementation.mockImplementation(async (_url, init) => {
     const wire = JSON.parse(String(init?.body));
     if (wire.messages[0].content.includes("prompt/intent-routing/v4")) return Response.json({ choices: [{ finish_reason: "stop", message: { content: '{"intent":"WORKFLOW_MODIFY","needsClarification":false}' } }] });
-    expect(wire.messages[0].content).toContain("prompt/workflow-modifier/v4");
+    expect(wire.messages[0].content).toContain("prompt/workflow-modifier/v5");
     const data = JSON.parse(wire.messages.at(-1).content);
     expect(data.currentYaml).toBe(yaml); expect(data.tools[0]).toHaveProperty("inputSchema");
     return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }] });
@@ -208,7 +208,7 @@ test.each(["ambiguous", "missing fields", "malformed"])("whole-workflow %s resul
 test.each(["revision", "authority"])("a whole-workflow proposal cannot survive changed %s during model inference", async change => {
   const s = await workflowEditSetup(), original = s.fetchImplementation.getMockImplementation()!;
   s.fetchImplementation.mockImplementation(async (url, init) => {
-    if (JSON.parse(String(init?.body)).messages[0].content.includes("prompt/workflow-modifier/v4")) await s.repository.mutate(state => {
+    if (JSON.parse(String(init?.body)).messages[0].content.includes("prompt/workflow-modifier/v5")) await s.repository.mutate(state => {
       if (change === "revision") { state.workflows.report!.draftVersion = 2; state.workflows.report!.yaml = yaml.replace("Read", "Another saved edit"); }
       else state.users.owner!.roleId = "role_client";
     });

@@ -1,3 +1,4 @@
+import { readFailureDiagnostic } from "./read-failure-reason.js";
 import type { HandlerServices } from "../http/handlers/common.js";
 import type { Execution } from "../repository/store.js";
 import type { ValidationToken } from "../validator/registry-validator.js";
@@ -25,6 +26,7 @@ export async function completeCheckpointedRead(services: HandlerServices, initia
     dispatchIntent: (...args) => boundary(async () => { assertDispatchBinding?.(); await checkpoints.dispatchIntent(...args); }),
   };
   let failed = false;
+  let failureDiagnostic: ReturnType<typeof readFailureDiagnostic> | undefined;
   try { await executeReadWorkflow(services, initial.startedBy.id, yaml, input, token, { traceId: initial.traceId, sessionId: initial.chatSessionId, workflowId: initial.workflowId, executionId, signal,
     assertDispatch: () => { assertDispatchBinding?.(); assertWorkerDispatch?.(); } }, hooks, compiledPlan); }
   catch (error) {
@@ -32,8 +34,9 @@ export async function completeCheckpointedRead(services: HandlerServices, initia
       await checkpointFailure(error instanceof ReadWorkerLeaseFailure || signal?.reason instanceof ReadWorkerLeaseFailure ? "READ_WORKER_LEASE_LOST" : "CHECKPOINT_NOT_COMMITTED"); throw error;
     }
     failed = !(error instanceof ReadRunCancelled);
+    if (failed) failureDiagnostic = readFailureDiagnostic(error);
   }
-  try { assertActive?.(); return await checkpoints.finish(failed); }
+  try { assertActive?.(); return await checkpoints.finish(failed, failureDiagnostic); }
   catch (error) { await checkpointFailure(error instanceof ReadWorkerLeaseFailure ? "READ_WORKER_LEASE_LOST" : "CHECKPOINT_NOT_COMMITTED"); throw error; }
 
   async function checkpointFailure(reason = "CHECKPOINT_NOT_COMMITTED"): Promise<void> {

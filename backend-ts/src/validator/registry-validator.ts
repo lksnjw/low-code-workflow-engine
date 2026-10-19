@@ -1,3 +1,4 @@
+import { allRolesToolAccess, toolRoleAllowed } from "../governance/tool-access.js";
 import {
   resolvedParameterHash,
   resolvedParameterHashBytes,
@@ -14,7 +15,7 @@ import type {
   WorkflowBlueprint,
 } from "../models/schemas.js";
 import { effectiveStepKind } from "../models/schemas.js";
-import { isErpnextWriteContract } from "../tools/erpnext-document-write.js";
+import { supportedOperation } from "../registry/capability-admission.js";
 import type { Repository } from "../repository/store.js";
 import type { DispatchIdentity } from "../tools/registry.js";
 import { definedTraceAuditMetadata, type TraceAuditMetadata } from "../trace/audit-trace.js";
@@ -614,7 +615,13 @@ export class RegistryValidator {
       // tool for that exact profile, or generalize this to arbitrary writes.
       const effectTools = workflow.steps.map(step => this.registries.findTool(step.action ?? ""))
         .filter((tool): tool is ToolDefinition => Boolean(tool && (!tool.is_read_only || (riskRank[normalize(tool.risk_level)] ?? 0) >= 3)));
-      const engineJournal = effectTools.length > 0 && effectTools.every(tool => !tool.is_read_only && normalize(tool.risk_level) === "medium" && isErpnextWriteContract(tool));
+      const engineJournal = effectTools.length > 0 && effectTools.every(tool => {
+        if (tool.is_read_only) return false;
+        // The protected compiler uses this same qualification for both exact
+        // ERPNext receipts and generic MCP acknowledgements. Both dispatch
+        // through the consumed-approval journal; neither needs a remote audit tool.
+        try { supportedOperation(tool); return true; } catch { return false; }
+      });
       if (engineJournal) result.metadata.auditMechanism = "operation-job/v1:consumed-approval-and-dispatch-journal";
       if (
         hasWriteOrRisk &&
@@ -848,6 +855,7 @@ function normalizeRole(value: string): string {
  * allowance.
  ******************************************************************************/
 function roleAllowed(role: string, allowed: string[]): boolean {
+  if (allRolesToolAccess()) return toolRoleAllowed(allowed, role);
   if (allowed.length === 0 || normalizeRole(role) === "admin") return true;
   return allowed.some((item) => normalizeRole(item) === normalizeRole(role));
 }

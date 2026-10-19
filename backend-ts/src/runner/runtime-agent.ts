@@ -11,11 +11,11 @@ import { hasReservedBridgeRole } from "../tools/erpbridge-contract.js";
 import { validateToolInput } from "../tools/tool-input-schema.js";
 import { validateValue } from "../structured-output/validate.js";
 import { validateToolArguments } from "../agent/workflow-runtime-validator.js";
-import { promptData, RUNTIME_AGENT_SYSTEM_PROMPT } from "../prompts/contracts.js";
+import { promptData, RUNTIME_AGENT_SYSTEM_PROMPT, RUNTIME_AGENT_RECOVERY_SYSTEM_PROMPT } from "../prompts/contracts.js";
 import type { ProviderRuntime } from "../providers/runtime.js";
 import type { OperationAgentCapability, OperationAgentNode } from "../workflows/compiled-read.js";
 
-export const RUNTIME_AGENT_PROMPT_VERSION = "prompt/runtime-agent/v1";
+export const RUNTIME_AGENT_PROMPT_VERSION = "prompt/runtime-agent/v2";
 
 export type RuntimeAgentFailureCode =
   | "AGENT_BUDGET_EXHAUSTED"
@@ -120,9 +120,14 @@ async function runPiRuntimeAgent(input: {
         if (seen.has(callKey)) throw new RuntimeAgentKnownFailure("AGENT_TOOL_DENIED", "Runtime agent repeated an identical tool request");
         seen.add(callKey);
         const validation = validateToolArguments(capability.action, call.arguments, tool);
-        if (validateToolInput(tool.input_schema, call.arguments).length || validation.missing.length || validation.invalid.length ||
-            hasReservedBridgeRole(tool) && Object.hasOwn(call.arguments, "role"))
-          throw new RuntimeAgentKnownFailure("AGENT_TOOL_DENIED", `Runtime agent proposed invalid arguments for ${capability.action}`);
+        if (hasReservedBridgeRole(tool) && Object.hasOwn(call.arguments, "role") || tool.bridge_contract?.trusted_input &&
+            (Object.hasOwn(call.arguments, "actor") || Object.hasOwn(call.arguments, "access_token")))
+          throw new RuntimeAgentKnownFailure("AGENT_TOOL_DENIED", "Runtime agent cannot supply backend identity or delegation");
+        if (validateToolInput(tool.input_schema, call.arguments).length || validation.missing.length || validation.invalid.length)
+          return { content: [{ type: "text", text: promptData({ source: "validation_feedback", status: "INPUT_INVALID_NOT_DISPATCHED",
+            toolName: capability.action, missing: validation.missing.filter(key => /^[A-Za-z0-9_-]{1,128}$/.test(key)),
+            instruction: "Correct arguments only from the exact offered schema and current confirmed input. No tool was dispatched. Missing facts need human review." }) }],
+            details: { status: "INPUT_INVALID_NOT_DISPATCHED" } };
         const output = await input.hooks.callTool(capability, tool, call, round, callIndex,
           combinedAgentSignal(signal, toolSignal, deadline));
         await input.hooks.afterTool(capability, call, output, round, callIndex);
@@ -184,7 +189,7 @@ async function runPiRuntimeAgent(input: {
   };
 
   const agent = new Agent({
-    initialState: { model: bridgeModel, systemPrompt: RUNTIME_AGENT_SYSTEM_PROMPT, tools: piTools },
+    initialState: { model: bridgeModel, systemPrompt: RUNTIME_AGENT_RECOVERY_SYSTEM_PROMPT, tools: piTools },
     streamFn,
     toolExecution: "sequential",
     sessionId: `${input.workflowId}:${input.executionId}`,
@@ -259,7 +264,7 @@ async function runLegacyRuntimeAgent(input: {
     const remaining = node.maxTotalTokens - totalInput - totalOutput;
     const turn = await input.runtime.queryWithTools(messages, definitions, {
       ...(node.model ? { model: node.model } : {}), maxOutputTokens: Math.min(node.maxOutputTokens, remaining), signal,
-      promptTemplateVersion: RUNTIME_AGENT_PROMPT_VERSION,
+      promptTemplateVersion: "prompt/runtime-agent/v1",
       context: { workflowId: input.workflowId, executionId: input.executionId, actor: input.actor,
         ...(input.traceId ? { traceId: input.traceId } : {}), egress: { purpose: "runtime_agent", dataClass: node.dataClass } },
     });

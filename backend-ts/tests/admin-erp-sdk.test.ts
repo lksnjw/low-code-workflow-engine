@@ -4,6 +4,7 @@ import { Repository } from "../src/repository/store.js";
 import { RegistryService } from "../src/registry/service.js";
 import { RegistryValidator } from "../src/validator/registry-validator.js";
 import { createErpbridgeMcpSession } from "../src/tools/erpbridge-mcp-client.js";
+import { withToolAccess } from "../src/governance/tool-access.js";
 const tool = { name: "create_item", inputSchema: { type: "object", properties: { item_code: { type: "string" } }, required: ["item_code"], additionalProperties: false }, annotations: { readOnlyHint: false }, _meta: { "toolplane.resourceDigest": "a".repeat(64) } };
 async function setup(enabled = true) {
  const repository = new Repository(null);
@@ -16,6 +17,19 @@ async function setup(enabled = true) {
 test("administrator dispatch is absent by default and never changes the ordinary governed client", async () => {
  const s = await setup(false); expect(s.session.executeAdministratorTool).toBeUndefined(); await s.session.close();
 });
+
+test("shared tool mode permits an active Client with exact input review, and still rejects suspension", async () => withToolAccess("all-authenticated", async () => {
+ const s = await setup();
+ try {
+  await s.repository.mutate(state => { state.users.admin!.roleId = "role_client"; });
+  const checkpoint = vi.fn(async () => { expect(s.sdk.callTool).not.toHaveBeenCalled(); });
+  await s.session.executeAdministratorTool!(tool, { item_code: "CLIENT-1" }, "admin", checkpoint);
+  expect(checkpoint).toHaveBeenCalledOnce(); expect(s.sdk.callTool).toHaveBeenCalledOnce();
+  await s.repository.mutate(state => { state.users.admin!.status = "Suspended"; });
+  await expect(s.session.executeAdministratorTool!(tool, { item_code: "CLIENT-2" }, "admin", checkpoint)).rejects.toThrow(/active tool access/);
+  expect(s.sdk.callTool).toHaveBeenCalledOnce();
+ } finally { await s.session.close(); await s.repository.close(); }
+}));
 test("administrator boundary validates before checkpoint, pins digest, and accepts actual response", async () => {
  const s = await setup(), checkpoint = vi.fn(async () => { expect(s.sdk.callTool).not.toHaveBeenCalled(); });
  expect(await s.session.executeAdministratorTool!(tool, { item_code: "QA-1" }, "admin", checkpoint)).toMatchObject({ structuredContent: { name: "QA-1" } });

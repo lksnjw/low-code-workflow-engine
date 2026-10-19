@@ -1,0 +1,967 @@
+[
+  {
+    "name": "get_sales_order_with_ai_review",
+    "description": "Read a Sales Order with an advisory Clef-flash review.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": true,
+      "properties": {
+        "ai_assessment": {
+          "additionalProperties": false,
+          "properties": {
+            "advisory_only": {
+              "const": true
+            },
+            "evaluated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "model": {
+              "const": "@cf/cloudflare/clef-flash"
+            },
+            "policy_version": {
+              "const": "order-review-v1"
+            },
+            "requires_human_review": {
+              "const": true
+            },
+            "review_priority": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "insufficient_data"
+              ]
+            },
+            "review_queue": {
+              "enum": [
+                "routine",
+                "delivery_review",
+                "billing_review",
+                "insufficient_data"
+              ]
+            },
+            "status": {
+              "enum": [
+                "assessed",
+                "insufficient_data",
+                "uncertain"
+              ]
+            }
+          },
+          "required": [
+            "model",
+            "policy_version",
+            "evaluated_at",
+            "status",
+            "review_queue",
+            "review_priority",
+            "requires_human_review",
+            "advisory_only"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Read a demo Sales Order and suggest a human review queue."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Do not approve orders or infer stock, payment, or creditworthiness.",
+        "No assessment is accepted unless the exact plugin binding is active."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Review the supplied order for delivery or billing follow-up."
+      ],
+      "toolplane.resourceDigest": "af83fd508c7110a4f39f6c7ebc466d109ce8d9e2eff0d51937526fcd83a00380",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "get_user_details",
+    "description": "Read minimal user profiles by exact ERP login",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "users": {
+          "type": "string",
+          "description": "JSON-encoded array of exact ERP User login IDs."
+        }
+      },
+      "required": [
+        "users"
+      ]
+    },
+    "outputSchema": {
+      "properties": {
+        "message": {
+          "additionalProperties": {
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "fullname": {
+                "type": "string"
+              },
+              "image": {
+                "description": "Profile image URL or null."
+              },
+              "name": {
+                "type": "string"
+              },
+              "time_zone": {
+                "description": "Time zone or null."
+              }
+            },
+            "type": "object"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Get the profile of \"erpbridge-demo@example.invalid\"."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Do not use to search by display name; use search_assignable_users."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Use when you already know exact ERP login IDs and need minimal profile fields."
+      ],
+      "toolplane.resourceDigest": "044226a07b7a0625702fc0dbefb5229a0e7b6b81ebd10c0835f20fc1aadcc779",
+      "toolplane.resourceVersion": "1.1.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "get_value",
+    "description": "Read selected fields of one record",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "as_dict": {
+          "type": "integer",
+          "description": "Set 1 to return a field map, 0 or omit for a list of values.",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "doctype": {
+          "type": "string",
+          "description": "Granted ERPNext DocType name.",
+          "enum": [
+            "Account",
+            "Address",
+            "Asset",
+            "Asset Capitalization",
+            "Asset Category",
+            "Asset Depreciation Schedule",
+            "Asset Maintenance",
+            "Asset Movement",
+            "Asset Repair",
+            "Asset Value Adjustment",
+            "BOM",
+            "Bank Account",
+            "Batch",
+            "Bin",
+            "Company",
+            "Contact",
+            "Cost Center",
+            "Currency",
+            "Customer",
+            "Customer Group",
+            "Delivery Note",
+            "Department",
+            "Designation",
+            "Employee",
+            "Fiscal Year",
+            "GL Entry",
+            "Gender",
+            "Item",
+            "Item Group",
+            "Item Price",
+            "Journal Entry",
+            "Lead",
+            "Location",
+            "Mode of Payment",
+            "Opportunity",
+            "Payment Entry",
+            "Payment Terms Template",
+            "Price List",
+            "Project",
+            "Purchase Invoice",
+            "Purchase Order",
+            "Purchase Receipt",
+            "Quotation",
+            "Request for Quotation",
+            "Sales Invoice",
+            "Sales Order",
+            "Sales Taxes and Charges Template",
+            "Salutation",
+            "Serial No",
+            "Stock Entry",
+            "Stock Ledger Entry",
+            "Supplier",
+            "Supplier Group",
+            "Supplier Quotation",
+            "Task",
+            "Terms and Conditions",
+            "Territory",
+            "Timesheet",
+            "UOM",
+            "Warehouse",
+            "Work Order"
+          ]
+        },
+        "fieldname": {
+          "type": "string",
+          "description": "One field name, or a JSON array of field names, for example [\"name\",\"item_group\"]."
+        },
+        "filters": {
+          "type": "string",
+          "description": "JSON object string that identifies one record, for example {\"name\":\"FG-TEA-001\"}."
+        }
+      },
+      "required": [
+        "doctype",
+        "fieldname",
+        "filters"
+      ]
+    },
+    "outputSchema": {
+      "properties": {
+        "message": {
+          "type": [
+            "object",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "What is the default currency of company Serendib Consumer Products (Pvt) Ltd?"
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Do not use to return a full record; use the matching get tool. Do not use to list rows."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Use when you need a few named fields of one record and already hold an exact identifier in filters."
+      ],
+      "toolplane.resourceDigest": "15942dc08d66b5ec1fc0d467424cc9c9c905ef833debf5d3a4bcf24a0fe6a5fe",
+      "toolplane.resourceVersion": "1.3.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "pipeline-library-discover",
+    "description": "Discover the caller's permitted document library.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "access_token": {
+          "type": "string",
+          "description": "Short-lived caller delegation injected by trusted backend code. The model must omit this field.",
+          "default": ""
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Show the documents available in my library."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Upload, index, change, or create ERP records."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Discover documents available within the authenticated caller's library."
+      ],
+      "toolplane.resourceDigest": "7d21c00e2a67d3ab6f92ff60f6c03100cdb1a3b78c4dcb021046bb721f79781e",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "pipeline-library-resolve",
+    "description": "Retrieve a current permitted document by identifier.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "access_token": {
+          "type": "string",
+          "description": "Short-lived caller delegation injected by trusted backend code. The model must omit this field.",
+          "default": ""
+        },
+        "document_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Retrieve the current version of the document found in my search."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Resolve another owner's document or treat document storage as ERP creation."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Resolve a document identifier returned by permitted discovery or search before using its fields."
+      ],
+      "toolplane.resourceDigest": "266acd91537181ec763b2b1ddc5b810907208e7ee143237dc7ba9b30969817a3",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "pipeline-library-search",
+    "description": "Search the caller's permitted documents.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "access_token": {
+          "type": "string",
+          "description": "Short-lived caller delegation injected by trusted backend code. The model must omit this field.",
+          "default": ""
+        },
+        "limit": {
+          "type": "integer",
+          "default": 10
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Find the reviewed customer registration form."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Treat search matches as exact inventory counts or create ERP records."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Find source documents relevant to a query within the caller's library."
+      ],
+      "toolplane.resourceDigest": "e67d9af6e6a4d105688f7d297a6474938901fd22b7cc9b38c7d9deec72165155",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "rag-policy-actions",
+    "description": "List the action vocabulary recognized by the policy gate.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "annotations": {},
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Which action names does the policy gate recognize?"
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Authorize or execute ERP actions. This list grants no execution permission."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Discover recognized policy action names for a caller-maintained mapping."
+      ],
+      "toolplane.resourceDigest": "ff51143f6d0a9e54725e9e54dd49df158f6d50d29466c760ec659d27e6cee442",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "rag-policy-assist",
+    "description": "Plan read-only tool calls or answer from supplied results without executing tools.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "object",
+          "description": "Identity supplied by trusted backend code from the authenticated session, never inferred from the prompt or asserted by the model. Actor fields are policy inputs, not an authorization grant.",
+          "properties": {
+            "cost_center": {
+              "type": ""
+            },
+            "department": {
+              "type": ""
+            },
+            "is_document_owner": {
+              "type": ""
+            },
+            "role": {
+              "type": "string",
+              "description": "Authenticated role supplied by trusted backend code, not a model-asserted role or authorization grant."
+            },
+            "user_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "user_id",
+            "role"
+          ]
+        },
+        "context": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "history": {
+          "type": "array",
+          "description": "Empty on the first turn; echoed back with results on later turns.",
+          "items": {
+            "type": "object",
+            "description": "One prior round: what was called, and what came back.",
+            "properties": {
+              "tool_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "description": "One tool the planner wants run, or already ran per `history`.",
+                  "properties": {
+                    "arguments": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "order": {
+                      "type": "integer",
+                      "description": "Advisory ordering only — calls are independent"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "order",
+                    "name"
+                  ]
+                }
+              },
+              "tool_results": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "description": "What the caller got back from running one ToolCall, echoed in `history`.",
+                  "properties": {
+                    "data": {
+                      "type": ""
+                    },
+                    "error": {
+                      "type": ""
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "prompt": {
+          "type": "string",
+          "description": "The user's natural language request"
+        },
+        "system_prompt": {
+          "type": "",
+          "description": "Accepted as context, never obeyed as an instruction. Cannot enable a tool absent from `tools`, widen actor scope, or change what gets planned beyond what the supplied tools allow."
+        },
+        "tools": {
+          "type": "array",
+          "description": "The relevant few tools for this request, not the whole catalogue.",
+          "items": {
+            "type": "object",
+            "description": "One tool the caller is willing to run for this request.\n\n`kind` has no default on purpose: a spec that omits it must be visibly\ndifferent from one that declares \"read\", so the gate can treat a missing\nkind as \"write\" and drop it (docs/ASSIST_CONTRACT.md §3.1) rather than a\nPython default silently deciding it.",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "input_schema": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "kind": {
+                "type": "",
+                "description": "'read' or 'write'; missing is treated as write and dropped"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "description"
+            ]
+          }
+        }
+      },
+      "required": [
+        "prompt",
+        "actor"
+      ]
+    },
+    "annotations": {},
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Plan which read-only tools could answer this finance question."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Execute tools, change ERP state, or grant authorization. Assist is plan-only and never executes; the backend must authorize any later calls."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Request a read-only plan or a grounded answer using caller-supplied tools and full history."
+      ],
+      "toolplane.resourceDigest": "3a65c584c2b378e4b9d22c02ddb3cc9cd5604bfb8c911cd30ed0cb5246c75afa",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "rag-policy-evaluate",
+    "description": "Evaluate a finance request against company policy without executing it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "object",
+          "description": "Identity supplied by trusted backend code from the authenticated session, never inferred from the prompt or asserted by the model. Actor fields are policy inputs, not an authorization grant.",
+          "properties": {
+            "cost_center": {
+              "type": ""
+            },
+            "department": {
+              "type": ""
+            },
+            "is_document_owner": {
+              "type": ""
+            },
+            "role": {
+              "type": "string",
+              "description": "Authenticated role supplied by trusted backend code, not a model-asserted role or authorization grant."
+            },
+            "user_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "user_id",
+            "role"
+          ]
+        },
+        "context": {
+          "additionalProperties": true,
+          "type": "object",
+          "description": "Pre-resolved ERP facts about the target document, e.g. {'amount': 1450000, 'vendor_id': 'V-221'}. Whatever is supplied is compared against the limits the policies state; whatever is missing comes back as an unsatisfied condition."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "The user's natural language request"
+        }
+      },
+      "required": [
+        "prompt",
+        "actor"
+      ]
+    },
+    "annotations": {},
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Review the policy conditions for this finance request."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Grant ERP execution authority. Policy output never grants ERP execution; backend authorization and record checks remain required."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Review policy decisions, citations, and conditions using trusted caller identity and ERP facts."
+      ],
+      "toolplane.resourceDigest": "00ae602aac8470cf21a8f313fa0cca5b1c2793b7ffa4cf3a24403cddcdeb3eeb",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "resend-email-get",
+    "description": "Retrieve one Resend email by its ID.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Resend email ID authorized by the caller."
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Retrieve the email with the ID I provided."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Send or schedule an email, or retrieve email content without caller authorization."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Retrieve email details only for an explicitly authorized email ID. Returned email content can contain personal data."
+      ],
+      "toolplane.resourceDigest": "9a1d963b7e4f04a97e6d7d78c425680a0c590ef6f9a72146a7287b87267a5b5d",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "resend-email-schedule",
+    "description": "Schedule an email for future delivery through Resend after explicit user confirmation.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Use a bare sender email address with the exact domain scp.nimendra.online. Examples are support@scp.nimendra.online for support, items@scp.nimendra.online for item messages, and schedule-report@scp.nimendra.online for scheduled reports. Other purpose-based local parts on this same domain are allowed. Do not use another domain, a subdomain, or display-name syntax. Confirm the exact sender with the user before sending or scheduling. The domain must be verified in Resend."
+        },
+        "html": {
+          "type": "string",
+          "description": "Optional HTML message content explicitly confirmed by the user. Does not replace required text."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Stable key for this confirmed request, sent only in the Idempotency-Key header. Reuse only for the identical request within the 24-hour retention window; never silently retry with a fresh key."
+        },
+        "reply_to": {
+          "type": "array",
+          "description": "Optional reply-to addresses. Uses the Resend REST reply_to field.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scheduled_at": {
+          "type": "string",
+          "description": "User-confirmed future delivery timestamp in ISO 8601 format with a timezone. Before invocation, the caller must verify it is in the future and no more than 30 days ahead."
+        },
+        "subject": {
+          "type": "string",
+          "description": "Exact subject explicitly confirmed by the user."
+        },
+        "text": {
+          "type": "string",
+          "description": "Required plain-text message content explicitly confirmed by the user."
+        },
+        "to": {
+          "type": "array",
+          "description": "Exact recipient addresses explicitly confirmed by the user.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "subject",
+        "text",
+        "idempotency_key",
+        "scheduled_at"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Schedule the exact email I have reviewed and confirmed."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Do not send or schedule without explicit user confirmation or from an unverified sending domain.",
+        "Do not use this tool to fetch attachment URLs or remote paths, or to bypass Resend limits."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Before this side effect, obtain explicit user confirmation of the exact recipients, subject, contents, attachments (or none), and schedule (or immediate delivery). Do not treat model-generated confirmation as user consent.",
+        "Use only a user-confirmed from address at scp.nimendra.online. The domain must be verified in Resend.",
+        "The caller must verify the final message and total email size, including Base64 encoding, are within the Resend 40 MB limit.",
+        "Use a stable idempotency key for the same confirmed request. Resend retains idempotency keys for 24 hours, not forever. Never silently retry with a fresh key; resolve an uncertain result before retrying.",
+        "Obtain explicit user confirmation of the exact future delivery date and timezone. The caller must verify the timestamp is no more than 30 days ahead."
+      ],
+      "toolplane.resourceDigest": "d4f71009315800ff12c086d5f738cd697b7636b115f840322f8a01216d235411",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "resend-email-send",
+    "description": "Send a plain-text email with optional HTML through Resend after explicit user confirmation.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Use a bare sender email address with the exact domain scp.nimendra.online. Examples are support@scp.nimendra.online for support, items@scp.nimendra.online for item messages, and schedule-report@scp.nimendra.online for scheduled reports. Other purpose-based local parts on this same domain are allowed. Do not use another domain, a subdomain, or display-name syntax. Confirm the exact sender with the user before sending or scheduling. The domain must be verified in Resend."
+        },
+        "html": {
+          "type": "string",
+          "description": "Optional HTML message content explicitly confirmed by the user. Does not replace required text."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Stable key for this confirmed request, sent only in the Idempotency-Key header. Reuse only for the identical request within the 24-hour retention window; never silently retry with a fresh key."
+        },
+        "reply_to": {
+          "type": "array",
+          "description": "Optional reply-to addresses. Uses the Resend REST reply_to field.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "subject": {
+          "type": "string",
+          "description": "Exact subject explicitly confirmed by the user."
+        },
+        "text": {
+          "type": "string",
+          "description": "Required plain-text message content explicitly confirmed by the user."
+        },
+        "to": {
+          "type": "array",
+          "description": "Exact recipient addresses explicitly confirmed by the user.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "subject",
+        "text",
+        "idempotency_key"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Send the exact email I have reviewed and confirmed."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Do not send or schedule without explicit user confirmation or from an unverified sending domain.",
+        "Do not use this tool to fetch attachment URLs or remote paths, or to bypass Resend limits."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Before this side effect, obtain explicit user confirmation of the exact recipients, subject, contents, attachments (or none), and schedule (or immediate delivery). Do not treat model-generated confirmation as user consent.",
+        "Use only a user-confirmed from address at scp.nimendra.online. The domain must be verified in Resend.",
+        "The caller must verify the final message and total email size, including Base64 encoding, are within the Resend 40 MB limit.",
+        "Use a stable idempotency key for the same confirmed request. Resend retains idempotency keys for 24 hours, not forever. Never silently retry with a fresh key; resolve an uncertain result before retrying."
+      ],
+      "toolplane.resourceDigest": "bcedc7cd94ea8335f310eb9601f5e494ce0c06d01c1b1ad9a99f5af9a38abf14",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  },
+  {
+    "name": "resend-email-send-with-attachment",
+    "description": "Send an email with Base64 attachments through Resend after explicit user confirmation.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "attachments": {
+          "type": "array",
+          "description": "User-confirmed attachments supplied as Base64 content only. The caller must verify the total email size including Base64 encoding does not exceed 40 MB. Remote paths and URLs are not supported.",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "Base64-encoded attachment bytes. The caller must verify valid Base64 before invocation."
+              },
+              "content_type": {
+                "type": "string",
+                "description": "Optional MIME content type."
+              },
+              "filename": {
+                "type": "string",
+                "description": "User-confirmed attachment filename."
+              }
+            },
+            "required": [
+              "filename",
+              "content"
+            ]
+          }
+        },
+        "from": {
+          "type": "string",
+          "description": "Use a bare sender email address with the exact domain scp.nimendra.online. Examples are support@scp.nimendra.online for support, items@scp.nimendra.online for item messages, and schedule-report@scp.nimendra.online for scheduled reports. Other purpose-based local parts on this same domain are allowed. Do not use another domain, a subdomain, or display-name syntax. Confirm the exact sender with the user before sending or scheduling. The domain must be verified in Resend."
+        },
+        "html": {
+          "type": "string",
+          "description": "Optional HTML message content explicitly confirmed by the user. Does not replace required text."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Stable key for this confirmed request, sent only in the Idempotency-Key header. Reuse only for the identical request within the 24-hour retention window; never silently retry with a fresh key."
+        },
+        "reply_to": {
+          "type": "array",
+          "description": "Optional reply-to addresses. Uses the Resend REST reply_to field.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "subject": {
+          "type": "string",
+          "description": "Exact subject explicitly confirmed by the user."
+        },
+        "text": {
+          "type": "string",
+          "description": "Required plain-text message content explicitly confirmed by the user."
+        },
+        "to": {
+          "type": "array",
+          "description": "Exact recipient addresses explicitly confirmed by the user.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "subject",
+        "text",
+        "idempotency_key",
+        "attachments"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "io.erpbridge/examples": [
+        "Send the exact email I have reviewed and confirmed."
+      ],
+      "io.erpbridge/whenNotToUse": [
+        "Do not send or schedule without explicit user confirmation or from an unverified sending domain.",
+        "Do not use this tool to fetch attachment URLs or remote paths, or to bypass Resend limits."
+      ],
+      "io.erpbridge/whenToUse": [
+        "Before this side effect, obtain explicit user confirmation of the exact recipients, subject, contents, attachments (or none), and schedule (or immediate delivery). Do not treat model-generated confirmation as user consent.",
+        "Use only a user-confirmed from address at scp.nimendra.online. The domain must be verified in Resend.",
+        "The caller must verify the final message and total email size, including Base64 encoding, are within the Resend 40 MB limit.",
+        "Use a stable idempotency key for the same confirmed request. Resend retains idempotency keys for 24 hours, not forever. Never silently retry with a fresh key; resolve an uncertain result before retrying."
+      ],
+      "toolplane.resourceDigest": "3a0c8131d275ae1e61fbfa908cfda3f88faf6c2bd5350968c8ca2cc004db0689",
+      "toolplane.resourceVersion": "1.0.0",
+      "toolplane.serving": true
+    }
+  }
+]

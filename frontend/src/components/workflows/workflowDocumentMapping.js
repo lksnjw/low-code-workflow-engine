@@ -43,3 +43,16 @@ export function mergeDocumentInputProposals(schema, attachments) {
   for (const key of conflicts) { delete values[key]; warnings.push(`Conflicting ${schema?.properties?.[key]?.title || key} across files. Check that every image belongs to the same record; replace the incorrect source.`); }
   return { values, warnings: [...new Set(warnings)], blocked: conflicts.size > 0 };
 }
+
+/** Keep source order and every row. Choosing a customer is an explicit human
+ * action; one saved single-record workflow is reused for each selected row. */
+export function documentRecordProposals(schema, attachments) {
+  return attachments.flatMap((attachment, fileIndex) => {
+    const rows = attachment?.rows?.length ? attachment.rows : [attachment?.fields || {}];
+    return rows.map((fields, rowIndex) => ({
+      ...documentInputProposal(schema, { fields }),
+      source: attachment?.filename || `File ${fileIndex + 1}`,
+      row: rowIndex + 1,
+    }));
+  });
+}

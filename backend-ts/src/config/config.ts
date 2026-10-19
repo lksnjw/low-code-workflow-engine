@@ -8,6 +8,7 @@ const environmentSchema = z
     APP_NAME: z.string().optional(),
     APP_ENV: z.string().optional(),
     CHAT_INTENT_ROUTING: z.enum(["agent", "patterns"]).optional(),
+    TOOL_ACCESS_MODE: z.enum(["configured-roles", "all-authenticated"]).optional(),
     PORT: z.string().optional(),
     API_BASE_PATH: z.string().optional(),
     JWT_SECRET: z.string().optional(),
@@ -87,6 +88,7 @@ export type ErpbridgeConnectionConfig = {
 };
 
 export type AppConfig = {
+  toolAccessMode?: "configured-roles" | "all-authenticated";
   appName: string;
   environment: string;
   /** Patterns is a compatibility/test mode, not the natural-language agent router. */
@@ -275,13 +277,15 @@ export function loadConfig(
   const apiBasePath = nonblank(source.API_BASE_PATH?.trim(), "/api");
   if (!apiBasePath.startsWith("/"))
     throw new Error("API_BASE_PATH must start with /");
+  const toolAccessMode = source.TOOL_ACCESS_MODE ?? (source.APP_ENV === "test" ? "configured-roles" : "all-authenticated");
   const config: AppConfig = {
     appName: nonblank(source.APP_NAME?.trim(), "low-code-workflow-engine-ts"),
     environment: nonblank(source.APP_ENV?.trim(), "development"),
+    toolAccessMode,
     port,
     apiBasePath,
-    erpbridgeAdminEnvironmentAccess: parseBoolean(source.ERPBRIDGE_ADMIN_ENV_ACCESS, false),
-    erpbridgeAdminChatActions: parseBoolean(source.ERPBRIDGE_ADMIN_CHAT_ACTIONS, false),
+    erpbridgeAdminEnvironmentAccess: parseBoolean(source.ERPBRIDGE_ADMIN_ENV_ACCESS, toolAccessMode === "all-authenticated"),
+    erpbridgeAdminChatActions: parseBoolean(source.ERPBRIDGE_ADMIN_CHAT_ACTIONS, toolAccessMode === "all-authenticated"),
     jwtSecret: nonblank(
       source.JWT_SECRET?.trim(),
       "development-only-change-me",

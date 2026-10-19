@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../../governance/tool-access.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ok } from "../../models/schemas.js";
 import { runErpChatLoop } from "../../agent/erp-chat-loop.js";
@@ -63,7 +64,7 @@ export async function processBackendAgentChat(input: Input, intent: string, muta
     session = services.erpbridgeSession; admin = administratorChatEnabled(services, user);
     if (!session || session.available === false) return [];
     const found = admin ? [...await session.listTools(signal)] : (await discoverTools(session, services.registries))
-      .filter(tool => tool.is_read_only && tool.allowed_roles.includes(user.role))
+      .filter(tool => tool.is_read_only && toolRoleAllowed(tool.allowed_roles, user.role))
       .map(tool => ({ name: tool.mcp_tool_name, description: tool.description, inputSchema: tool.input_schema, annotations: { readOnlyHint: true } }));
     return found.filter(tool => !library.length || !LIBRARY_READ_TOOLS.has(tool.name));
   };

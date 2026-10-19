@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { ok } from "../models/schemas.js";
 import { HandlerFailure, nextID, now, type CurrentUser, type HandlerServices } from "../http/handlers/common.js";
 import { assertChatAuthority } from "../http/handlers/model-selection.js";
@@ -29,7 +30,7 @@ export function prepareNodeProposal(scoped: ReturnType<typeof assertNodeContext>
     ...(scoped.node.kind === "protect" ? selectedProtectedGuidance(scoped.node.id, authoring) : {}),
     ...(scoped.node.kind === "return" ? { allowedDataSources: authoring?.returns?.find(node => node.nodeId === scoped.node.id)?.dataSources ?? [] } : {}),
     ...(scoped.node.kind === "foreach" ? { allowedItemSources: collection?.itemSources ?? [], allowedCollectSources: collection?.collectSources ?? [] } : {}),
-    tools: structural ? [] : snapshot.tools.filter(tool => tool.allowed_roles.includes(role)).map(tool => ({ name: tool.name, inputSchema: tool.input_schema })) });
+    tools: structural ? [] : snapshot.tools.filter(tool => toolRoleAllowed(tool.allowed_roles, role)).map(tool => ({ name: tool.name, inputSchema: tool.input_schema })) });
   return { context, scoped: structuredClone(scoped), prompt, promptTemplateVersion: selectedNodePatchVersion(scoped.node), registryHash, tools: structuredClone(snapshot.tools) };
 }
 

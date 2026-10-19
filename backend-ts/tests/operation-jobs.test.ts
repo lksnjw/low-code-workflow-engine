@@ -23,7 +23,7 @@ import { operationReadbackQueue } from "../src/runner/operation-readback-jobs.js
 import { nextCalendarOccurrence, reportWindowFor, workflowScheduleRunner } from "../src/runner/workflow-schedules.js";
 import { workflowContentHash } from "../src/parser/workflow.js";
 import { draftRequirements, emailDraftHash, type EmailDraft } from "../src/delivery/email-draft.js";
-import { ProviderRuntime } from "../src/providers/runtime.js";
+import { CANDIDATE_PROMPT_VERSION, ProviderRuntime } from "../src/providers/runtime.js";
 import { compileOperationWorkflow, operationCompilationReceipt, type ReadAdmissionPin } from "../src/workflows/compiled-read.js";
 import { prepareOperationExecution, type StoredOperationCompilation } from "../src/workflows/operation-compilation-lifecycle.js";
 import { modelDataClasses, type ModelDataClass } from "../src/providers/egress-policy.js";
@@ -32,6 +32,7 @@ import { SynthesisService, assembleCandidatePrompt } from "../src/synthesis/serv
 import { systemInstructionsFor } from "../src/prompts/contracts.js";
 import { assertConfirmedOperationResults } from "../src/runner/operation-result-evidence.js";
 import { prepareOperationPolicy } from "../src/governance/record-workflow-policy.js";
+import { ensureSharedWorkflowAccess } from "../src/governance/tool-access.js";
 
 const closers: { close(): Promise<unknown> }[] = [];
 afterEach(async () => { vi.useRealTimers(); await Promise.all(closers.splice(0).reverse().map(value => value.close())); vi.unstubAllGlobals(); });
@@ -65,6 +66,98 @@ test("Super Admin saved workflow pauses and explicitly self-confirms its exact e
   expect(s.sdk.callTool).toHaveBeenCalledOnce();
   expect((await s.request("POST", `/api/executions/${id}/approve`, command)).json().data.replayed).toBe(true);
   expect(s.sdk.callTool).toHaveBeenCalledOnce();
+});
+
+test("one publication reuses unchanged tools with different reviewed inputs and fresh exact approvals", async () => {
+  const s = await setup(null, false);
+  await s.repository.mutate(state => {
+    const source = parse(state.workflows.flow!.yaml);
+    source.trigger.config = { inputSchema: { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false } };
+    source.steps[0].parameters.value = "{{input.value}}"; state.workflows.flow!.yaml = stringify(source);
+  });
+  const published = await s.publish(); expect(published.statusCode, published.body).toBe(200);
+  const original = structuredClone((await s.repository.snapshot()).versions.flow);
+  const ids: string[] = [], approvalIds: string[] = [];
+  for (const [index, value] of ["Customer from image", "Customer from new PDF", "Customer from another form"].entries()) {
+    // A change elsewhere in the catalog must not invalidate this exact tool.
+    if (index === 1) s.reportRead.description += " unrelated catalog metadata";
+    const readiness = await s.request("GET", "/api/workflows/flow/readiness");
+    expect(readiness.json().data.can_attempt_run, readiness.body).toBe(true);
+    const response = await s.run(`repeat-same-workflow-${index}`, { value });
+    expect(response.statusCode, response.body).toBe(202); const id = response.json().data.id; ids.push(id);
+    await s.wait(id, "AWAITING_APPROVAL"); expect(s.sdk.callTool).toHaveBeenCalledTimes(index);
+    const review = await s.review(id); approvalIds.push(review.id); expect(review.arguments).toEqual({ value });
+    const result = await s.request("POST", `/api/executions/${id}/approve`, { approvalId: review.id, baseVersion: review.version, reviewHash: review.reviewHash,
+      decisionKey: `repeat-exact-approval-${index}` }, "reviewer");
+    expect(result.statusCode, result.body).toBe(200); await s.wait(id, "DONE");
+    expect(s.sdk.callTool).toHaveBeenCalledTimes(index + 1);
+    expect(s.sdk.callTool.mock.calls[index]![1]).toMatchObject({ value });
+  }
+  expect(new Set(ids).size).toBe(3); expect(new Set(approvalIds).size).toBe(3);
+  expect((await s.repository.snapshot()).versions.flow).toEqual(original);
+  const before = s.sdk.callTool.mock.calls.length;
+  const missing = await s.run("repeat-missing-input-0001", {}); expect(missing.statusCode).toBe(422);
+  expect(s.sdk.callTool).toHaveBeenCalledTimes(before);
+  s.write.description += " changed required contract";
+  const changed = await s.request("GET", "/api/workflows/flow/readiness"); expect(changed.json().data.can_attempt_run).toBe(false);
+  expect(s.sdk.callTool).toHaveBeenCalledTimes(before);
+});
+
+test.each(["role_client", "role_builder", "custom-role"])("shared tool access lets %s publish and rerun with new inputs and configured human approval", async roleId => {
+  const s = await setup(null, false); s.services.config.toolAccessMode = "all-authenticated";
+  await s.repository.mutate(state => {
+    if (roleId === "custom-role") state.roles[roleId] = { id: roleId, name: "Custom operator", permissions: [], description: "", createdAt: new Date().toISOString() };
+    state.users.requester!.roleId = roleId;
+    const source = parse(state.workflows.flow!.yaml);
+    source.trigger.config = { inputSchema: { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false } };
+    source.steps[0].parameters.value = "{{input.value}}"; state.workflows.flow!.yaml = stringify(source);
+  });
+  await ensureSharedWorkflowAccess(s.repository, "all-authenticated");
+  const catalog = await s.request("GET", "/api/tools/catalog?role=Client");
+  expect(catalog.statusCode, catalog.body).toBe(200);
+  expect(catalog.json().data.some((tool: any) => tool.tool_id === s.write.tool_id)).toBe(true);
+  const publication = await s.publish(); expect(publication.statusCode, publication.body).toBe(200);
+  const saved = structuredClone((await s.repository.snapshot()).versions.flow);
+  for (const [index, value] of ["new image record", "another PDF record"].entries()) {
+    const response = await s.run(`shared-role-repeat-${index}`, { value }); expect(response.statusCode, response.body).toBe(202);
+    const id = response.json().data.id; await s.wait(id, "AWAITING_APPROVAL");
+    expect(s.sdk.callTool).toHaveBeenCalledTimes(index);
+    const exact = await s.review(id); expect(exact.arguments).toEqual({ value });
+    // Full tool use does not bypass an explicitly selected independent reviewer policy.
+    const denied = await s.request("POST", `/api/executions/${id}/approve`, await s.command(id)); expect(denied.statusCode).toBe(403);
+    const approved = await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer"); expect(approved.statusCode, approved.body).toBe(200);
+    await s.wait(id, "DONE"); expect(s.sdk.callTool).toHaveBeenCalledTimes(index + 1);
+    expect(s.sdk.callTool.mock.calls[index]![1]).toEqual({ value });
+  }
+  expect((await s.repository.snapshot()).versions.flow).toEqual(saved);
+});
+
+test("shared Client can review their own exact transaction when no reviewer policy exists", async () => {
+  const s = await setup(null, false); s.services.config.toolAccessMode = "all-authenticated";
+  await s.repository.mutate(state => { state.users.requester!.roleId = "role_client"; delete (state.settings.rbac as Record<string, unknown>).runtimeApprovalPolicy; });
+  const published = await s.publish(); expect(published.statusCode, published.body).toBe(200);
+  const admitted = await s.run(); expect(admitted.statusCode, admitted.body).toBe(202);
+  const id = admitted.json().data.id; await s.wait(id, "AWAITING_APPROVAL"); expect(s.sdk.callTool).not.toHaveBeenCalled();
+  const review = await s.request("GET", `/api/executions/${id}?view=approval`); const exact = review.json().data.runtimeApproval;
+  expect(exact).toMatchObject({ selfApprovalAllowed: true, state: "PENDING", canDecide: true });
+  const approved = await s.request("POST", `/api/executions/${id}/approve`, { approvalId: exact.id, baseVersion: exact.version, reviewHash: exact.reviewHash, decisionKey: "shared-client-human-review" });
+  expect(approved.statusCode, approved.body).toBe(200); await s.wait(id, "DONE"); expect(s.sdk.callTool).toHaveBeenCalledOnce();
+});
+
+test("generic catalog mutations rerun with fresh human approvals and acknowledge only their actual MCP return", async () => {
+  const s = await setup(null, false, false, false, false, false, false, true);
+  s.services.config.toolAccessMode = "all-authenticated";
+  await s.repository.mutate(state => { state.users.requester!.roleId = "role_client"; });
+  expect((await s.publish()).statusCode).toBe(200);
+  for (let index = 0; index < 2; index++) {
+    const response = await s.run(`generic-catalog-repeat-${index}`); expect(response.statusCode, response.body).toBe(202);
+    const id = response.json().data.id; await s.wait(id, "AWAITING_APPROVAL"); expect(s.sdk.callTool).toHaveBeenCalledTimes(index);
+    const approved = await s.request("POST", `/api/executions/${id}/approve`, await s.command(id), "reviewer"); expect(approved.statusCode, approved.body).toBe(200);
+    await s.wait(id, "DONE"); expect(s.sdk.callTool).toHaveBeenCalledTimes(index + 1);
+    const run = (await s.repository.snapshot()).executions[id]!;
+    expect(run.stepOutputs!.send).toMatchObject({ acknowledged: true });
+    expect(run.operationSecret!.intents.send!.evidenceMeaning).toBe("operation-accepted");
+  }
 });
 
 test("selected policy denial stops a write before even requesting runtime approval", async () => {
@@ -121,7 +214,7 @@ class Records implements PersistenceBackend {
   async probe() {} async close() {}
 }
 async function setup(storage: PersistenceBackend | null = null, withRead = true, withReadback = false, withEmail = false,
-  withReportPagination: boolean | "cursor" | "related" = false, withAnalysis = false, withReadErrorContract = false) {
+  withReportPagination: boolean | "cursor" | "related" = false, withAnalysis = false, withReadErrorContract = false, genericOperation = false) {
   const repository = await Repository.open(storage), registries = await RegistryService.load(resolve("tests/fixtures/tools.json"), resolve("tests/fixtures/rules.json"));
   const pageNumberPagination = withReportPagination === true, cursorPagination = withReportPagination === "cursor", relatedMode = withReportPagination === "related";
   const paginated = pageNumberPagination || cursorPagination;
@@ -160,8 +253,8 @@ async function setup(storage: PersistenceBackend | null = null, withRead = true,
         required: ["orderId", "total"], additionalProperties: false } }, itemCount: { type: "integer" }, summary: { type: "string" } },
       required: ["coveredStartAt", "coveredEndAt", "complete", "hasMore", "items", "itemCount", "summary"], additionalProperties: false } } }) : undefined;
   const write = toolSchema.parse({ ...read, read_error_contract: undefined, tool_id: "operation-fixture", name: "demo.dispatch", mcp_tool_name: "demo.dispatch", is_read_only: false, risk_level: "low", side_effects: ["Synthetic message acceptance"],
-    operation_contract: { profile: "operation-result/v1", effect_class: "notification", retry_policy: "never", confirmation: { path: ["accepted"], expected: true, meaning: "operation-accepted" } },
-    bridge_contract: { ...read.bridge_contract, resource_digest: "b".repeat(64), output_schema: { type: "object", properties: { accepted: { type: "boolean" }, id: { type: "string" } }, required: ["accepted", "id"], additionalProperties: false } } });
+    operation_contract: { profile: "operation-result/v1", effect_class: "notification", retry_policy: "never", confirmation: genericOperation ? { source: "mcp-envelope", path: ["acknowledged"], expected: true, meaning: "operation-accepted" } : { path: ["accepted"], expected: true, meaning: "operation-accepted" } },
+    bridge_contract: { ...read.bridge_contract, ...(genericOperation ? { selector: "digest-pinned-mcp-operation-alias" } : {}), resource_digest: "b".repeat(64), output_schema: { type: "object", properties: { accepted: { type: "boolean" }, id: { type: "string" } }, required: ["accepted", "id"], additionalProperties: false } } });
   const readback = withReadback ? toolSchema.parse({ ...read, tool_id: "readback-fixture", name: "demo.status", mcp_tool_name: "demo.status",
     input_schema: { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false },
     bridge_contract: { ...read.bridge_contract, resource_digest: "c".repeat(64), output_schema: { type: "object", properties: {
@@ -186,7 +279,8 @@ async function setup(storage: PersistenceBackend | null = null, withRead = true,
   let relatedReadAdmissionHook: (() => Promise<void>) | undefined;
   const authorize = admissionAuthorizer(repository, registries);
   const sdk = { metadataComplete: true, connect: vi.fn(async () => {}), close: vi.fn(async () => {}), listTools: vi.fn(async () => tools.map(tool => ({ name: exactBridgeName(tool), inputSchema: bridgeTransportSchema(tool), outputSchema: tool.bridge_contract!.output_schema!,
-    _meta: { "toolplane.resourceDigest": tool.bridge_contract!.resource_digest, "toolplane.resourceVersion": "1.0.0", "io.erpbridge/allowedRoles": [] } }))),
+    ...(tool.bridge_contract?.selector === "digest-pinned-mcp-operation-alias" ? { annotations: { readOnlyHint: false, destructiveHint: true } } : {}),
+    _meta: { "toolplane.resourceDigest": tool.bridge_contract!.resource_digest, "toolplane.resourceVersion": "1.0.0", "io.erpbridge/allowedRoles": [], ...(tool.bridge_contract?.selector === "digest-pinned-mcp-operation-alias" ? { "toolplane.serving": true } : {}) } }))),
     callTool: vi.fn(async (name: string, args: Record<string, unknown>, _meta?: Record<string, unknown>): Promise<unknown> => name === exactBridgeName(read) ? { content: [], structuredContent: { value: String(args.value).toUpperCase() } } :
       name === exactBridgeName(reportRead) ? (() => { const cursorOrdinal = args.cursor === "" ? 1 : args.cursor === "cursor-2" ? 2 : 3;
         const page = pageNumberPagination ? Number(args.page) : cursorPagination ? cursorOrdinal : 1, hasMore = paginated && page < 3;
@@ -302,7 +396,7 @@ test.each([true, false])("public protected authoring mapped=%s never replaces cu
   const s = await setup(null, true, false, false, false, false, mapped); await prepareProtectedWorkflow(s);
   const ready = await s.request("GET", "/api/workflows/flow/readiness"); expect(ready.statusCode, ready.body).toBe(200);
   expect(ready.json().data.authoring.executionProfile).toBe(mapped ? "protected-operation-v1" : "protected-draft-runtime-pending");
-  expect(ready.json().data.can_attempt_run).toBe(false);
+  expect(ready.json().data.can_attempt_run).toBe(mapped);
   const publication = await s.publish(); expect(publication.statusCode, publication.body).toBe(mapped ? 200 : 422);
   expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).not.toHaveBeenCalled();
 });
@@ -574,7 +668,7 @@ test("operation admission receipt survives changed draft and revoked run permiss
   const path = "/api/workflows/flow/run-receipts/fixture-operation-run-0001?mode=async-operation";
   const receipt = await s.request("GET", path);
   expect(receipt.statusCode, receipt.body).toBe(200);
-  expect(receipt.json().data).toEqual({ profile: "run-admission-receipt/v1", workflowId: "flow", mode: "async-operation", executionId: id, status: "AWAITING_APPROVAL", outcome: "RECORDED", noReplay: true });
+  expect(receipt.json().data).toEqual({ profile: "run-admission-receipt/v1", workflowId: "flow", mode: "async-operation", executionId: id, status: "AWAITING_APPROVAL", outcome: "RECORDED", noReplay: true, safeToReviewForNewRun: false });
   expect(receipt.body).not.toMatch(/operationSecret|requestFingerprint|inputCiphertext|idempotencyScope|workflowSnapshot|private-/);
   expect((await s.request("GET", path, undefined, "reviewer")).statusCode).toBe(403);
   await s.repository.mutate(state => { state.users.other = { ...state.users.requester!, id: "other" }; });
@@ -1425,7 +1519,7 @@ test.each(["chat", "async-chat"].flatMap(route => ["analysis", "agent"].flatMap(
     } else workflowId = response.json().data.assistantMessage.artifacts.workflowId;
     const before = await s.repository.snapshot(); expect(before.workflows[workflowId]!.yaml).toBe(yaml.trim());
     expect(before.workflows[workflowId]!.publishedVersion).toBe(0); expect(before.executions).toEqual({}); expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).toHaveBeenCalledOnce();
-    expect(JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)).messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
+    expect(JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)).messages[0].content).toBe(systemInstructionsFor(CANDIDATE_PROMPT_VERSION));
     const published = await s.request("POST", `/api/workflows/${workflowId}/publish`, {}); expect(published.statusCode, published.body).toBe(200);
     expect(published.json().data.compiledOperation.schemaVersion).toBe("workflow-operation-ir/v7");
     const runCommand = { mode: "async-operation", input: { includeAnswer: selected }, idempotencyKey: `generated-merge-${route}-${kind}-${selected}-0001` }, runUrl = `/api/workflows/${workflowId}/run`;
@@ -1469,7 +1563,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     if (route === "direct") {
       const response = await s.request("POST", "/api/synthesis", { prompt }); expect(response.statusCode, response.body).toBe(200);
       const candidate = response.json().data; expect(candidate.execution_profile_issues).toEqual([]); expect(candidate.validation.passed).toBe(true);
-      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v23"); expect(candidate.yaml).toBe(yaml.trim());
+      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe(CANDIDATE_PROMPT_VERSION); expect(candidate.yaml).toBe(yaml.trim());
       expect(Object.keys((await s.repository.snapshot()).workflows)).toEqual(["flow"]);
       const created = await s.request("POST", "/api/workflows", { yaml: candidate.yaml }); expect(created.statusCode, created.body).toBe(201); workflowId = created.json().data.id;
     } else {
@@ -1488,7 +1582,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     const before = await s.repository.snapshot(), draft = before.workflows[workflowId!]!;
     expect(parse(draft.yaml)).toEqual(source); expect(draft.publishedVersion).toBe(0); expect(before.executions).toEqual({});
     expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).toHaveBeenCalledOnce();
-    const body = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
+    const body = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(body.messages[0].content).toBe(systemInstructionsFor(CANDIDATE_PROMPT_VERSION));
     const published = await s.request("POST", `/api/workflows/${workflowId!}/publish`, {}); expect(published.statusCode, published.body).toBe(200); expect(published.json().data.compiledOperation.schemaVersion).toBe("workflow-operation-ir/v6");
     if (selected) s.modelFetch.mockResolvedValueOnce(Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ summary: "Typed synthesis answer", ...(kind === "agent" ? { complete: true } : {}) }) } }], usage: { prompt_tokens: 9, completion_tokens: 4 } }));
     const command = { mode: "async-operation", idempotencyKey: `return-run-${route}-${kind}-${selected}-0001`, input: { includeAnswer: selected } };
@@ -1702,7 +1796,7 @@ test.each(["direct", "chat"])("%s synthesis ignores forged browser source claims
   });
   expect(response.statusCode, response.body).toBe(200); expect(s.modelFetch).toHaveBeenCalledOnce();
   const body = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body));
-  expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
+  expect(body.messages[0].content).toBe(systemInstructionsFor(CANDIDATE_PROMPT_VERSION));
   const data = JSON.parse(body.messages[1].content);
   expect(data.MODEL_SOURCE_HINTS_JSON.sources.find((source: { toolId: string }) => source.toolId === s.read.tool_id)).toEqual({
     toolId: s.read.tool_id, action: s.read.name, connectionId: "erpbridge-default", dataClass: "confidential", review: "REVIEWED",
@@ -1724,7 +1818,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     if (route === "direct") {
       const response = await s.request("POST", "/api/synthesis", { prompt }); expect(response.statusCode, response.body).toBe(200);
       const candidate = response.json().data; expect(candidate.execution_profile_issues).toEqual([]);
-      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v23"); expect(candidate.yaml).toBe(yaml.trim());
+      expect(candidate.candidate.generation_metadata.promptTemplateVersion).toBe(CANDIDATE_PROMPT_VERSION); expect(candidate.yaml).toBe(yaml.trim());
       expect(Object.keys((await s.repository.snapshot()).workflows)).toEqual(["flow"]);
       const created = await s.request("POST", "/api/workflows", { yaml: candidate.yaml }); expect(created.statusCode, created.body).toBe(201); workflowId = created.json().data.id;
     } else {
@@ -1745,7 +1839,7 @@ test.each(["direct", "chat", "async-chat"].flatMap(route => ["analysis", "agent"
     const before = await s.repository.snapshot(), draft = before.workflows[workflowId!]!;
     expect(parse(draft.yaml).metadata.controlFlow).toEqual(source.metadata.controlFlow); expect(draft.publishedVersion).toBe(0);
     expect(before.executions).toEqual({}); expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).toHaveBeenCalledTimes(1);
-    const requestBody = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(requestBody.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v23"));
+    const requestBody = JSON.parse(String(s.modelFetch.mock.calls[0]![1]?.body)); expect(requestBody.messages[0].content).toBe(systemInstructionsFor(CANDIDATE_PROMPT_VERSION));
     const publication = await s.request("POST", `/api/workflows/${workflowId!}/publish`, {}); expect(publication.statusCode, publication.body).toBe(200);
     expect(publication.json().data.compiledOperation.schemaVersion).toBe("workflow-operation-ir/v4");
     const admitted = await s.request("POST", `/api/workflows/${workflowId!}/run`, { mode: "async-operation", idempotencyKey: `explicit-${route}-${kind}-${selected}`, input: { sendReport: selected } });
@@ -1864,7 +1958,7 @@ test.each(["analysis", "agent"] as const)("previously compiled %s receipts canno
   const blueprint = parse(publication.yaml as string); blueprint.steps[1].data_class = "public";
   const yaml = stringify(blueprint), legacyPlan = compileOperationWorkflow(yaml, s.services.registries.snapshot().tools, s.actor.role, pins);
   publication.yaml = yaml; publication.compiledOperation = { ...stored, plan: legacyPlan, receipt: operationCompilationReceipt(legacyPlan, s.services.registries.hash()) };
-  expect(() => prepareOperationExecution(state, s.services, publication, yaml, s.actor.role)).toThrow(/explicitly review and republish/);
+  expect(() => prepareOperationExecution(state, s.services, publication, yaml, s.actor.role)).toThrow(/reviewed tool bindings/);
   expect(s.sdk.callTool).not.toHaveBeenCalled(); expect(s.modelFetch).not.toHaveBeenCalled();
 });
 
@@ -3899,4 +3993,18 @@ test("altered saved attestation or corrupt event cursor cannot be repaired by an
   await other.repository.mutate(state => { state.executions[other.id]!.readProgress!.lastSequence += 10; });
   expect((await other.request("POST", `/api/executions/${other.id}/reconcile`, command, "operator")).statusCode).toBe(503);
   expect((await other.repository.snapshot()).executions[other.id]!.operationSecret!.reconciliations).toBeUndefined();
+});
+
+
+test("Start prepares an unpublished operation automatically but still pauses for exact transaction approval", async () => {
+  const s = await setup(null, false);
+  const source = (await s.repository.snapshot()).workflows.flow!.yaml;
+  const ready = await s.request("GET", "/api/workflows/flow/readiness");
+  expect(ready.statusCode, ready.body).toBe(200); expect(ready.json().data).toMatchObject({ published: false, can_attempt_run: true });
+  const payload = { mode: "async-operation", idempotencyKey: "start-operation-draft-001", input: {}, startRevision: { baseVersion: 1, baseHash: workflowContentHash(source) } };
+  const response = await s.request("POST", "/api/workflows/flow/run", payload);
+  expect(response.statusCode, response.body).toBe(202); const id = response.json().data.id;
+  await s.wait(id, "AWAITING_APPROVAL"); expect(s.sdk.callTool).not.toHaveBeenCalled();
+  const replay = await s.request("POST", "/api/workflows/flow/run", payload); expect(replay.json().data.id).toBe(id);
+  expect((await s.repository.snapshot()).versions.flow?.filter(version => version.artifactState === "PUBLISHED")).toHaveLength(1);
 });

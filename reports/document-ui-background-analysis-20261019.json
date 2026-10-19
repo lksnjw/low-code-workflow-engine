@@ -1,0 +1,20 @@
+{
+  "date":"2026-10-19",
+  "scope":"Document-processing presentation only; existing OCR, background model analysis, policy and approval behaviour retained",
+  "changes":[
+    "Removed extraction-model selectors from saved workflow inputs and automatic data intake",
+    "Removed provider identity from document preview headers and generated preview handoff text",
+    "Kept configured model selection in background preparation requests",
+    "OCR completion remains based on the pipeline receipt, never inferred from a preview",
+    "Initial reading warnings are labelled as historical and collapsed; missing-field and conflict blocks remain visible",
+    "Known extraction-provider identities are neutralised in processing notices without altering extracted business fields"
+  ],
+  "tests":{"suites":7,"passed":78,"failed":0,"includes":["WorkflowDocumentInput","SmartDocumentIntake","ChatAttachmentReview","ChatAttachments","documentWorkflowRequest","documentPresentation","ChatPage"]},
+  "lint":"Changed files pass except ChatAttachments.jsx has pre-existing ref-during-render and set-state-in-effect errors; no lifecycle rewrite attempted",
+  "hostingArtifactVerified":true,
+  "hostingDeployed":true,
+  "backendDeploymentPerformed":false,
+  "pipelineOrRagSourceChanged":false,
+  "liveCheck":{"workflow":"wf_1161_1af971df","file":"items-three-mixed.pdf","sourceConversation":"chat_1285_aebd6089","extractionModelSelectorVisible":false,"providerNamesVisibleInRunDialog":false,"readingProgressVisible":true,"pipelineExtraction":"SUCCEEDED","reviewResponseReturned":true,"initialReadingNotesCollapsed":true,"batchMappingBlocked":true,"erpRunSubmitted":false,"latencyCaveat":"Background field preparation was slow despite earlier OCR completion; presentation changes do not remove this delay"},
+  "limitation":"This presentation change does not add reusable bulk ERP record creation. A multi-record file remains blocked in single-record Run inputs."
+}

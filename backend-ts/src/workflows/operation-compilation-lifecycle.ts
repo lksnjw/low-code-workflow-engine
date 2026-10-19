@@ -118,9 +118,13 @@ export function prepareOperationExecution(state: Readonly<RepositoryState>, serv
   assertProtectedRuntimeQualified(parseWorkflowYAMLStrict(yaml));
   try {
     const stored = publication.compiledOperation as StoredOperationCompilation | undefined;
-    if (!stored || stored.verifiedRole !== role || !Number.isFinite(Date.parse(stored.compiledAt)) || canonicalJSONBytes(stored).length > 1_200_000) throw new Error("Missing operation compilation");
-    const plan = compileCurrent(state, services, yaml, role, stored.plan), receipt = operationCompilationReceipt(plan, services.registries.hash());
+    if (!stored || stored.verifiedRole !== role || !Number.isFinite(Date.parse(stored.compiledAt)) || canonicalJSONBytes(stored).length > 1_200_000 ||
+        typeof stored.receipt?.registryHash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(stored.receipt.registryHash)) throw new Error("Missing operation compilation");
+    // Revalidate the exact saved source, capability pins and connections above
+    // every run. The publication's whole-catalog hash is historical provenance:
+    // adding an unrelated tool must not require republishing this workflow.
+    const plan = compileCurrent(state, services, yaml, role, stored.plan), receipt = operationCompilationReceipt(plan, stored.receipt.registryHash);
     if (!canonicalJSONBytes(stored.receipt).equals(canonicalJSONBytes(receipt)) || expected && !canonicalJSONBytes(expected).equals(canonicalJSONBytes(receipt))) throw new Error("Operation receipt changed");
     return structuredClone(stored);
-  } catch { throw new HandlerFailure(409, "Operation publication is missing, stale or its exact ERPBridge connection is unavailable; explicitly review and republish", { code: "PUBLISHED_OPERATION_REQUIRED" }); }
+  } catch { throw new HandlerFailure(409, "This saved workflow's reviewed tool bindings or ERP connection could not be verified. Check the connection and tool access, then check again. Review the workflow if a required contract or its saved source changed.", { code: "PUBLISHED_OPERATION_REQUIRED" }); }
 }

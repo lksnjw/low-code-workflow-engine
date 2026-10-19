@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { stringify } from "yaml";
 import { LIBRARY_READ_TOOLS, bindLibraryReadDelegation } from "../documents/library-client.js";
 import type { HandlerServices } from "../http/handlers/common.js";
@@ -157,7 +158,7 @@ export async function dispatchReadTool(
   assertContract();
   await session.assertAdmission?.(tool, dispatchPin, context.signal);
   if (!tool.is_read_only) throw new Error("Live ERP writes are blocked until transaction approval, idempotency and recovery are enforced");
-  if (!tool.allowed_roles.includes(actor.role)) throw new Error("Tool dispatch denied: current role has no grant for this tool");
+  if (!toolRoleAllowed(tool.allowed_roles, actor.role)) throw new Error("Tool dispatch denied: current role has no grant for this tool");
   let libraryDelegation: object | undefined;
   if (LIBRARY_READ_TOOLS.has(tool.name) || LIBRARY_READ_TOOLS.has(tool.mcp_tool_name)) {
     if (Object.hasOwn(args, "access_token")) throw new Error("Document scope is server-owned; supplied access tokens are not accepted");
@@ -287,7 +288,7 @@ export async function dispatchReadTool(
     const current = await services.repository.effectiveUser(actorId);
     if (current === null || current.status.toLowerCase() !== "active" || current.role !== actor.role ||
         !current.permissions.some((permission) => ["chat:use", "workflow:write", "workflow:run", "workflow:run_own"].includes(permission)) ||
-        !tool.allowed_roles.includes(current.role)) throw new Error("Tool dispatch denied: actor authority changed during verification");
+        !toolRoleAllowed(tool.allowed_roles, current.role)) throw new Error("Tool dispatch denied: actor authority changed during verification");
     await checkWorkflowScope(services, current, context.workflowId);
     // Server-owned checkpoint hook: cancellation and dispatch intent are checked
     // after all awaited policy work, immediately before entering the SDK.

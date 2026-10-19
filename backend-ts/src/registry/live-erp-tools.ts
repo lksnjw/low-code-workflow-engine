@@ -2,6 +2,7 @@ import { z } from "zod";
 import { HandlerFailure, type CurrentUser, type HandlerServices } from "../http/handlers/common.js";
 import { assertActorAuthority } from "../http/handlers/model-selection.js";
 import { DEFAULT_BRIDGE_CONNECTION } from "./capability-admission.js";
+import { remoteCatalogHash } from "./discovered-contract.js";
 
 const querySchema = z.object({ source: z.literal("erpbridge").optional(), connectionId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).optional(),
   offset: z.coerce.number().int().min(0).max(2048).default(0), limit: z.union([z.literal("all"), z.coerce.number().int().min(1).max(50)]).default(20),
@@ -39,7 +40,7 @@ export async function liveErpTools(services: HandlerServices, user: CurrentUser,
     .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
   const limit = query.limit === "all" ? Math.max(1, matches.length) : query.limit;
   const offset = query.limit === "all" ? 0 : matches.length ? Math.min(query.offset, Math.floor((matches.length - 1) / limit) * limit) : 0;
-  return { source: "erpbridge" as const, connectionId: id, discoveredAt,
+  return { source: "erpbridge" as const, connectionId: id, discoveredAt, catalogHash: remoteCatalogHash(tools),
     connections: runtime?.connectionCatalog() ?? [{ id, primary: true, dispatchSupported: true }],
     total: tools.length, matchedCount: matches.length, offset, limit,
     nextOffset: offset + limit < matches.length ? offset + limit : null,

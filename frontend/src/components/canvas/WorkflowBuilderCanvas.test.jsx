@@ -77,7 +77,7 @@ test("writable builder loads and renders the registered tool catalog", async () 
 
   expect(await screen.findByRole("button", { name: /Demo Echo/i })).not.toBeNull();
   await waitFor(() => {
-    expect(get).toHaveBeenCalledWith("/tools/catalog", { params: { status: "active_mcp_schema_present" } });
+    expect(get).toHaveBeenCalledWith("/tools/catalog", { params: {} });
   });
   expect(screen.queryByText(/Cannot read properties of undefined/i)).toBeNull();
   expect(screen.queryByText(/Tool catalog unavailable/i)).toBeNull();
@@ -94,7 +94,7 @@ function builder(workflowId, props = {}) {
 function mockSaved() {
   jest.spyOn(workflowService, "getById").mockResolvedValue({ id: "report", name: "report", description: "" });
   jest.spyOn(workflowService, "getYAML").mockResolvedValue({ yaml: source });
-  const revision = { version: 1, contentHash: `sha256:${"a".repeat(64)}`, yaml: source, can_attempt_run: true };
+  const revision = { version: 1, contentHash: `sha256:${"a".repeat(64)}`, yaml: source, can_attempt_run: true, read_job_admission: "read-job-v1" };
   jest.spyOn(workflowService, "readiness").mockResolvedValue(revision);
   jest.spyOn(workflowService, "publish").mockResolvedValue({});
   jest.spyOn(workflowService, "create").mockResolvedValue({ id: "new", name: "new" });
@@ -118,10 +118,29 @@ test("published run calls readiness and displays recorded partial evidence after
   jest.spyOn(executionService, "get").mockResolvedValue({ id: "failed-run", status: "FAILED", finalOutput: { value: "actual partial answer" } });
   const { queryClient } = builder("report");
   fireEvent.click(await screen.findByRole("button", { name: "Run published workflow" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Start workflow" }));
   await waitFor(() => expect(executionService.get).toHaveBeenCalledWith("failed-run"));
   await screen.findByText(/actual partial answer/);
   expect(workflowService.publish).not.toHaveBeenCalled();
   queryClient.clear();
+});
+
+test("builder Run collects fresh required fields on repeated runs and never regenerates or republishes", async () => {
+  const revision = mockSaved();
+  const inputSchema = { type: "object", properties: { customer_name: { type: "string" } }, required: ["customer_name"], additionalProperties: false };
+  const reusable = dump({ name: "Customer form", description: "Reusable reviewed form", trigger: { type: "manual", config: { inputSchema } }, steps: [{ id: "first", action: "demo.echo", parameters: { value: "{{input.customer_name}}" } }] });
+  workflowService.getYAML.mockResolvedValue({ yaml: reusable }); workflowService.readiness.mockResolvedValue({ ...revision, yaml: reusable, authoring: { inputSchema } });
+  const { queryClient } = builder("report");
+  for (const name of ["Image Customer", "New PDF Customer"]) {
+    fireEvent.click(await screen.findByRole("button", { name: "Run published workflow" }));
+    const start = await screen.findByRole("button", { name: "Start workflow" }); expect(start.disabled).toBe(true);
+    const input = screen.getByLabelText("Customer name"); expect(input.value).toBe("");
+    fireEvent.change(input, { target: { value: name } }); fireEvent.click(start);
+    await waitFor(() => expect(workflowService.run).toHaveBeenLastCalledWith("report", { customer_name: name }, expect.objectContaining({ mode: "async-read", idempotencyKey: expect.any(String) })));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Start workflow" })).toBeNull());
+  }
+  expect(workflowService.run).toHaveBeenCalledTimes(2); expect(workflowService.run.mock.calls[0][2].idempotencyKey).not.toBe(workflowService.run.mock.calls[1][2].idempotencyKey);
+  expect(workflowService.create).not.toHaveBeenCalled(); expect(workflowService.command).not.toHaveBeenCalled(); expect(workflowService.publish).not.toHaveBeenCalled(); queryClient.clear();
 });
 test("explicit publication passes the exact acknowledged command revision", async () => {
   mockSaved(); const { queryClient } = builder("report");

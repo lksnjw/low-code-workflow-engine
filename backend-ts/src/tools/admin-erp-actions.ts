@@ -1,3 +1,4 @@
+import { allRolesToolAccess } from "../governance/tool-access.js";
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
@@ -29,12 +30,12 @@ export function administratorChatEnabled(services: HandlerServices, user: Curren
     typeof services.erpbridgeSession?.executeAdministratorTool === "function";
 }
 export function administratorChatRoleEnabled(services: HandlerServices, user: CurrentUser): boolean {
-  return services.config.erpbridgeAdminChatActions === true && user.roleId === "role_admin" && user.role === "Platform Admin";
+  return services.config.erpbridgeAdminChatActions === true && (allRolesToolAccess() || user.roleId === "role_admin" && user.role === "Platform Admin");
 }
 function authority(services: HandlerServices, state: Readonly<RepositoryState>, user: CurrentUser, sessionId: string) {
   if (!administratorChatEnabled(services, user)) throw new HandlerFailure(403, "Administrator chat actions are not enabled for this account");
   assertChatAuthority(state, user, sessionId);
-  if (state.users[user.id]?.roleId !== "role_admin" || state.roles.role_admin?.name !== "Platform Admin") throw new HandlerFailure(403, "Administrator authority changed");
+  if (!allRolesToolAccess() && (state.users[user.id]?.roleId !== "role_admin" || state.roles.role_admin?.name !== "Platform Admin")) throw new HandlerFailure(403, "Administrator authority changed");
 }
 function bindingValue(action: Action) {
   return { profile: action.profile, id: action.id, ownerId: action.ownerId, sessionId: action.sessionId, messageId: action.messageId,

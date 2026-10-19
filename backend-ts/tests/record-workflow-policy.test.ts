@@ -8,6 +8,7 @@ import { discoveredContract } from "../src/registry/discovered-contract.js";
 import type { HandlerServices } from "../src/http/handlers/common.js";
 import { checkRecordWorkflowPolicy, prepareOperationPolicy } from "../src/governance/record-workflow-policy.js";
 import { WORKFLOW_EDIT_SYSTEM_PROMPT, WORKFLOW_DOCUMENT_EDIT_SYSTEM_PROMPT } from "../src/prompts/contracts.js";
+import { withToolAccess } from "../src/governance/tool-access.js";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 test("natural workflow clarification clears only resolved blockers without erasing mandatory approval", () => {
@@ -37,6 +38,20 @@ async function fixture() {
   const yaml = (parameters = args) => stringify({ name: "Register customer", description: "Reviewed form", trigger: { type: "manual" }, steps: [{ id: "create", action: tool.name, parameters }] });
   return { services, user, tool, args, yaml };
 }
+
+test("shared workflows use selected policy without a phantom offline write denial", async () => {
+  const f = await fixture();
+  await f.services.repository.mutate(state => { state.settings.rbac = { enabled: false, localPolicyAgentEnabled: false }; });
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  const result = await withToolAccess("all-authenticated", () => checkRecordWorkflowPolicy(f.services, f.yaml(), { id: f.user.id, role: f.user.role, department: null }, {}));
+  expect(result).toMatchObject({ outcome: "allow", conditions: [] }); expect(fetch).not.toHaveBeenCalled();
+});
+
+test.each(["deny", "review"])("shared access preserves a configured fresh policy %s", async decision => {
+  const f = await fixture(); vi.stubGlobal("fetch", vi.fn(async () => Response.json({ decision, reason: "Current business policy", conditions: [] })));
+  const result = await withToolAccess("all-authenticated", () => checkRecordWorkflowPolicy(f.services, f.yaml(), { id: f.user.id, role: f.user.role, department: null }, {}));
+  expect(result).toMatchObject({ outcome: decision });
+});
 test.each(["allow", "deny", "review"])("fresh literal record proposal preserves RAG %s and records policy evidence", async decision => {
   const f = await fixture(), transport = vi.fn<typeof fetch>(async () => Response.json({ decision, reason: "Record fields checked", conditions: [] })); vi.stubGlobal("fetch", transport);
   expect(await checkRecordWorkflowPolicy(f.services, f.yaml(), { id: f.user.id, role: f.user.role, department: null }, {})).toMatchObject({ outcome: decision });

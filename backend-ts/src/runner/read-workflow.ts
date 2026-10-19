@@ -12,7 +12,7 @@ import { valueNodes } from "../workflows/read-control-flow.js";
 import { interpretReadPlan } from "../workflows/read-interpreter.js";
 import { ReadWorkerLeaseFailure } from "./read-worker-lease.js";
 import { connectionToolKey } from "../tools/mcp-dispatch-context.js";
-import { readFailureReason } from "./read-failure-reason.js";
+import { readFailureReason, readFailureDiagnostic } from "./read-failure-reason.js";
 
 /** Explicit read profiles: sequential actions and structured boolean branches. Unsupported logic
  * is rejected before any dispatch, never reinterpreted by an agent. */
@@ -61,14 +61,15 @@ export async function executeReadWorkflow(services: HandlerServices, actorId: st
       }
       const completed = new Date();
       // Do not reflect arbitrary remote exception strings/credentials to users.
-      const error = new Error(`Read step ${step.id} failed or was blocked; no automatic replay was performed`, { cause });
+      const diagnostic = readFailureDiagnostic(cause);
+      const error = new Error(`Read step ${step.id}: ${diagnostic.message}`, { cause });
       const failure = acknowledgedReadToolFailure(cause);
       // A failure receipt belongs to this attempt, never stepOutputs/finalOutput
       // or a dependent node's successful data bindings.
       const entry = { id: `tl_${index + 1}`, nodeId: step.id, label: step.description ?? step.action!, status: "FAILED" as const, startedAt: started.toISOString(), completedAt: completed.toISOString(), durationMs: completed.getTime() - started.getTime(), sideEffect: false,
         ...(failure ? { output: failure.result } : {}) };
       const log = { timestamp: completed.toISOString(), level: "error" as const, nodeId: step.id, message: error.message,
-        metadata: { action: step.action!, sideEffect: false, failureCode: readFailureReason(cause) } };
+        metadata: { action: step.action!, sideEffect: false, failureCode: readFailureReason(cause), diagnostic } };
       await hooks?.failed(index, entry, log, failure !== undefined);
       result.timeline.push(entry); result.logs.push(log);
       Object.defineProperty(error, "runnerResult", { value: result });

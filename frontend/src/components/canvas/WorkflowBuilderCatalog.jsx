@@ -142,7 +142,8 @@ function ToolCatalogItem({ tool }) {
   return (
     <button
       type="button"
-      draggable
+      draggable={Boolean(tool.inputSchema)}
+      disabled={!tool.inputSchema}
       onDragStart={handleDragStart}
       className="group flex w-full items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-md"
     >
@@ -156,6 +157,7 @@ function ToolCatalogItem({ tool }) {
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-bold text-slate-900">{tool.label}</span>
         <span className="mt-1 block text-xs leading-5 text-slate-500">{tool.description}</span>
+        {!tool.inputSchema && <span className="mt-1 block text-xs text-amber-700">Reviewed input schema unavailable. Refresh the connection before adding this tool.</span>}
       </span>
       <GripVertical className="mt-2 h-4 w-4 shrink-0 text-slate-300 transition group-hover:text-slate-500" />
     </button>

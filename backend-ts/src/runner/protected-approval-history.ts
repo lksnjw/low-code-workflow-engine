@@ -24,12 +24,13 @@ export function assertProtectedApprovalHistory(plan: CompiledProtectedOperationP
       if (intent?.state === "ACKNOWLEDGED" && !receipt) throw new Error("Owned protected effect lacks private SDK receipt history");
       if (intent?.state === "ACKNOWLEDGED" && at < ledger.nextSequence) {
         const result = ledger.receipts[String(at)]?.result, output = result?.kind === "accept" ? result.output : undefined;
-        let confirmation: unknown = (output as { structuredContent?: unknown } | undefined)?.structuredContent;
+        const generic = contract?.operationContract?.confirmation.source === "mcp-envelope";
+        let confirmation: unknown = generic ? output : (output as { structuredContent?: unknown } | undefined)?.structuredContent;
         for (const part of contract?.operationContract?.confirmation.path ?? [])
           confirmation = confirmation && typeof confirmation === "object" && !Array.isArray(confirmation) && Object.hasOwn(confirmation, part)
             ? (confirmation as Record<string, unknown>)[part] : undefined;
         if (!receipt || !contract?.operationContract || receipt.remoteName !== node.capability.remoteName || receipt.meaning !== contract.operationContract.confirmation.meaning ||
-            !output || hash(output) !== receipt.outputHash || validateToolInput(contract.outputSchema, (output as { structuredContent?: unknown }).structuredContent).length ||
+            !output || hash(output) !== receipt.outputHash || validateToolInput(contract.outputSchema, (output as Record<string, unknown>)[generic ? "jsonContent" : "structuredContent"]).length ||
             confirmation !== contract.operationContract.confirmation.expected)
           throw new Error("Owned protected effect lacks exact contract-confirmed private SDK receipt history");
       }

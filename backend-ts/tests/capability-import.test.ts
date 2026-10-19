@@ -9,8 +9,8 @@ import { RegistryValidator } from "../src/validator/registry-validator.js";
 import { createErpbridgeMcpSession, type ErpbridgeMcpSdkTool } from "../src/tools/erpbridge-mcp-client.js";
 import { admissionAuthorizer, captureCapabilityAdmissionPin, disableCapability, observeCapabilities, reviewCapability } from "../src/registry/capability-admission.js";
 import { stringify } from "yaml";
-import { importDiscoveredCapability, restoreImportedCapabilities } from "../src/registry/capability-import.js";
-import { discoveredContract, discoveredToolIdentity, remoteContractHash } from "../src/registry/discovered-contract.js";
+import { importDiscoveredCapability, importFullCatalog, restoreImportedCapabilities } from "../src/registry/capability-import.js";
+import { discoveredContract, discoveredToolIdentity, remoteContractHash, remoteCatalogHash } from "../src/registry/discovered-contract.js";
 import { discoverTools } from "../src/agent/tool-discovery.js";
 import { matchesBridgeContract } from "../src/tools/erpbridge-contract.js";
 import { dispatchReadTool } from "../src/tools/read-tool-broker.js";
@@ -18,6 +18,7 @@ import { Executor } from "../src/runner/executor.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import { buildApp } from "../src/http/app.js";
 import { loadConfig } from "../src/config/config.js";
+import { withToolAccess } from "../src/governance/tool-access.js";
 
 const disposers: (() => Promise<unknown>)[] = [];
 afterEach(async () => { for (const dispose of disposers.splice(0).reverse()) await dispose(); });
@@ -71,6 +72,32 @@ test("unknown discovery has schema/hints but grants no roles or execution; expli
   expect((await dispatchReadTool(s.services, "admin", tool.name, { recordId: "REC-7" })).structuredContent).toEqual({ count: 7 });
   expect(s.sdk.callTool).toHaveBeenCalledTimes(1); expect(await readFile(s.toolsPath, "utf8")).toBe("[]"); expect(await readFile(s.rulesPath, "utf8")).toBe("[]");
   expect((await s.repository.snapshot()).auditLogs.some(value => value.action === "capability.discovered.imported")).toBe(true);
+});
+
+test("explicit shared catalog activation includes reads and deletes for every role and preserves current pins on repetition", async () => withToolAccess("all-authenticated", async () => {
+  const s = await setup();
+  const remove = { name: "delete_customer", annotations: { readOnlyHint: false, destructiveHint: true },
+    inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }, outputSchema: { type: "object" },
+    _meta: { "toolplane.serving": true, "toolplane.resourceVersion": "1.0.0", "toolplane.resourceDigest": "b".repeat(64) } };
+  s.sdk.listTools.mockResolvedValue([s.remote(), remove]);
+  const body = { profile: "workspace-full-tool-access/v1", decisionKey: "all-roles-current-catalog-01", catalogHash: remoteCatalogHash([s.remote(), remove]), confirmed: true, note: "Owner requested every connected read, create, update and delete tool, with exact approval for effects." };
+  const result = await importFullCatalog({ ...s, user: s.admin, body });
+  expect(result).toMatchObject({ catalogCount: 2, admittedCount: 2, unsupported: [], erpToolsDispatched: 0 });
+  const state = await s.repository.snapshot(), pins = structuredClone(state.capabilityAdmissions);
+  for (const tool of s.registries.snapshot().tools) expect(tool.allowed_roles).toEqual(expect.arrayContaining(["Client", "Workflow Builder", "Platform Admin"]));
+  expect(s.registries.snapshot().tools.find(tool => tool.mcp_tool_name === "delete_customer")?.operation_contract?.confirmation.source).toBe("mcp-envelope");
+  await importFullCatalog({ ...s, user: s.admin, body });
+  expect((await s.repository.snapshot()).capabilityAdmissions).toEqual(pins);
+  expect(s.sdk.callTool).not.toHaveBeenCalled();
+}));
+
+test("full catalog activation cannot come from a model, a normal role or a role-limited workspace", async () => {
+  const s = await setup(), body = { profile: "workspace-full-tool-access/v1", decisionKey: "all-roles-current-catalog-02", catalogHash: remoteCatalogHash([s.remote()]), confirmed: true, note: "Synthetic scope test" };
+  await expect(importFullCatalog({ ...s, user: s.admin, body })).rejects.toMatchObject({ status: 403 });
+  await withToolAccess("all-authenticated", async () => {
+    await expect(importFullCatalog({ ...s, user: s.builder, body })).rejects.toMatchObject({ status: 403 });
+  });
+  expect(s.sdk.listTools).not.toHaveBeenCalled(); expect(s.sdk.callTool).not.toHaveBeenCalled();
 });
 
 test("immutable-host HTTP fixture import does not mutate release files and rejects a non-admin before discovery", async () => {
@@ -212,18 +239,27 @@ test("hosted digest-pinned read alias requires an explicit review and dispatches
   expect(s.sdk.callTool).toHaveBeenCalledWith("reports.lookup", { recordId: "one" }, { "toolplane.resourceDigest": "a".repeat(64) });
 });
 
-test.each(["missing-serving", "not-serving", "not-read-only", "destructive", "missing-output"])("alias %s remains non-importable", async scenario => {
+test.each(["missing-serving", "not-serving", "destructive"])("alias %s remains non-importable", async scenario => {
   const remote = { ...remoteTool("reports.lookup"), name: "reports.lookup" };
   remote._meta!["toolplane.serving"] = true;
   if (scenario === "missing-serving") delete remote._meta!["toolplane.serving"];
   if (scenario === "not-serving") remote._meta!["toolplane.serving"] = false;
-  if (scenario === "not-read-only") remote.annotations = { readOnlyHint: false };
   if (scenario === "destructive") remote.annotations = { readOnlyHint: true, destructiveHint: true };
-  if (scenario === "missing-output") delete remote.outputSchema;
   const s = await setup(null, "erpbridge-default", remote);
   expect((await observeCapabilities({ ...s, user: s.admin })).unreviewedInventory[0]).toMatchObject({ importable: false, authorityGranted: false });
   await expect(s.runImport()).rejects.toThrow();
   expect(s.sdk.callTool).not.toHaveBeenCalled();
+});
+
+test("a reviewed read without an output schema preserves its opaque MCP receipt", async () => {
+  const remote = { ...remoteTool("reports.lookup"), name: "reports.lookup" }; remote._meta!["toolplane.serving"] = true;
+  delete remote.outputSchema;
+  const s = await setup(null, "erpbridge-default", remote);
+  expect((await observeCapabilities({ ...s, user: s.admin })).unreviewedInventory[0]).toMatchObject({ importable: true, authorityGranted: false });
+  const imported = await s.runImport(); expect(imported.admission.state).toBe("AVAILABLE");
+  const definition = s.registries.snapshot().tools[0]!; expect(definition.bridge_contract?.output_schema).toBeUndefined();
+  const result = await dispatchReadTool(s.services, "admin", definition.name, { recordId: "one" });
+  expect(result.content).toBeDefined(); expect(result.jsonContent).toBeUndefined();
 });
 
 test("read-alias compatibility cannot be promoted to a write or bypass a later disable", async () => {

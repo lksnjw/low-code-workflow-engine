@@ -1,3 +1,4 @@
+import { allRolesToolAccess, toolRoleAllowed } from "../governance/tool-access.js";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { canonicalJSONBytes, resolvedParameterHashBytes } from "../core/canonical-json.js";
@@ -78,6 +79,8 @@ export function updateRuntimeApprovalPolicy(state: RepositoryState, user: Curren
  * not automatic approval, ERP access or retry authority. */
 function superAdministrator(state: Readonly<RepositoryState>, actorId?: string): boolean {
   const actor = actorId ? state.users[actorId] : undefined, role = actor && state.roles[actor.roleId];
+  if (allRolesToolAccess() && (state.settings.rbac as Record<string, unknown> | undefined)?.runtimeApprovalPolicy === undefined)
+    return !!actor && actor.status.toLowerCase() === "active" && !!role && role.permissions.includes("execution:approve");
   return !!actor && actor.status.toLowerCase() === "active" && actor.roleId === "role_admin" && role?.id === "role_admin" &&
     role.name === "Platform Admin" && role.permissions.includes("execution:approve");
 }
@@ -94,7 +97,7 @@ function currentPolicy(state: Readonly<RepositoryState>, requesterId?: string): 
 }
 export const runtimeApprovalPolicyHash = (state: Readonly<RepositoryState>, requesterId?: string) => {
   const policy = currentPolicy(state, requesterId);
-  return digest(superAdministrator(state, requesterId) ? { policy, selfApprovalProfile: "super-administrator-exact/v1" } : policy);
+  return digest(superAdministrator(state, requesterId) ? { policy, selfApprovalProfile: allRolesToolAccess() ? "shared-workflow-exact/v1" : "super-administrator-exact/v1" } : policy);
 };
 /** Minimum settings projection. Role discovery never grants role permissions. */
 export function runtimeApprovalAdministration(state: Readonly<RepositoryState>, user: CurrentUser) {
@@ -202,7 +205,7 @@ function assertBinding(state: RepositoryState, execution: Execution, record: Run
   if (!admission || admission.state !== "AVAILABLE" || admission.revisionId !== b.capabilityRevision || admission.version !== b.admissionVersion ||
       !revision || revision.capabilityId !== b.capabilityId || revision.connectionId !== b.connectionId || revision.connectionBinding !== b.connectionBinding || revision.contractHash !== b.contractHash ||
       !revision.definition || capabilityContractHash(revision.definition as ToolDefinition) !== b.contractHash ||
-      !(revision.definition as ToolDefinition).allowed_roles.includes(state.roles[b.requesterRoleId]!.name) ||
+      !toolRoleAllowed((revision.definition as ToolDefinition).allowed_roles, state.roles[b.requesterRoleId]!.name) ||
       ![(revision.definition as ToolDefinition).name, (revision.definition as ToolDefinition).mcp_tool_name].includes(step.action ?? "") ||
       validateToolInput((revision.definition as Record<string, unknown>).input_schema, record.arguments).length) deny("Approval capability revision, availability or arguments changed");
   if (runtimeApprovalPolicyHash(state, b.requesterId) !== b.policyHash) deny("Approval policy changed; a new exact review is required");

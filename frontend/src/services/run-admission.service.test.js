@@ -126,3 +126,29 @@ test("account changes during preflight prevent admission; saved identity is acco
   await expect(runAdmissionService.admit("flow", {})).rejects.toThrow(/account changed/); expect(apiClient.post).not.toHaveBeenCalled();
   await runAdmissionService.admit("flow", {}); localStorage.setItem(AUTH_STORAGE.user, JSON.stringify({ id: "actor" })); expect(runAdmissionService.pending("flow")).toBeNull();
 });
+
+
+test("Start forwards the exact draft revision without a separate publication request", async () => {
+  const start_revision = { baseVersion: 2, baseHash: `sha256:${"a".repeat(64)}` };
+  apiClient.get.mockResolvedValueOnce(wrap({ can_attempt_run: true, operation_job_admission: "operation-job/v1", version: 2, contentHash: start_revision.baseHash, start_revision }));
+  await runAdmissionService.admit("flow", { customer_name: "Reviewed customer" });
+  expect(apiClient.post).toHaveBeenCalledTimes(1);
+  expect(apiClient.post.mock.calls[0][0]).toBe("/workflows/flow/run");
+  expect(apiClient.post.mock.calls[0][1]).toMatchObject({ startRevision: start_revision, input: { customer_name: "Reviewed customer" } });
+});
+
+test("changed draft revision cannot submit previously reviewed inputs", async () => {
+  const startRevision = { baseVersion: 1, baseHash: `sha256:${"a".repeat(64)}` };
+  apiClient.get.mockResolvedValueOnce(wrap({ can_attempt_run: true, operation_job_admission: "operation-job/v1", version: 2, contentHash: `sha256:${"b".repeat(64)}` }));
+  await expect(runAdmissionService.admit("flow", {}, { startRevision })).rejects.toThrow("saved workflow changed");
+  expect(apiClient.post).not.toHaveBeenCalled();
+});
+
+
+test("a stale readiness flag does not prevent server validation on Start", async () => {
+  const baseHash = `sha256:${"c".repeat(64)}`;
+  apiClient.get.mockResolvedValueOnce(wrap({ can_attempt_run: false, version: 4, contentHash: baseHash, operation_job_admission: "operation-job/v1" }));
+  await runAdmissionService.admit("flow", { customer_name: "New customer" });
+  expect(apiClient.post).toHaveBeenCalledTimes(1);
+  expect(apiClient.post.mock.calls[0][1]).toMatchObject({ startRevision: { baseVersion: 4, baseHash }, input: { customer_name: "New customer" } });
+});

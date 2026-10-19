@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import type { WorkflowBlueprint } from "../models/schemas.js";
 import { effectiveStepKind } from "../models/schemas.js";
 import type { ToolDefinition } from "../registry/schemas.js";
@@ -127,7 +128,7 @@ export function readAuthoringContract(blueprint: WorkflowBlueprint, tools: reado
     if (kind === "agent") {
       const outputSchema = project(step.output_schema), allowed = step.allowed_actions ?? [];
       const allowedTools = allowed.map(action => tools.filter(tool => tool.name === action || tool.mcp_tool_name === action)).filter(matches => matches.length === 1).map(matches => matches[0]!)
-        .filter(tool => tool.is_read_only && tool.allowed_roles.includes(role));
+        .filter(tool => tool.is_read_only && toolRoleAllowed(tool.allowed_roles, role));
       const validScope = prefix && safeID(step.id) && !seen.has(step.id) && allowed.length > 0 && allowedTools.length === allowed.length &&
         Object.keys(step).every(key => ["id", "kind", "connection_id", "description", "instruction", "input", "allowed_actions", "output_schema", "completion_predicate", "data_class", "model",
           "max_input_items", "max_input_chars", "max_output_tokens", "max_total_tokens", "max_rounds", "max_tool_calls", "max_wall_time_ms", "max_concurrency"].includes(key));
@@ -140,7 +141,7 @@ export function readAuthoringContract(blueprint: WorkflowBlueprint, tools: reado
       seen.add(step.id); return result;
     }
     const matches = tools.filter(tool => tool.name === step.action || tool.mcp_tool_name === step.action), tool = matches.length === 1 ? matches[0] : undefined;
-    const granted = !!tool && !!tool.tool_id.trim() && !!tool.mcp_tool_name.trim() && tool.input_schema.type === "object" && (tool.is_read_only || !!tool.operation_contract && (!compiled || !!scopes)) && tool.allowed_roles.includes(role) && effectiveStepKind(step) === "tool";
+    const granted = !!tool && !!tool.tool_id.trim() && !!tool.mcp_tool_name.trim() && tool.input_schema.type === "object" && (tool.is_read_only || !!tool.operation_contract && (!compiled || !!scopes)) && toolRoleAllowed(tool.allowed_roles, role) && effectiveStepKind(step) === "tool";
     const schema = granted ? project(tool.input_schema) : undefined;
     const outputSchema = granted && tool?.bridge_contract?.output_schema ? project(tool.bridge_contract.output_schema) : undefined;
     const validScope = prefix && safeID(step.id) && !seen.has(step.id) && Object.keys(step).every(key => ["id", "kind", "action", "connection_id", "parameters", "description"].includes(key));
@@ -183,7 +184,7 @@ export function readAuthoringContract(blueprint: WorkflowBlueprint, tools: reado
     const actions = effectiveStepKind(step) === "agent" ? step.allowed_actions ?? [] : effectiveStepKind(step) === "tool" ? [step.action] : [];
     return { id: step.id, tools: actions.flatMap(action => {
       const matches = tools.filter(tool => tool.name === action || tool.mcp_tool_name === action);
-      return matches.length === 1 && matches[0]!.allowed_roles.includes(role) ? matches : [];
+      return matches.length === 1 && toolRoleAllowed(matches[0]!.allowed_roles, role) ? matches : [];
     }) };
   })) : [];
   const executionProfile = protectedProfile === "protected" && !!compiled && !compiled.issues.length && !protectedIssues.length ? "protected-operation-v1" : protectedGroups.length || protectedProfile === "protected-collections-pending" || (blueprint.metadata?.controlFlow as { schemaVersion?: unknown } | undefined)?.schemaVersion === "read-control-flow/v4" ? "protected-draft-runtime-pending" : blueprint.metadata?.controlFlow !== undefined && usesCheckpointedOperationWorkflow(blueprint, tools) ? !editableFlow || compiled?.issues.length ? "unsupported-operation-control-flow" : "decision-operation-v1" : collections.length ? "collection-simulation-only" :

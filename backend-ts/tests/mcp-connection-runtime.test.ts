@@ -247,12 +247,37 @@ test("bounded manager owns independent revisioned connections and dispatches onl
   expect(s.sdkClients.reduce((count, client) => count + client.callTool.mock.calls.length, 0)).toBe(2);
 });
 
-test("disconnect fences captured old clients and a reconnect has a new admission identity without automatic re-review", async () => {
+test("disconnect fences old clients while unchanged reconnects preserve reviewed tool identity", async () => {
   const s = await setup(); await s.connect(); await s.review(); const old = s.runtime.session!, binding = old.admissionBinding;
+  const yaml = stringify({ name: "Reusable read", trigger: { type: "manual" }, steps: [{ id: "lookup", action: s.tool.name, parameters: { value: "reused" } }] });
+  const prepared = await prepareReadPublication(s.services, yaml, s.admin);
   const disconnected = await s.command("disconnect", 2); expect(disconnected.connection).toMatchObject({ state: "DISCONNECTED", revision: 3, initialized: false, desiredEnabled: false });
   expect(s.runtime.session).toBeUndefined(); await expect(old.assertAdmission!(s.tool)).rejects.toThrow(); expect(old.available).toBe(false);
-  await s.command("connect", 3, "fixture_connect_request_0002"); expect(s.runtime.session!.admissionBinding).not.toBe(binding);
-  await expect(s.runtime.session!.assertAdmission!(s.tool)).rejects.toThrow(/binding changed/); expect(s.sdkClients.every(client => client.callTool.mock.calls.length === 0)).toBe(true);
+  const reviewed = structuredClone((await s.repository.snapshot()).capabilityAdmissions);
+  for (let index = 0; index < 3; index++) {
+    await s.command("connect", 3 + index * 2, `fixture_same_connect_${index}`); expect(s.runtime.session!.admissionBinding).toBe(binding);
+    await expect(s.runtime.session!.assertAdmission!(s.tool)).resolves.toBeUndefined();
+    expect((await s.repository.snapshot()).capabilityAdmissions).toEqual(reviewed);
+    if (index < 2) await s.command("disconnect", 4 + index * 2, `fixture_same_disconnect_${index}`);
+  }
+  await expect(old.assertAdmission!(s.tool)).rejects.toThrow();
+  expect(s.sdkClients.every(client => client.callTool.mock.calls.length === 0)).toBe(true);
+  const current = await prepareReadPublication(s.services, yaml, s.admin); expect(current!.stored.plan).toEqual(prepared!.stored.plan);
+  const pin = prepared!.stored.plan.ir.root.nodes[0]!.capability.admission!;
+  await dispatchReadTool(s.services, "admin", s.tool.name, { value: "reused" }, { dynamicPlan: { admissionPin: pin, contractHash: pin.contractHash, toolId: s.tool.tool_id } });
+  expect(s.sdkClients.at(-1)!.callTool).toHaveBeenCalledOnce();
+});
+
+test("actual endpoint, credential or role-map changes still invalidate a previous tool review", async () => {
+  for (const patch of [{ erpbridgeBaseURL: "https://another.example.test" }, { erpbridgeMcpToken: "new-fixture-credential" }, { erpbridgeRoleMap: { "Platform Admin": "changed_admin" } }]) {
+    const s = await setup(); await s.connect(); await s.review(); const binding = s.runtime.session!.admissionBinding;
+    await s.runtime.stop();
+    const updated = await McpConnectionRuntime.open({ ...s.options, config: { ...s.options.config, ...patch } }); runtimes.push(updated);
+    const status = (await updated.status(s.admin)).connections[0]!;
+    await updated.command("connect", s.admin, { baseRevision: status.revision, requestId: "fixture_new_configuration_01" });
+    expect(updated.session!.admissionBinding).not.toBe(binding);
+    await expect(updated.session!.assertAdmission!(s.tool)).rejects.toThrow(/binding changed/);
+  }
 });
 
 test("fatal notification status reaches administration and fences captured admission/discovery without any business call", async () => {

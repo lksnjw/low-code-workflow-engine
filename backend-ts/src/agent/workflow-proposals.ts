@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { z } from "zod";
 import { ok } from "../models/schemas.js";
 import { parseWorkflowYAMLStrict, workflowContentHash } from "../parser/workflow.js";
@@ -11,6 +12,11 @@ import { promptData } from "../prompts/contracts.js";
 import { withoutSecretFields } from "../redact/secrets.js";
 import type { processStoredChat } from "../http/handlers/chat.js";
 import type { RepositoryState } from "../repository/store.js";
+import { runWorkflowAuthoringAgent } from "./workflow-authoring-agent.js";
+import { generatedInputBindingIssues } from "../workflows/generated-input-validation.js";
+import { withWorkspaceCompilationIssues } from "../workflows/draft-validation.js";
+import { discoverTools } from "./tool-discovery.js";
+import { reviewedReadOutputKey } from "../tools/mcp-result.js";
 
 const resultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("proposal"), yaml: z.string().trim().min(1).max(200_000), summary: z.string().trim().min(1).max(800) }).strict(),
@@ -52,18 +58,25 @@ export async function processWorkflowProposal(input: Input, mutate: Mutation) {
   if (selected.workflow.yaml.length > 200_000) return reply("This workflow is too large to review in one request. Select the step you want to change and describe that change in chat.", { intent: "CONVERSATION", workflowId: selected.workflow.id, needsClarification: true, toolsDispatched: false });
   if (!services.providerRuntime?.configured) return reply("Choose an available chat model before asking me to change this workflow. Your saved workflow is unchanged.", { intent: "WORKFLOW_MODIFY_ERROR", toolsDispatched: false });
   const { workflow, hash } = selected, baseVersion = workflow.draftVersion;
-  const registryHash = services.registries.hash(), tools = services.registries.snapshot().tools;
+  let tools;
+  try { tools = (await discoverTools(services.erpbridgeSession ?? null, services.registries)).filter(tool => toolRoleAllowed(tool.allowed_roles, user.role)); }
+  catch { return reply("I could not verify the current ERP tool connection before editing. Check its connection and reviewed tool access, then retry this change. Your saved workflow is unchanged.", { intent: "WORKFLOW_MODIFY_ERROR", code: "WORKFLOW_TOOLS_UNAVAILABLE", toolsDispatched: false }); }
+  if (!tools.length) return reply("No reviewed ERP tools are currently available for your role. Check the connection and tool access before building this change. Your saved workflow is unchanged.", { intent: "WORKFLOW_MODIFY_ERROR", code: "WORKFLOW_TOOLS_UNAVAILABLE", toolsDispatched: false });
+  const registryHash = services.registries.hash();
   const prompt = promptData({ instruction: content, currentYaml: workflow.yaml,
     recentConversation: stored.priorMessages.slice(-6).map(value => value.slice(0, 2500)),
-    tools: tools.filter(tool => tool.allowed_roles.includes(user.role)).map(tool => withoutSecretFields({ name: tool.name,
-      description: tool.description, inputSchema: tool.input_schema, outputSchema: tool.bridge_contract?.output_schema, readOnly: tool.is_read_only })),
+    tools: tools.filter(tool => toolRoleAllowed(tool.allowed_roles, user.role)).map(tool => withoutSecretFields({ name: tool.name,
+      description: tool.description, inputSchema: tool.input_schema, outputSchema: tool.bridge_contract?.output_schema, readOnly: tool.is_read_only,
+      resultBinding: { path: [reviewedReadOutputKey(tool)], schema: tool.bridge_contract?.output_schema },
+      riskLevel: tool.risk_level, operationContract: tool.operation_contract, readErrorContract: tool.read_error_contract,
+      reportCoverageContract: tool.report_coverage_contract, connectionId: tool.connection_id })),
     authoring: readAuthoringContract(parseWorkflowYAMLStrict(workflow.yaml), tools, user.role, registryHash) });
   if (Buffer.byteLength(prompt, "utf8") > 320_000) return reply("There is too much workflow context for a reliable whole-workflow edit. Select the step you want to change, then tell me what it should do.", { intent: "CONVERSATION", workflowId: workflow.id, needsClarification: true, toolsDispatched: false });
   await hooks?.stage("GENERATING_WORKFLOW_PROPOSAL");
   let generated;
   try {
-    generated = await services.providerRuntime.generateCandidate(prompt, "prompt/workflow-modifier/v4", response => { parseWorkflowProposal(response.text); }, signal,
-      { traceId, sessionId, workflowId: workflow.id, actor: { id: user.id, role: user.role }, egress: { purpose: "interactive", dataClass: "restricted" } });
+    generated = await runWorkflowAuthoringAgent({ prompt, version: "prompt/workflow-modifier/v6", ...(signal ? { signal } : {}) }, agentSignal => services.providerRuntime!.generateCandidate(prompt, "prompt/workflow-modifier/v6", response => { parseWorkflowProposal(response.text); }, agentSignal,
+      { traceId, sessionId, workflowId: workflow.id, actor: { id: user.id, role: user.role }, egress: { purpose: "interactive", dataClass: "restricted" } }));
   } catch {
     if (signal?.aborted) throw new HandlerFailure(409, "Workflow change request was cancelled");
     return reply("I couldn't prepare a valid change. Your saved workflow is unchanged. Please describe the change again; I will ask if a required detail is missing.", { intent: "WORKFLOW_MODIFY_ERROR", workflowId: workflow.id, toolsDispatched: false });
@@ -74,6 +87,7 @@ export async function processWorkflowProposal(input: Input, mutate: Mutation) {
   const yaml = applyWorkflowCommand(workflow.yaml, command);
   if (workflowContentHash(yaml) === workflowContentHash(workflow.yaml)) return reply("The proposed change matches the saved workflow. What would you like to change?", { intent: "CONVERSATION", workflowId: workflow.id, needsClarification: true, toolsDispatched: false });
   const validation = validateWorkspaceDraft("WorkflowProposal", yaml, user.role, services.validator, tools);
+  withWorkspaceCompilationIssues(validation, generatedInputBindingIssues(parseWorkflowYAMLStrict(yaml)));
   const assistantMessage = await mutate(state => {
     const chat = assertChatAuthority(state, user, sessionId), fresh = state.workflows[workflow.id];
     if (!fresh) throw new HandlerFailure(404, "Workflow not found");

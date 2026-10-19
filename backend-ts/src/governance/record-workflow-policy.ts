@@ -8,6 +8,8 @@ import { appendOptionalPolicyAudit, evaluateOptionalPolicy, policySwitches, asse
 import type { GovernedValidationContext, GovernanceUser } from "./gate.js";
 import type { PolicyGateOutcome } from "./policy-gate-client.js";
 import { usesCheckpointedOperationWorkflow } from "../workflows/execution-shape.js";
+import { allRolesToolAccess } from "./tool-access.js";
+import { effectiveStepKind } from "../models/schemas.js";
 
 export class OperationPolicyBlocked extends Error {
   constructor(readonly decision: "deny" | "review" | "unavailable", readonly reason: string) {
@@ -20,29 +22,34 @@ export class OperationPolicyBlocked extends Error {
  * Other effects and unresolved runtime bindings retain the legacy gate. */
 export async function checkRecordWorkflowPolicy(services: HandlerServices, yaml: string, actor: GovernanceUser,
   context: GovernedValidationContext): Promise<Exclude<PolicyGateOutcome, { outcome: "fallback" }> | null> {
-  if (!directRagConfigured(services.config) || !await services.repository.read(state => policySwitches(state.settings.rbac).remote)) return null;
+  const shared = allRolesToolAccess();
+  if (!shared && (!directRagConfigured(services.config) || !await services.repository.read(state => policySwitches(state.settings.rbac).remote))) return null;
   let workflow;
   try { workflow = parseWorkflowYAMLStrict(yaml); } catch { return null; }
-  const writes = workflow.steps.filter(step => services.registries.findTool(step.action ?? "")?.is_read_only !== true);
+  const writes = workflow.steps.filter(step => shared ? effectiveStepKind(step) === "tool" : services.registries.findTool(step.action ?? "")?.is_read_only !== true);
   if (!writes.length || writes.some(step => {
     const tool = services.registries.findTool(step.action ?? "");
-    return !tool || !isErpnextWriteContract(tool) || !["create_customer", "create_item"].includes(tool.mcp_tool_name);
+    return !tool || (shared ? !tool.is_read_only && (!tool.operation_contract || !usesCheckpointedOperationWorkflow(workflow, services.registries.snapshot().tools)) :
+      !isErpnextWriteContract(tool) || !["create_customer", "create_item"].includes(tool.mcp_tool_name));
   })) return null;
   const user = await services.repository.effectiveUser(actor.id);
   if (!user || user.role !== actor.role || user.status.toLowerCase() !== "active") return { outcome: "deny", reason: "Record policy actor is no longer current." };
+  const expectedSettings = await services.repository.read(state => canonicalJSONBytes(policySwitches(state.settings.rbac)));
   for (const step of writes) {
     const tool = services.registries.findTool(step.action!)!;
     const reusable = /\{\{/.test(JSON.stringify(step.parameters));
-    if (reusable && !usesCheckpointedOperationWorkflow(workflow, services.registries.snapshot().tools)) return null;
-    const decision = await checkDirectRagPolicy(services.config, user, { prompt: "Validate the exact proposed record fields. This is not execution approval.",
+    if (!shared && reusable && !usesCheckpointedOperationWorkflow(workflow, services.registries.snapshot().tools)) return null;
+    const policyInput = { prompt: "Validate the exact proposed record fields. This is not execution approval.",
       action: reusable ? "record_workflow_prepare" : tool.mcp_tool_name,
       context: reusable ? { recordAction: tool.mcp_tool_name, parameters: step.parameters, inputSchema: workflow.trigger?.config?.inputSchema }
-        : { arguments: step.parameters, readOnly: false, domain: tool.module }, signal: context.signal });
-    await services.repository.mutate(state => appendOptionalPolicyAudit(state, user, decision, context));
+        : { arguments: step.parameters, readOnly: false, domain: tool.module }, signal: context.signal };
+    const decision = shared ? await evaluateOptionalPolicy(services, user, policyInput) : await checkDirectRagPolicy(services.config, user, policyInput);
+    if (!shared) await services.repository.mutate(state => appendOptionalPolicyAudit(state, user, decision, context));
     const current = await services.repository.read(state => effectiveUserFromState(state, user.id));
     if (!current || current.status.toLowerCase() !== "active" || current.role !== user.role ||
       !canonicalJSONBytes([...current.permissions].sort()).equals(canonicalJSONBytes([...user.permissions].sort())) ||
-      !await services.repository.read(state => policySwitches(state.settings.rbac).remote) || context.signal?.aborted)
+      !expectedSettings.equals(await services.repository.read(state => canonicalJSONBytes(policySwitches(state.settings.rbac)))) ||
+      (!shared && !await services.repository.read(state => policySwitches(state.settings.rbac).remote)) || context.signal?.aborted)
       return { outcome: "deny", reason: "Record policy actor or settings changed during checking." };
     if (decision.decision !== "allow") return { outcome: decision.decision === "review" ? "review" : "deny", reason: decision.reason };
   }

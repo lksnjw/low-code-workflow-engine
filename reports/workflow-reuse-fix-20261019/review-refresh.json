@@ -1,0 +1,133 @@
+{
+  "startedAt": "2026-10-19T13:38:40.830Z",
+  "status": "COMPLETED",
+  "refreshed": [
+    {
+      "name": "get_territory",
+      "revisionId": "caprev_1897_0121e132",
+      "contractHash": "sha256:5125e4bb9029d29ac7c53a90d9ae5535a55646089d17d6b43197cf5410f9e79b"
+    },
+    {
+      "name": "get_customer_group",
+      "revisionId": "caprev_1899_482f2b5d",
+      "contractHash": "sha256:dea95b60330ad69f8520f2a9e2a574af347dc81cfe790f9af38094ac3b25d16b"
+    },
+    {
+      "name": "create_customer",
+      "revisionId": "caprev_1901_2c398a53",
+      "contractHash": "sha256:02fb7fb28224352c9e13ce44251ae95dedb91705f05bec6abf8fab6f07b2e6bc"
+    },
+    {
+      "name": "get_item_group",
+      "revisionId": "caprev_1903_73d9ec6c",
+      "contractHash": "sha256:552347c002053aec0174d496b393466f0d80f241947ef7eb90ba936ec95dd404"
+    },
+    {
+      "name": "list_purchase_invoices",
+      "revisionId": "caprev_1905_aab1a4a0",
+      "contractHash": "sha256:5069744ef2c5e909468fc9e8e373e6cb096ad5f1407cd4fce76360504ceb3c93"
+    },
+    {
+      "name": "list_item_groups",
+      "revisionId": "caprev_1907_4f7c0e5e",
+      "contractHash": "sha256:a49c77cc3538dd447b8b98cdb597effc937b6c5109adaee9c9d08223ced526d8"
+    },
+    {
+      "name": "list_departments",
+      "revisionId": "caprev_1909_e8eec5b8",
+      "contractHash": "sha256:763b39b0efb56ca0bea70d55a8e6d31df7638b42a3abfda0a24eedd0cf65c181"
+    },
+    {
+      "name": "get_customer",
+      "revisionId": "caprev_1911_07ca9921",
+      "contractHash": "sha256:1149907421bb3527c2b2fb140bcafe0768c207dfe7bb51c4f123b685de398e3d"
+    },
+    {
+      "name": "list_bins",
+      "revisionId": "caprev_1913_5b532e4c",
+      "contractHash": "sha256:868bda1da2707a27d42fb1b5707b5a00957867772c48cc667f94caac320ebea0"
+    },
+    {
+      "name": "list_sales_invoices",
+      "revisionId": "caprev_1915_70f1e5d0",
+      "contractHash": "sha256:576b0657e6463986af1f8420193ee1dc89bd5af294ee67de7d5bd86ff1f7e3fa"
+    },
+    {
+      "name": "get_warehouse",
+      "revisionId": "caprev_1917_a12df685",
+      "contractHash": "sha256:cbc28c0076a00b7e1768a6c44a2c00e2a3b296ac65635f53831e0bc7c2841a27"
+    },
+    {
+      "name": "list_customers",
+      "revisionId": "caprev_1919_ca4eb5ce",
+      "contractHash": "sha256:e16d6792a62bb9e04abb644171bf61f9bbf126dc2a67d7703c0e0ae7f28acb21"
+    },
+    {
+      "name": "run_report",
+      "revisionId": "caprev_1921_87701969",
+      "contractHash": "sha256:ff77d561ad0bc76625cae57ff81fc77b2023905d256895e83db29ef8bf63a5bf"
+    },
+    {
+      "name": "get_item",
+      "revisionId": "caprev_1923_cddb250c",
+      "contractHash": "sha256:19ebb79a722254e56d5d1e1581c781cd2c87031833e252e6d52607c1fdf67743"
+    },
+    {
+      "name": "list_sales_orders",
+      "revisionId": "caprev_1925_0b9c107a",
+      "contractHash": "sha256:33fbdbb7cb054f4bb55592439e83b76d3c08f68bd2b349fa2d9ca108d2def4e1"
+    },
+    {
+      "name": "list_suppliers",
+      "revisionId": "caprev_1927_93637ad0",
+      "contractHash": "sha256:dc21c2dc16317672e004a7afecfd8246989db00916f837a41dc98196229aaa78"
+    },
+    {
+      "name": "list_purchase_orders",
+      "revisionId": "caprev_1929_97199aa7",
+      "contractHash": "sha256:8d8cda3bfe31c8da7f8c85f0645fcd3ecb5b5554c8e15dbbe18d5ef2ea21e937"
+    },
+    {
+      "name": "list_uoms",
+      "revisionId": "caprev_1931_527f5946",
+      "contractHash": "sha256:5dbae9d80f7adcedd76ceadb9673c38c1c19898a82b42a936fdf61b3204a2b60"
+    },
+    {
+      "name": "get_uom",
+      "revisionId": "caprev_1933_cff3ac5c",
+      "contractHash": "sha256:18a07f1c29b31eef86aca55744c40b7a7682cf9e6519f5cd3b2b9f49815a988a"
+    },
+    {
+      "name": "list_customer_groups",
+      "revisionId": "caprev_1935_e3d98973",
+      "contractHash": "sha256:b450062a653cefb2e309ea158f1347c34972e6d6649b8e74b217953eee97b34f"
+    },
+    {
+      "name": "create_item",
+      "revisionId": "caprev_1937_81b26bbc",
+      "contractHash": "sha256:2043911cc47a975d20b48e0ca654f967de5d30a991ff181ef10d809774148ad7"
+    },
+    {
+      "name": "list_warehouses",
+      "revisionId": "caprev_1939_58f9d1c4",
+      "contractHash": "sha256:30bb55a361d5c65d011cf752ab4c88fe47fc9f7c3443535192747af3a59c4283"
+    },
+    {
+      "name": "list_items",
+      "revisionId": "caprev_1941_19b8266b",
+      "contractHash": "sha256:0bb204aa07ade7445e97df404a6d67ce2060cd4e40c3d24d672025c5b41c24bb"
+    }
+  ],
+  "skipped": [
+    {
+      "name": "list_territories",
+      "reason": "Already current"
+    },
+    {
+      "name": "list_companies",
+      "reason": "Already current"
+    }
+  ],
+  "erpWrites": 0,
+  "workflowRuns": 0
+}

@@ -112,15 +112,19 @@ test("chat Save reviews the exact proposal and saves one revision, without publi
   expect(workflowService.publish).not.toHaveBeenCalled(); expect(workflowService.run).not.toHaveBeenCalled();
 });
 
-test("chat allows fixing declared inputs in an unpublished draft but cannot start it", async () => {
+test("chat enables Start with complete inputs in an unpublished saved draft", async () => {
   workflowService.readiness.mockResolvedValue({ ...record, authoring: { inputSchema: { type: "object", required: ["customer_name"], properties: { customer_name: { type: "string" } } } } });
   openChatWorkflow(); const actions = await screen.findByRole("region", { name: "Chat workflow actions" });
   fireEvent.click(within(actions).getByRole("button", { name: "Run workflow" }));
   expect(screen.getByLabelText("Customer name").disabled).toBe(false);
   expect(screen.getByRole("button", { name: "Fill inputs from a document" }).disabled).toBe(false);
   fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Reviewed customer" } });
-  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(false);
   expect(workflowService.run).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Start workflow" }));
+  await waitFor(() => expect(workflowService.run).toHaveBeenCalledTimes(1));
+  expect(workflowService.run).toHaveBeenCalledWith("report", { customer_name: "Reviewed customer" }, expect.objectContaining({ startRevision: { baseVersion: 1, baseHash: record.contentHash } }));
+  expect(workflowService.publish).not.toHaveBeenCalled();
 });
 
 test("chat cannot run on open/cancel or without run permission, and stale changes cannot be saved", async () => {
@@ -718,6 +722,17 @@ test("a stale whole-workflow chat proposal stays visible but cannot overwrite a 
   fireEvent.click(within(preview).getByRole("button", { name: "Discard" }));
   await waitFor(() => expect(workflowService.command).toHaveBeenCalledWith("report", record, { type: "discardProposal", proposalId: change.id }));
   expect(workflowService.publish).not.toHaveBeenCalled(); expect(workflowService.run).not.toHaveBeenCalled();
+});
+
+test("an older whole-workflow proposal cannot lock the current saved workflow's Run inputs", async () => {
+  workflowService.readiness.mockResolvedValue({ ...record, published: true, publishedVersion: 1, can_attempt_run: true,
+    authoring: { inputSchema: { type: "object", properties: { customer_name: { type: "string" } }, required: ["customer_name"] } } });
+  openChatWorkflow({ savedProposals: [{ ...proposal, scope: "workflow", baseVersion: 0 }] });
+  const actions = await screen.findByRole("region", { name: "Chat workflow actions" });
+  const run = within(actions).getByRole("button", { name: "Run workflow" }); expect(run.disabled).toBe(false);
+  fireEvent.click(run); expect(await screen.findByLabelText("Customer name")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(true);
+  expect(workflowService.run).not.toHaveBeenCalled(); expect(workflowService.publish).not.toHaveBeenCalled();
 });
 
 test("read-only users see source and run status, never editing or proposal actions", async () => {

@@ -1,0 +1,390 @@
+{
+  "checkedAt": "2026-10-19T13:11:47.859Z",
+  "connection": {
+    "id": "erpbridge-default",
+    "state": "INITIALIZED_NOT_QUALIFIED",
+    "discoveryAvailable": true,
+    "qualification": "Not a live ERP authorization or tool execution test"
+  },
+  "toolCatalogShape": "array",
+  "toolCount": 0,
+  "capabilities": [
+    {
+      "name": "list_territories",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_companies",
+      "state": "BLOCKED",
+      "reason": "LOCAL_CONTRACT_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_purchase_invoices",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "get_customer",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_bins",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_customers",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "get_customer_group",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "Owner-requested customer registration workflow. Exact live contract checked; Platform Admin only. Required fields, role/token checks, policy gates, exact runtime approval, correlated receipt and no-blind-retry remain enforced. No email, deletion or unrelated ERP grant."
+      }
+    },
+    {
+      "name": "list_departments",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_item_groups",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "get_item",
+      "state": "BLOCKED",
+      "reason": "LOCAL_CONTRACT_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "Owner-requested synthetic item form workflow. Exact live contract reviewed for Platform Admin only; required inputs, live token checks, RAG policy and explicit exact confirmation remain mandatory. No stock posting, email, delete or unrelated role grant."
+      }
+    },
+    {
+      "name": "list_suppliers",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_purchase_orders",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_uoms",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "get_uom",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "Owner-requested synthetic item form workflow. Exact live contract reviewed for Platform Admin only; required inputs, live token checks, RAG policy and explicit exact confirmation remain mandatory. No stock posting, email, delete or unrelated role grant."
+      }
+    },
+    {
+      "name": "list_sales_invoices",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_customer_groups",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "get_territory",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "Owner-requested customer registration workflow. Exact live contract checked; Platform Admin only. Required fields, role/token checks, policy gates, exact runtime approval, correlated receipt and no-blind-retry remain enforced. No email, deletion or unrelated ERP grant."
+      }
+    },
+    {
+      "name": "create_customer",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "write",
+        "riskClass": "medium",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "requireIndependentApproval": true,
+        "note": "Owner-requested customer registration workflow. Exact live contract checked; Platform Admin only. Required fields, role/token checks, policy gates, exact runtime approval, correlated receipt and no-blind-retry remain enforced. No email, deletion or unrelated ERP grant."
+      }
+    },
+    {
+      "name": "create_item",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "write",
+        "riskClass": "medium",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "requireIndependentApproval": true,
+        "note": "Owner-requested synthetic item form workflow. Exact live contract reviewed for Platform Admin only; required inputs, live token checks, RAG policy and explicit exact confirmation remain mandatory. No stock posting, email, delete or unrelated role grant."
+      }
+    },
+    {
+      "name": "list_items",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_sales_orders",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "get_warehouse",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "list_warehouses",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "run_report",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "User explicitly approved configuring Manager ERP access before five saved business workflow samples on 2026-10-18. Exact current bounded read input/output and serving digest inspected. Preserve existing roles; no writes, notifications, secret access or automatic retries are granted."
+      }
+    },
+    {
+      "name": "get_item_group",
+      "state": "BLOCKED",
+      "reason": "CONNECTION_CHANGED",
+      "remoteMatches": true,
+      "admitted": "AVAILABLE",
+      "imported": "erpbridge-default",
+      "policy": {
+        "effectClass": "read",
+        "riskClass": "low",
+        "dataClass": "internal",
+        "retryPolicy": "never",
+        "note": "Owner-requested synthetic item form workflow. Exact live contract reviewed for Platform Admin only; required inputs, live token checks, RAG policy and explicit exact confirmation remain mandatory. No stock posting, email, delete or unrelated role grant."
+      }
+    }
+  ]
+}

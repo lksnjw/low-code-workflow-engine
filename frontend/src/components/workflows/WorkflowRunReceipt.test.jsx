@@ -51,3 +51,14 @@ test("transport failure retains explicitly stale evidence; authorization loss hi
   await screen.findByRole("alert"); expect(screen.queryByText("Saved answer")).toBeNull(); expect(screen.queryByRole("region", { name: "Recorded model usage" })).toBeNull();
   for (const spy of Object.values(writes)) expect(spy).not.toHaveBeenCalled();
 });
+
+
+test("chat run receipt shows the actual failed step, tool and safe explanation", async () => {
+  const run = normalizeExecution({ id: "run/one", status: "FAILED", tokens: { input: 0, output: 0, total: 0 }, failure: {
+    failureCategory: "READ_EXECUTION_FAILED", failedStepId: "customer_lookup", failedToolName: "get_customer", stage: "input_resolution",
+    reason: "A required workflow input or prior step output is missing. Check this step's data mappings.",
+  } });
+  mockMonitor(run); await mount(run);
+  expect(screen.getByText("customer_lookup")).toBeTruthy(); expect(screen.getByText("get_customer")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("prior step output is missing");
+});

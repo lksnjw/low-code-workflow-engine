@@ -23,11 +23,15 @@ export const toolSchema = z.object({
   bridge_contract: z.object({
     profile: z.literal("toolplane-v1"),
     // Absent preserves historical version-qualified contracts and hashes.
-    selector: z.enum(["digest-pinned-alias", "digest-pinned-operation-alias"]).optional(),
+    selector: z.enum(["digest-pinned-alias", "digest-pinned-operation-alias", "digest-pinned-mcp-operation-alias"]).optional(),
     resource_version: z.string().min(1).max(128).regex(/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/),
     resource_digest: z.string().regex(/^[a-f0-9]{64}$/),
     remote_roles: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/)).max(32).refine(roles => new Set(roles).size === roles.length),
     output_schema: jsonObjectSchema.optional(),
+    trusted_input: z.union([
+      z.object({ actor: jsonObjectSchema, required: z.array(z.string()).max(128) }).strict(),
+      z.object({ access_token: jsonObjectSchema }).strict(),
+    ]).optional(),
   }).strict().optional(),
   // Additive only: absence preserves historical capability hashes. Adding or
   // changing this mapping requires a new exact capability observation/review.
@@ -40,6 +44,7 @@ export const toolSchema = z.object({
     retry_policy: z.literal("never"),
     receipt_profile: z.enum(["erpnext-item-create/v1", "erpnext-item-update/v1", "erpnext-stock-receipt-draft/v1", "erpnext-customer-create/v1"]).optional(),
     confirmation: z.object({
+      source: z.literal("mcp-envelope").optional(),
       path: z.array(z.string().min(1).max(128).refine(part => !["__proto__", "constructor", "prototype"].includes(part))).min(1).max(12),
       expected: z.union([z.string().min(1).max(256), z.number().finite(), z.boolean()]),
       meaning: z.enum(["operation-accepted", "operation-confirmed"]),

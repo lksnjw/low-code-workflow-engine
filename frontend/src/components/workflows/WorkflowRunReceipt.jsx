@@ -1,3 +1,4 @@
+import GovernanceBlockPanel from "../executions/GovernanceBlockPanel";
 import { Link } from "react-router-dom";
 import { useExecutionMonitor } from "../../hooks/useExecutionMonitor";
 import { projectExecutionIterationEvidence } from "../../utils/iterationEvidence";
@@ -27,6 +28,7 @@ export default function WorkflowRunReceipt({ initialExecution, onDismiss, extern
     <p className="break-all font-mono text-xs text-gray-500">{execution.id}</p>
     {monitor.error && <p role="status" className="text-sm text-amber-700">{monitor.error} Saved evidence may be stale; no run was restarted.</p>}
     {execution.agentSummary && <p className="text-sm text-gray-700 dark:text-gray-300">{execution.agentSummary}</p>}
+    {execution.failure && <><GovernanceBlockPanel failure={execution.failure} />{execution.failure.reason && <p role="alert" className="text-sm text-red-700">{execution.failure.reason}</p>}</>}
     <RecordedModelUsage counts={execution.recordedUsage} />
     <ExecutionOutputPanel execution={execution} iterationModel={iterationModel} />
   </section>;

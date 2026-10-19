@@ -1,3 +1,4 @@
+import { runWorkflowToolAgent } from "../agent/workflow-tool-agent.js";
 import { createBridgeProtocolAdapter } from "./erpbridge-protocol-adapter.js";
 import { consumeLibraryReadDelegation } from "../documents/library-client.js";
 import { exactBridgeName, hasReservedBridgeRole } from "./erpbridge-contract.js";
@@ -21,6 +22,7 @@ import { consumeProtectedOperationDispatchPermit, isProtectedOperationDispatchPe
 import { capabilityContractHash } from "../registry/capability-admission.js";
 import { assertErpnextWriteArguments, assertErpnextWriteReceipt } from "./erpnext-document-write.js";
 import { erpChatInputIssues } from "./erp-chat-input.js";
+import { allRolesToolAccess, toolRoleAllowed } from "../governance/tool-access.js";
 
 export type ErpbridgeMcpSdkTool = {
   name: string;
@@ -189,16 +191,18 @@ export async function createErpbridgeMcpSession(options: {
     ...(options.administratorChatActions ? {executeAdministratorTool:async(tool:ErpbridgeMcpSdkTool,args:Record<string,unknown>,actorId:string,beforeDispatch:()=>Promise<void>,signal?:AbortSignal)=>{
       const assertAdministrator=()=>options.validator.repository.readAuthoritative(state=>{
         const actor=state.users[actorId],role=actor&&state.roles[actor.roleId];
-        if(!actor||actor.status.toLowerCase()!=="active"||actor.roleId!=="role_admin"||role?.name!=="Platform Admin")throw new Error("Current built-in administrator authority is required");
+        if(!actor||actor.status.toLowerCase()!=="active"||!role?.name||(!allRolesToolAccess()&&(actor.roleId!=="role_admin"||role.name!=="Platform Admin")))throw new Error("Current active tool access is required");
+        return role.name;
       });
-      await assertAdministrator();
+      const actorRole=await assertAdministrator();
       const remote=await run("Administrator tool contract",()=>sdkClient.listTools(),signal),selected=remote.filter(value=>value.name===tool.name);
       if(selected.length!==1||!canonicalJSONBytes(selected[0]).equals(canonicalJSONBytes(tool))||erpChatInputIssues(tool,args).length)
         throw new Error("ERP tool contract or arguments changed; nothing dispatched");
-      const identity={userId:actorId,localRole:"Platform Admin",erpbridgeRole:null};
+      const identity={userId:actorId,localRole:actorRole,erpbridgeRole:null};
       const personal=options.userMcpCredentials?await options.userMcpCredentials.prepare(identity,options.connectionId??"erpbridge-default"):undefined;
       try{
-        await assertAdministrator();await run("Administrator action checkpoint",beforeDispatch,signal);
+        if(await assertAdministrator()!==actorRole)throw new Error("Current role changed; review the action again");
+        await run("Administrator action checkpoint",beforeDispatch,signal);
         const result=await run("Administrator ERP tool",()=>{
           personal?.assertCurrent();
           return (personal?.sdk??sdkClient).callTool(tool.name,structuredClone(args),{"toolplane.resourceDigest":tool._meta?.["toolplane.resourceDigest"]});
@@ -334,8 +338,16 @@ function createToolClient(
       const args: Record<string, unknown> = guarded
         ? { ...parameters, role: identity.erpbridgeRole! }
         : { ...parameters };
+      if (definition.bridge_contract?.trusted_input && "actor" in definition.bridge_contract.trusted_input) {
+        if (!["rag-policy-assist", "rag-policy-evaluate"].includes(definition.mcp_tool_name) || Object.hasOwn(parameters, "actor"))
+          throw new Error("The policy actor is supplied only by the authenticated backend");
+        args.actor = { user_id: identity.userId, role: identity.localRole };
+      }
       let protectedPermit: ProtectedOperationDispatchPermit | undefined;
-      const result = await callTool(remoteName || action, args, signal, beforeDispatch, () => {
+      // Pi owns invocation scheduling for fixed saved steps as well as dynamic
+      // agent proposals. The original gateway still consumes exact capabilities
+      // and approval permits immediately before SDK entry.
+      const result = await runWorkflowToolAgent({ toolName: remoteName || action, signal }, dispatchSignal => callTool(remoteName || action, args, dispatchSignal, beforeDispatch, () => {
         if (signal?.aborted || isClosed()) throw new Error("ERPBridge dispatch was cancelled or disconnected");
         assertDispatch?.();
         if (isProtectedOperationDispatchPermit(operationPermit)) {
@@ -349,7 +361,7 @@ function createToolClient(
         // workflow, validation token, argument pins or policy request. The
         // exact one-use server ticket is consumed only at synchronous SDK entry.
         if (libraryDelegation) args.access_token = consumeLibraryReadDelegation(libraryDelegation, definition, parameters, identity);
-      }, identity);
+      }, identity));
       const envelope = boundResult(result, definition);
       if (envelope.isError === true) {
         const error = new ErpbridgeMcpToolError(envelope);
@@ -387,6 +399,7 @@ function boundResult(result: unknown, definition?: ToolDefinition): Record<strin
  * Checks whether a normalized local role is in the allowed role list.
  ******************************************************************************/
 function localRoleAllowed(role: string, allowed: readonly string[]): boolean {
+  if (allRolesToolAccess()) return toolRoleAllowed(allowed, role);
   const normalized = normalizeRole(role);
   return allowed.some((item) => normalizeRole(item) === normalized);
 }

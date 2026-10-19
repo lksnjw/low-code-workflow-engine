@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { runQueryLoop, type ToolStep } from "../agent/query-loop.js";
@@ -66,7 +67,7 @@ export async function analyseAttachment(services: HandlerServices, user: Current
   if (!documentAttachment && !String(upload.extracted_text ?? "").trim())
     throw new HandlerFailure(422, "No readable source is available for model review. Review the file manually or retry document preparation.", { code: "ATTACHMENT_NO_READABLE_SOURCE" });
   if (!createRecord) {
-    const tools = (await discoverTools(services.erpbridgeSession ?? null, services.registries)).filter(tool => tool.is_read_only && tool.allowed_roles.includes(user.role) &&
+    const tools = (await discoverTools(services.erpbridgeSession ?? null, services.registries)).filter(tool => tool.is_read_only && toolRoleAllowed(tool.allowed_roles, user.role) &&
       schemas.some(schema => schema.lookup_tool && [tool.name, tool.mcp_tool_name].includes(schema.lookup_tool)));
     if (!tools.length) throw new HandlerFailure(422, "No role-granted, reviewed ERPBridge lookup tool matches these schemas. Use a pipeline form record or ask an administrator to register a lookup.");
     const result = await runQueryLoop({ userMessage: `Find existing records for this attachment request. Read only; do not create or modify records. Request: ${body.instruction}\nEntity keys: ${promptData(schemas.map(schema => ({ id: schema.id, entity: schema.source_entity, key: schema.primary_key, lookup: schema.lookup_tool })))}`,
@@ -121,7 +122,7 @@ export async function analyseAttachment(services: HandlerServices, user: Current
 export async function verifyChoice(services: HandlerServices, user: CurrentUser, sessionId: string, schema: EntitySchema, choice: RecordChoice) {
   const tools = await discoverTools(services.erpbridgeSession ?? null, services.registries);
   const tool = tools.find(tool => [tool.name, tool.mcp_tool_name].includes(choice.readReceipt.toolName));
-  if (!tool || !tool.is_read_only || !tool.allowed_roles.includes(user.role) || ![tool.name, tool.mcp_tool_name].includes(schema.lookup_tool ?? "") || capabilityContractHash(tool) !== choice.readReceipt.contractHash)
+  if (!tool || !tool.is_read_only || !toolRoleAllowed(tool.allowed_roles, user.role) || ![tool.name, tool.mcp_tool_name].includes(schema.lookup_tool ?? "") || capabilityContractHash(tool) !== choice.readReceipt.contractHash)
     throw new HandlerFailure(409, "The reviewed ERP lookup changed. Analyse the attachment again.");
   const result = await dispatchReadTool(services, user.id, choice.readReceipt.toolName, choice.readReceipt.arguments, { sessionId });
   if (!recordsInResult(result, schema.primary_key).some(record => String(record[schema.primary_key]) === choice.key))

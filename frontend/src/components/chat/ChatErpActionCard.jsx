@@ -4,6 +4,7 @@ import { captureAuthority, isAuthorityCurrent } from "../../utils/authAuthority"
 import { chatErpActionsService } from "../../services/chat-erp-actions.service";
 import { ReadableResult } from "./ReadableValue";
 import { erpActionFields, erpActionLabel } from "./erpActionPresentation";
+import EmailHtmlPreview from "./EmailHtmlPreview";
 
 const labels = { PENDING: "Awaiting your confirmation", DISPATCH_INTENT: "Dispatch recorded · outcome pending", SUCCEEDED: "ERP response received", FAILED: "ERP returned an error", OUTCOME_UNKNOWN: "Outcome unconfirmed · do not repeat" };
 
@@ -56,6 +57,7 @@ export default function ChatErpActionCard({ action: initial, onSaved, busy: chat
   return <section aria-label="ERP change review" className="mt-4 space-y-3 rounded-xl border border-gray-200 p-4 text-sm dark:border-gray-700" aria-busy={busy}>
     <div><h3 className="font-semibold">{erpActionLabel(action)}</h3><p role="status" className="mt-1 text-xs text-gray-500">{expired && action.status === "PENDING" ? "Proposal expired · not executable" : !reviewed && action.status === "PENDING" ? "Recorded proposal · check current status" : labels[action.status] || "Status unavailable"}</p></div>
     <div className={emailAction ? "max-h-80 overflow-auto" : undefined} aria-label={emailAction ? "Exact email contents" : undefined}><ReadableResult value={erpActionFields(action)} /></div>
+    {emailAction && typeof action.arguments?.html === "string" && action.arguments.html.trim() && <EmailHtmlPreview html={action.arguments.html} />}
     <details><summary className="cursor-pointer text-xs text-primary">Technical details</summary><p className="mt-2 text-xs text-gray-500">Exact ERP operation: <code>{action.toolName}</code></p><ReadableResult value={action.arguments} /></details>
     {action.receipt && <details><summary className="cursor-pointer text-xs text-primary">ERP response</summary><ReadableResult value={action.receipt} /></details>}
     {owner && <div className="space-y-3">

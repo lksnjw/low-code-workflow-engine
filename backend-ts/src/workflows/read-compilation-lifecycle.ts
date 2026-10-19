@@ -78,15 +78,18 @@ export function prepareCompiledExecution(state: Readonly<RepositoryState>, servi
       if (expectedReceipt && !canonicalJSONBytes(expectedReceipt).equals(canonicalJSONBytes(receipt))) throw new Error("Legacy compilation changed");
       return { plan, receipt };
     }
-    if (canonicalJSONBytes(raw).length > 1_200_000 || !Number.isFinite(Date.parse(raw.compiledAt)) || raw.receipt.origin !== "PUBLICATION" ||
-        raw.receipt.registryHash !== services.registries.hash()) throw new Error("Stored compilation is malformed or stale");
+    if (canonicalJSONBytes(raw).length > 1_200_000 || !Number.isFinite(Date.parse(raw.compiledAt)) || raw.receipt?.origin !== "PUBLICATION" ||
+        typeof raw.receipt.registryHash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(raw.receipt.registryHash)) throw new Error("Stored compilation is malformed");
     const plan = compileCurrent(state, services, yaml, role, raw.plan);
     if (plan.ir.schemaVersion === "workflow-read-ir/v4" && (!supportsCollectionReads(services) || raw.receipt.admissionMode !== "reviewed")) throw new Error("Collection executable admission is not qualified");
     assertCompiledReadMatches(raw.plan, plan);
-    const receipt = readCompilationReceipt(plan, services.registries.hash(), "PUBLICATION", plan.ir.root.nodes.some(node => node.capability.admission) ? "reviewed" : "fixture-legacy");
+    // Keep the immutable publication receipt, but recompile its own dependencies
+    // against current reviewed contracts and permissions. Unrelated catalog
+    // changes are not changes to this saved workflow's execution contract.
+    const receipt = readCompilationReceipt(plan, raw.receipt.registryHash, "PUBLICATION", plan.ir.root.nodes.some(node => node.capability.admission) ? "reviewed" : "fixture-legacy");
     if (!canonicalJSONBytes(raw.receipt).equals(canonicalJSONBytes(receipt)) || expectedReceipt && !canonicalJSONBytes(expectedReceipt).equals(canonicalJSONBytes(receipt))) throw new Error("Stored compilation receipt changed");
     return { plan, receipt };
-  } catch { throw new HandlerFailure(409, "Publication compilation is missing, changed or its exact ERPBridge connection is unavailable. Review and explicitly republish before execution", { code: "PUBLISHED_COMPILATION_REQUIRED" }); }
+  } catch { throw new HandlerFailure(409, "This saved workflow's reviewed tool bindings or ERP connection could not be verified. Check the connection and tool access, then check again. Review the workflow if a required contract or its saved source changed.", { code: "PUBLISHED_COMPILATION_REQUIRED" }); }
 }
 
 function compileCurrent(state: Readonly<RepositoryState>, services: HandlerServices, yaml: string, role: string, expected: CompiledReadPlan): CompiledReadPlan {

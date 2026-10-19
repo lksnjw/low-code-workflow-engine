@@ -8,7 +8,7 @@ import { Repository } from "../src/repository/store.js";
 import { RegistryService } from "../src/registry/service.js";
 import { RegistryValidator } from "../src/validator/registry-validator.js";
 import { toolSchema } from "../src/registry/schemas.js";
-import { ProviderRuntime } from "../src/providers/runtime.js";
+import { CANDIDATE_PROMPT_VERSION, ProviderRuntime } from "../src/providers/runtime.js";
 import { Executor } from "../src/runner/executor.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import { SynthesisService } from "../src/synthesis/service.js";
@@ -47,10 +47,10 @@ test.each(["analysis", "agent"] as const)("v12 proposes a bounded %s draft witho
   const source = blueprint(kind), s = await setup(source);
   const result = await s.service.synthesize({ prompt: "Create a workflow to read the actual count and summarise it", userRole: "Platform Admin", liveTools: [read] });
   expect(result.yaml).toBe(s.yaml.trim()); expect(result.execution_profile_issues).toEqual([]); expect(result.validation.passed).toBe(true);
-  expect(result.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v22"); expect(s.fetcher).toHaveBeenCalledOnce();
+  expect(result.candidate.generation_metadata.promptTemplateVersion).toBe(CANDIDATE_PROMPT_VERSION); expect(s.fetcher).toHaveBeenCalledOnce();
   const body = JSON.parse(String(s.fetcher.mock.calls[0]![1]?.body));
-  expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v22"));
-  expect(result.candidate.generation_metadata.promptSha256).toBe(generationPromptHash(body.messages[1].content, "prompt/candidate/v22"));
+  expect(body.messages[0].content).toBe(systemInstructionsFor(CANDIDATE_PROMPT_VERSION));
+  expect(result.candidate.generation_metadata.promptSha256).toBe(generationPromptHash(body.messages[1].content, CANDIDATE_PROMPT_VERSION));
   const saved = await s.repository.snapshot(); expect(saved.executions).toEqual({}); expect(saved.workflows).toEqual({}); expect(saved.capabilityAdmissions).toEqual({});
   expect(inspectModelWorkflowDraft(source, [read], "Platform Admin")).toEqual([]);
   expect(() => compileOperationWorkflow(s.yaml, [read], "Platform Admin", new Map())).toThrow(/reviewed capability pin/);
@@ -59,9 +59,8 @@ test.each(["analysis", "agent"] as const)("v12 proposes a bounded %s draft witho
 
 test.each(["analysis", "agent"] as const)("%s candidate with an explicitly empty live catalog cannot use stale registered tools", async kind => {
   const s = await setup(blueprint(kind));
-  const result = await s.service.synthesize({ prompt: "Read and summarise", userRole: "Platform Admin", liveTools: [] });
-  expect(result.canExecute).toBe(false); expect(result.execution_profile_issues.length).toBeGreaterThan(0); expect(result.yaml).toBe(s.yaml.trim());
-  const body = JSON.parse(String(s.fetcher.mock.calls[0]![1]?.body)); expect(JSON.parse(body.messages[1].content).TOOL_REGISTRY_JSON).toEqual([]);
+  await expect(s.service.synthesize({ prompt: "Read and summarise", userRole: "Platform Admin", liveTools: [] })).rejects.toThrow("No reviewed ERP tools");
+  expect(s.fetcher).not.toHaveBeenCalled(); expect((await s.repository.snapshot()).workflows).toEqual({});
 });
 
 test.each([
@@ -246,7 +245,7 @@ test.each(["analysis", "agent"] as const)("v15 generates exact %s branch handoff
   const source = mergedBlueprint(kind), s = await setup(source);
   const result = await s.service.synthesize({ prompt: "Create both requested answer paths, analyse the selected answer afterwards and return the result", userRole: "Platform Admin", liveTools: [read] });
   expect(result.yaml).toBe(s.yaml.trim()); expect(result.validation.passed).toBe(true); expect(result.execution_profile_issues).toEqual([]);
-  expect(result.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v22"); expect(s.fetcher).toHaveBeenCalledOnce();
+  expect(result.candidate.generation_metadata.promptTemplateVersion).toBe(CANDIDATE_PROMPT_VERSION); expect(s.fetcher).toHaveBeenCalledOnce();
   const state = await s.repository.snapshot(); expect(state.workflows).toEqual({}); expect(state.executions).toEqual({}); expect(state.capabilityAdmissions).toEqual({});
   expect(() => compileOperationWorkflow(result.yaml, [read], "Platform Admin", new Map())).toThrow(/reviewed capability pin/);
 });
@@ -281,7 +280,7 @@ test.each(["analysis", "agent"].flatMap(kind => [false, true].map(branches => [k
   const source = returnBlueprint(kind as "analysis" | "agent", branches), s = await setup(source);
   const result = await s.service.synthesize({ prompt: "Create a workflow that reads the actual count, analyses it and returns the reviewed summary on the selected path", userRole: "Platform Admin", liveTools: [read] });
   expect(result.yaml).toBe(s.yaml.trim()); expect(result.validation.passed).toBe(true); expect(result.execution_profile_issues).toEqual([]);
-  expect(result.candidate.generation_metadata.promptTemplateVersion).toBe("prompt/candidate/v22"); expect(s.fetcher).toHaveBeenCalledOnce();
+  expect(result.candidate.generation_metadata.promptTemplateVersion).toBe(CANDIDATE_PROMPT_VERSION); expect(s.fetcher).toHaveBeenCalledOnce();
   expect((await s.repository.snapshot()).workflows).toEqual({}); expect((await s.repository.snapshot()).executions).toEqual({});
   expect(() => compileOperationWorkflow(result.yaml, [read], "Platform Admin", new Map())).toThrow(/reviewed capability pin/);
 });

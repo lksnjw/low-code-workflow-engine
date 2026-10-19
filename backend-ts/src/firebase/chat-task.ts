@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { setTimeout as pause } from "node:timers/promises";
 import { withFunctionResources, withFunctionRuntime as baseFunctionRuntime, type FunctionComposition } from "./invocation.js";
@@ -25,6 +26,7 @@ import { latestContinuationModel, providerWireMessages } from "../analysisprovid
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import { generationMessages, generationPromptHash } from "../prompts/contracts.js";
 import { CANDIDATE_PROMPT_VERSION } from "../providers/runtime.js";
+import { runWorkflowAuthoringAgent } from "../agent/workflow-authoring-agent.js";
 import type { AnalysisResponse, ProviderInvocationContext } from "../analysisprovider/types.js";
 import { type SynthesisInput, type PreparedCandidate } from "../synthesis/service.js";
 import { prepareNodeProposal, validateNodeProposalOutput, finishNodeProposal, type PreparedNodeProposal } from "../agent/node-proposals.js";
@@ -313,7 +315,7 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
       if (digest(request.context) !== digest(preflight.request.context)) throw new Error("Original policy context changed before continuation");
       if (preflight.kind === "local") await assertLocalPolicyCurrent(services.config.governanceFallbackPolicyPath, preflight.selected.plan);
       let tools = policy.decision === "allow" && ["QUERY", "AUDIT"].includes(candidate.intent!) && services.erpbridgeSession
-        ? (await discoverTools(services.erpbridgeSession, services.registries)).filter(tool => tool.is_read_only && tool.allowed_roles.includes(input.user.role)) : [];
+        ? (await discoverTools(services.erpbridgeSession, services.registries)).filter(tool => tool.is_read_only && toolRoleAllowed(tool.allowed_roles, input.user.role)) : [];
       let synthesis: { input: SynthesisInput; candidate: PreparedCandidate; tools: readonly ToolDefinition[]; registryHash: string; toolsHash: string } | undefined;
       let nodeProposal: { prepared: PreparedNodeProposal; registryHash: string; toolsHash: string } | undefined;
       if (policy.decision === "allow" && synthesisRequest && services.synthesis) {
@@ -585,10 +587,10 @@ export async function executeFunctionChatTask(composition: FunctionComposition, 
         });
       } else if (prepared.synthesis) {
         const synthesis = prepared.synthesis;
-        const generated = await generateCandidate(synthesis.candidate.prompt, CANDIDATE_PROMPT_VERSION,
+        const generated = await runWorkflowAuthoringAgent({ prompt: synthesis.candidate.prompt, version: CANDIDATE_PROMPT_VERSION, signal }, () => generateCandidate(synthesis.candidate.prompt, CANDIDATE_PROMPT_VERSION,
           response => { parseWorkflowYAMLStrict(response.text.trim()); },
-          { traceId: admitted.traceId, sessionId: admitted.sessionId, ...(synthesis.input.messageId ? { messageId: synthesis.input.messageId } : {}), candidateId: synthesis.candidate.candidateId,
-            actor: { id: input.user.id, role: input.user.role }, egress: { purpose: "interactive", dataClass: "restricted" } }, "SYNTHESIS", synthesis.registryHash);
+          { traceId: admitted!.traceId, sessionId: admitted!.sessionId, ...(synthesis.input.messageId ? { messageId: synthesis.input.messageId } : {}), candidateId: synthesis.candidate.candidateId,
+            actor: { id: input.user.id, role: input.user.role }, egress: { purpose: "interactive", dataClass: "restricted" } }, "SYNTHESIS", synthesis.registryHash));
         await withFinalRuntime(async services => {
           await synchronize(); await restoreImportedCapabilities(services.repository, services.registries);
           await services.repository.readAuthoritative(state => assertFresh(state));

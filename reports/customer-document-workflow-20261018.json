@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-18",
+  "environment": "Existing staging preview; not a full production qualification",
+  "handoffMilliseconds": 10000,
+  "handoffIsCompletionGuarantee": false,
+  "deployedVerification": {
+    "frontendHostingRelease": "successful",
+    "apiRevision": "api-00033-mof",
+    "chatWorkerRevision": "executechattask-00029-heq",
+    "operationWorkerRevision": "executeoperationtask-00024-xig",
+    "functionsActive": true,
+    "allFourTaskWorkersPrivate": true,
+    "runtimeInvokerBindingsVerified": true,
+    "unauthenticatedSettingsHttpStatus": 401,
+    "pipelineReadinessHttpStatus": 200,
+    "ragHealthHttpStatus": 200,
+    "ragSwitchDuringTests": "On",
+    "localJsonSwitchDuringTests": "Off"
+  },
+  "architecture": {
+    "documentUploadAndRetrieval": "Low-code backend to independently hosted Azure pipeline",
+    "recordPolicy": "Low-code backend to independently hosted Azure RAG",
+    "businessOperations": "Reviewed ERPBridge tools only",
+    "policyAndBusinessDocumentsShareACollection": false
+  },
+  "liveChecks": {
+    "backgroundUpload": {
+      "httpStatus": 201,
+      "acknowledgementMilliseconds": 1057,
+      "initialStatus": "EXTRACTING",
+      "initialExtractionState": "QUEUED",
+      "laterExtractionState": "SUCCEEDED",
+      "extractedCharacters": 563,
+      "expectedReferenceMatched": true,
+      "indexedByThisCheck": false
+    },
+    "reviewedCustomerImage": {
+      "documentId": "document_1c0bc1570e0550f79d48e4c36f60cf43",
+      "version": 1,
+      "status": "READY",
+      "collection": "erp_lib_v1_erpnext_customer_standard_fcb618e9547c6b07ca531aad",
+      "customerName": "Lakeview Office Supplies 1018-C",
+      "registrationReference": "REG-20261018-C",
+      "uiVectorSearchAndResolveMatched": true,
+      "searchIsSemanticNotExactIdentityProof": true
+    },
+    "missingNameImage": {
+      "chatId": "chat_927_8d623f7f",
+      "requiredNameWasNotInvented": true,
+      "uiFieldError": "customer_name is required.",
+      "confirmAndSaveDisabled": true,
+      "erpWritePerformed": false
+    },
+    "ragRequiredFields": {
+      "decision": "review",
+      "retrievedClauses": 1,
+      "citations": 1,
+      "erpOperationPerformed": false
+    },
+    "ragDeleteProtection": {
+      "actorRole": "Platform Admin",
+      "decision": "deny",
+      "erpOperationPerformed": false
+    },
+    "workflow": {
+      "chatId": "chat_946_4c2b5095",
+      "workflowId": "wf_972_8f6e58a2",
+      "draftVersion": 3,
+      "publishedVersion": 3,
+      "toolSteps": 4,
+      "humanApprovalNodeVisible": true,
+      "plainLanguageEditsReviewedAndAppliedInUI": true,
+      "resolvedRequirementsRemoved": true,
+      "emailAndReferenceRemainInSourceDocument": true,
+      "duplicateCheck": "Matching-customer list for human review; not automatic duplicate reconciliation",
+      "erpCustomerCreated": false
+    }
+  },
+  "regressions": {
+    "finalOperationReadinessAndRecordPolicy": { "passed": 555, "failed": 0 },
+    "promptHistoryGovernanceAndChat": { "passed": 263, "failed": 0 },
+    "frontendRunDialogAttachmentAndPolicy": { "passed": 23, "failed": 0 },
+    "azurePipelineContainer": { "passed": 105, "skipped": 3 },
+    "ragRecordPolicy": { "passed": 66, "failed": 0 },
+    "countsOverlapAcrossRuns": true,
+    "typecheck": "passed",
+    "frontendAndFunctionsBuilds": "passed"
+  },
+  "remainingSetup": {
+    "runtimeApprovalPolicyConfigured": false,
+    "requiredAction": "Platform Admin must select and enable transaction reviewers in Settings before ERP-changing runs can start.",
+    "hostedRunDialogExplainsSetupAndLinksToSettings": true,
+    "hostedStartButtonDisabledBeforeAnyAdmission": true,
+    "approvalRequirementsWereNotBypassed": true,
+    "fullCustomerCreationEndToEndPassed": false
+  },
+  "claimBoundaries": [
+    "These are scoped regression and UI checks, not every ERP action or a ten-user capacity certification.",
+    "No email was sent by this customer-form test.",
+    "No schedule was enabled by this customer-form test.",
+    "ERPBridge source and ERPBridge management registry were not changed by these checks.",
+    "No credentials are included in this evidence report."
+  ]
+}

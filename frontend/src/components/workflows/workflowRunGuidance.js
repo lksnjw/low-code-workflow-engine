@@ -11,9 +11,9 @@ export function workflowRunGuidance(record) {
     ...strings(record.validation?.errors),
     ...strings(record.issues),
   ];
-  if (record.published === false || record.compilation?.state === "NOT_PUBLISHED" || record.publishedVersion === 0)
+  if (!record.start_revision && (record.published === false || record.compilation?.state === "NOT_PUBLISHED" || record.publishedVersion === 0))
     reasons.push("This draft has not been published. Review its steps, then publish the reviewed draft.");
-  if (record.compilation?.state === "BLOCKED") reasons.push("Its approved tools have changed. Review the current tool access and publish the draft again.");
+  if (record.compilation?.state === "BLOCKED") reasons.push(record.compilation.reason || "The saved workflow's tool access could not be verified. Check its connection and tool access, then check again. Unchanged reviewed workflows do not need republishing for new inputs.");
   // An empty draft has no connection to discover; that is not evidence of a
   // broken account connection.
   if (preview.steps.length > 0 && record.bridge && record.bridge !== "discovery_available") reasons.push("The ERP connection could not be checked. Check your ERP connection in Profile, then check this workflow again.");
@@ -26,6 +26,6 @@ export function workflowRunHelpMessage(record, inputIssues = []) {
   return [
     "Help me get this saved workflow ready to run. Check its current draft, publication, tool access and required inputs.",
     ...[...new Set([...workflowRunGuidance(record), ...strings(inputIssues)])].slice(0, 30).map(issue => `Needs attention: ${issue}`),
-    "Explain the next step in plain English. Ask me for missing business values one at a time and prepare any workflow changes for my review. Do not invent required values, publish, run, approve a transaction or activate a schedule from this help request.",
+    "Correct the workflow using its exact current tool contracts. Treat backend tool checks, configured policy checks, audit journaling and human transaction approval as runtime safeguards, not missing workflow steps. Extra optional source-form fields do not require new ERP records unless I asked for them. Preserve genuine unsupported requested outcomes. Ask only for missing business values and prepare the corrected workflow for my review. Do not invent values, publish, run, approve a transaction or activate a schedule from this help request.",
   ].join("\n");
 }

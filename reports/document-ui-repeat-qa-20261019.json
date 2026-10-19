@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-19",
+  "target": "https://workflow-automation-44201.web.app",
+  "qualification": "Targeted deployed UI, ERP read-back, API and component verification; not an all-roles or all-workflows acceptance claim",
+  "data": "Synthetic fixtures only",
+  "verified": [
+    {"scenario":"Saved customer workflow accepts a new image, OCR, reviewed fields and explicit transaction approval", "workflow":"wf_1092_e8aa1a22", "publishedVersion":4, "execution":"operation-a8ff6c37dc693fa2707293b3c26ea905", "result":"DONE", "independentErpReadBack":true, "record":"Hillside Office 1019 H01"},
+    {"scenario":"Saved stock item workflow accepts a new form, reviews required fields and explicit approval", "workflow":"wf_1161_1af971df", "publishedVersion":2, "execution":"operation-058e3889e426204a74b6322d07aff1b8", "result":"DONE", "independentErpReadBack":true, "record":"QA-OCR-20261019-H04", "note":"Stock Item master only; no stock quantity receipt was posted"},
+    {"scenario":"Six-customer image with incomplete rows", "result":"BLOCKED_AS_EXPECTED", "note":"All rows preserved; no partial customer submission"},
+    {"scenario":"Three-item image with incomplete rows", "result":"BLOCKED_AS_EXPECTED", "note":"No arbitrary row selected and no ERP write"},
+    {"scenario":"Missing required customer field and replacing its image", "result":"PASS_NEGATIVE", "note":"Required fields remain blank and block Run; replacing a file clears earlier values and source confirmation"},
+    {"scenario":"Two images for one record in saved Run", "workflow":"wf_1116_e80cca22", "result":"PASS_INPUT_PREPARATION", "model":"deepseek/deepseek-v4.1-flash", "note":"Two differently named copies of one synthetic page used to verify consistent merge; both OCR receipts completed, same-record attestation required, customer_name copied after explicit Use extracted values"},
+    {"scenario":"Two conflicting customer images", "workflow":"wf_1116_e80cca22", "publishedVersion":2, "result":"BLOCKED_AS_EXPECTED", "note":"Both OCR receipts completed; conflicting customer_name warning visible; Use extracted values stayed disabled even after same-record checkbox was checked; removing files cleared old inputs"},
+    {"scenario":"Stale reviewed tool contract", "workflow":"wf_1116_e80cca22", "result":"PASS_RECOVERY", "note":"Run explained current-contract block and offered repair actions; an unconfirmed publication was authoritatively reloaded; current draft explicitly published as v2 without an ERP run"},
+    {"scenario":"Reopen saved workflow, replace conflicting images with one complete image and run", "workflow":"wf_1116_e80cca22", "publishedVersion":2, "execution":"run-c7f82a6045e700f0", "result":"DONE", "returnedRecord":"Hillside Office 1019 H01", "note":"DeepSeek extraction and completed OCR; declared input populated, explicit source review, one Start click. Original receipt recovered by read-only lookup; no second run dispatched"},
+    {"scenario":"RAG UI evaluates incomplete customer example", "result":"REVIEW_REQUIRED_AS_EXPECTED", "note":"Customer name, group and territory listed as required conditions; citation returned; no ERP action performed"},
+    {"scenario":"Employee application storage and chat retrieval", "chat":"chat_1222_65ffb8c8", "document":"document_9f7cffa96b75528a99a64402f69eef99", "collection":"erp_lib_v1_hr_qa_employee_standard_22ea2eb45962c8e0a67e0552", "result":"PASS_AFTER_FRESH_READ", "note":"First read was unconfirmed; a fresh read-only request returned stored fields and text. No ERP employee created"},
+    {"scenario":"Medical note restricted storage and chat retrieval", "chat":"chat_1217_004f64db", "document":"document_868fa9ab753155f99cbeb23f34e23411", "collection":"erp_lib_v1_hr_qa_employee_restricted_d1a99eafae6ec1b30c904da6", "result":"PASS", "note":"Explicit synthetic-source attestation in a server-approved workspace; owner-only restricted route; real medical data remains blocked by the default cloud rule"}
+  ],
+  "deployment": {"hosting":"RELEASED", "api":"api-00040-nab", "chatWorker":"executechattask-00035-pen", "operationWorker":"executeoperationtask-00027-pim", "pipelineImage":"lcwe-20261019-synthetic-restricted-v1"},
+  "automatedChecks": {"frontendDocumentAndChatSuites":{"suites":5,"passed":75},"frontendPermissionsAndApprovalSuites":{"suites":5,"passed":25,"caveat":"All assertions passed but Jest retained open handles; test process interrupted after results"},"approvalSettingsCopy":{"suites":1,"passed":9,"lint":"PASS"},"backendPolicyAndDocumentSuites":{"suites":4,"passed":45},"pipelineContainer":{"passed":107,"skipped":3},"note":"Overlapping test counts must not be summed as unique tests"},
+  "uiCopyFix":"Independent-review settings no longer incorrectly claim every requester is forbidden from Super Admin exact-transaction confirmation; no permissions were changed",
+  "sidebarPublicationFix":"Canvas publication now invalidates authority-scoped workflow lists after authoritative readiness, avoiding a stale sidebar version badge; regression test passed",
+  "finalFrontendRegression":{"suites":3,"passed":127,"includes":["WorkflowWorkspaceEditor","SidebarSavedWorkflows","RuntimeApprovalPolicyPanel"]},
+  "livePolicySwitches":{"rag":true,"localJson":false},
+  "finalReadOnlyRecheck":{"savedWorkflow":"wf_1116_e80cca22","sidebarPublishedVersion":2,"canvasDraftVersion":2,"savedExecution":"run-c7f82a6045e700f0","status":"DONE","visibleOutput":"Hillside Office 1019 H01","applicationExtraction":"SUCCEEDED","applicationStorage":"READY","restrictedMedicalExtraction":"SUCCEEDED","restrictedMedicalStorage":"READY","standardEmployeeSearchable":1,"restrictedEmployeeSearchable":1,"screenshot":"final-saved-ocr-workflow-result-20261019.png"},
+  "remaining": [
+    "Multi-file saved Run supports up to six files / 16 MiB for one record, not bulk ERP creation of multiple customers or items",
+    "Arbitrary policy image/PDF upload does not automatically publish executable RAG rules; reviewed structured policy publishing remains separate",
+    "Every non-admin role has not been signed in and live-tested in this pass",
+    "Concurrent long-running work can still produce delayed or unconfirmed responses; no instant response or ten-second completion guarantee",
+    "Medical READY receipt retains a historical STORAGE_POLICY_DENIED error_code after successful recovery. Current READY status, indexed document and successful retrieval were verified; pipeline source was not changed in this final pass",
+    "No new email delivery, schedule execution, deletion or stock-quantity update is qualified by this pass"
+  ],
+  "gitCommitOrPush": false
+}

@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { workflowService } from "../../services/workflow.service";
 import WorkflowDialog from "./WorkflowDialog";
 import WorkflowRunInputs from "./WorkflowRunInputs";
 import WorkflowDocumentInput from "./WorkflowDocumentInput";
 import { workflowRunInputIssues } from "./workflowRunInput";
 import Button from "../shared/ui/Button";
-import { workflowRunGuidance, workflowRunHelpMessage } from "./workflowRunGuidance";
+import { workflowRunHelpMessage } from "./workflowRunGuidance";
 
 export default function WorkflowRunDialog(props) {
   return props.open ? <WorkflowRunReview key={props.workflowId} {...props} /> : null;
 }
 
-function WorkflowRunReview({ workflowId, initialRecord, onClose, onRun, onHelp, onReview, onReadinessChanged, beforeInputs, inline = false, disabled = false, error = "" }) {
+function WorkflowRunReview({ workflowId, initialRecord, onClose, onRun, onHelp, onReadinessChanged, beforeInputs, inline = false, disabled = false, disabledReason = "", error = "" }) {
   // Mount a new review on each opening. Later prop refreshes cannot replace entered values.
   const [opening] = useState(() => ({ workflowId, record: initialRecord }));
   const [frame, setFrame] = useState(() => initialRecord ? { record: initialRecord } : null), [input, setInput] = useState({}), [parseErrors, setParseErrors] = useState({}), [starting, setStarting] = useState(false), [checking, setChecking] = useState(!initialRecord), [notice, setNotice] = useState("");
   const inFlight = useRef(false), generation = useRef(0);
+  const blockedReasonId = useId();
   const [documentGate, setDocumentGate] = useState({ selected: false, ready: false }), [documentReviewed, setDocumentReviewed] = useState(false);
   const changeInput = value => { setInput(value); setDocumentReviewed(false); };
   useEffect(() => {
@@ -25,14 +26,17 @@ function WorkflowRunReview({ workflowId, initialRecord, onClose, onRun, onHelp, 
   }, [opening]);
   const record = frame?.record, schema = record?.authoring?.inputSchema;
   const issues = [...workflowRunInputIssues(schema || { type: "object" }, input), ...Object.values(parseErrors).filter(Boolean)];
-  const blockers = workflowRunGuidance(record);
-  const blocked = disabled || starting || checking || !record || record.can_attempt_run !== true || issues.length > 0 || documentGate.selected && (!documentGate.ready || !documentReviewed);
+  const blocked = disabled || starting || checking || !record || issues.length > 0 || documentGate.selected && (!documentGate.ready || !documentReviewed);
+  const applyReadiness = next => {
+    if (JSON.stringify(next.authoring?.inputSchema) !== JSON.stringify(schema)) { setInput({}); setParseErrors({}); setDocumentGate({ selected: false, ready: false }); setDocumentReviewed(false); setNotice("The required fields changed. Enter or extract the inputs again and review them before running."); }
+    setFrame({ record: next }); onReadinessChanged?.(next);
+  };
+  const blockedReason = checking ? "Loading workflow inputs…" : disabled ? disabledReason || "Another run or review is in progress." : !record ? "Loading saved workflow…" : issues.length ? "Complete the required fields before starting." : documentGate.selected && !documentGate.ready ? "Finish reading the document first." : documentGate.selected && !documentReviewed ? "Review the extracted inputs and confirm them before starting." : "";
   const refresh = async () => {
     if (checking || starting) return;
     const epoch = generation.current; setChecking(true); setNotice("");
     try { const next = await workflowService.readiness(workflowId); if (generation.current === epoch) {
-      if (JSON.stringify(next.authoring?.inputSchema) !== JSON.stringify(schema)) { setInput({}); setParseErrors({}); setDocumentGate({ selected: false, ready: false }); setDocumentReviewed(false); }
-      setFrame({ record: next }); onReadinessChanged?.(next);
+      applyReadiness(next);
     } }
     catch (cause) { if (generation.current === epoch) setFrame({ error: cause?.response?.data?.message || cause?.message || "Could not check current run requirements." }); }
     finally { if (generation.current === epoch) setChecking(false); }
@@ -43,20 +47,28 @@ function WorkflowRunReview({ workflowId, initialRecord, onClose, onRun, onHelp, 
     {!frame ? <p role="status">Checking current workflow inputs…</p> : frame.error ? <div className="space-y-3"><p role="alert">{frame.error} No run was sent.</p><Button variant="secondary" onClick={refresh} disabled={checking}>{checking ? "Checking…" : "Check again"}</Button></div> : <form className="space-y-4" noValidate onSubmit={async event => {
       event.preventDefault(); if (blocked || inFlight.current) return;
       const epoch = generation.current; inFlight.current = true; setStarting(true); setNotice("");
-      try { const result = await onRun(input); if (generation.current !== epoch) return; if (result?.id) onClose(); else setNotice("The run was not confirmed. Review its status before trying again."); }
-      catch (cause) { if (generation.current === epoch) setNotice(cause?.message || "The run was not confirmed. Check its original receipt before another run."); }
+      try {
+        const startRevision = record.start_revision || (record.can_attempt_run !== true && Number.isInteger(record.version) && record.contentHash ? { baseVersion: record.version, baseHash: record.contentHash } : null);
+        const result = await onRun(input, ...(startRevision ? [{ startRevision }] : [])); if (generation.current !== epoch) return; if (result?.id) onClose(); else setNotice("The run was not confirmed. Review its status before trying again."); }
+      catch (cause) { if (generation.current === epoch) setNotice(cause?.response?.data?.message || cause?.message || "The run was not confirmed. Check its original receipt before another run."); }
       finally { inFlight.current = false; if (generation.current === epoch) setStarting(false); }
     }}>
-      <p className="text-sm text-gray-600 dark:text-gray-300">{record.name || "Saved workflow"} · {record.publishedVersion > 0 ? `Published version ${record.publishedVersion}` : "Draft awaiting publication"}. Fill the required fields, then start this run. Configured ERP approvals still apply.</p>
-      {blockers.length > 0 && <section aria-label="What to fix before running" className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"><p role="alert" className="font-semibold">This workflow is not ready to run. Here is what needs attention:</p><ul className="list-disc space-y-2 pl-5">{blockers.map((reason, index) => <li key={index}>{reason}</li>)}</ul><div className="flex flex-wrap gap-2">{onHelp && <Button variant="secondary" disabled={starting || checking} onClick={() => onHelp(workflowRunHelpMessage(record, issues))}>Help me fix this in chat</Button>}{onReview && <Button variant="secondary" disabled={starting || checking} onClick={onReview}>Review steps and publication</Button>}<Button variant="secondary" disabled={starting || checking} onClick={refresh}>{checking ? "Checking…" : "Check again"}</Button></div><p className="text-xs">The chat action prepares a message for you to review and send.</p></section>}
+      <p className="text-sm text-gray-600 dark:text-gray-300">{record.name || "Saved workflow"}. This workflow is saved. Enter new inputs to run it again. Configured ERP approvals still apply.</p>
+      {schema?.type === "object" && Object.keys(schema.properties || {}).length > 0 && <section aria-label="Choose how to provide run inputs" className="space-y-1 text-sm">
+        <h3 className="font-semibold">Enter fields or upload an image / PDF</h3>
+        <p className="text-xs leading-5 text-gray-500">Type the fields below, or choose “Fill inputs from a document” to extract them from new images or PDFs. Review the values and complete anything missing, then choose Start workflow. You do not need to generate the workflow again.</p>
+      </section>}
       {record.approval_setup_required && <div className="space-y-2 text-sm"><p>No transaction has been started. Reviewers must be configured before an ERP-changing run can begin.</p>{record.can_manage_approval_policy ? <a href="/settings" className="inline-block font-semibold text-primary underline underline-offset-4">Configure transaction reviewers in Settings</a> : <p>Ask your administrator to configure transaction reviewers in Settings.</p>}</div>}
       {schema?.type === "object" && Object.keys(schema.properties || {}).length > 0 && <WorkflowDocumentInput key={JSON.stringify(schema)} schema={schema} workflowName={record.name} disabled={starting || checking || disabled} onReset={() => { changeInput({}); setParseErrors({}); }} onPrepared={values => { changeInput(values); setParseErrors({}); }} onGate={gate => { setDocumentGate(gate); setDocumentReviewed(false); }} />}
-      {schema ? <WorkflowRunInputs schema={schema} value={input} onChange={changeInput} disabled={starting || checking || disabled} onError={(path, value) => setParseErrors(current => ({ ...current, [path]: value }))} /> : <><p className="text-sm text-gray-500">{record.can_attempt_run ? "No business inputs are required for this run." : "This draft has no declared input fields. The assistant can help complete the draft before running it."}</p>{record.can_attempt_run === true && <details><summary className="cursor-pointer text-xs text-primary">Advanced input</summary><div className="mt-2"><WorkflowRunInputs value={input} onChange={changeInput} disabled={starting || checking || disabled} onError={(path, value) => setParseErrors(current => ({ ...current, [path]: value }))} /></div></details>}</>}
+      {schema ? <WorkflowRunInputs schema={schema} value={input} onChange={changeInput} disabled={starting || checking || disabled} onError={(path, value) => setParseErrors(current => ({ ...current, [path]: value }))} /> : <><p className="text-sm text-gray-500">No business inputs are required for this run.</p><details><summary className="cursor-pointer text-xs text-primary">Advanced input</summary><div className="mt-2"><WorkflowRunInputs value={input} onChange={changeInput} disabled={starting || checking || disabled} onError={(path, value) => setParseErrors(current => ({ ...current, [path]: value }))} /></div></details></>}
       {documentGate.selected && <label className="flex items-start gap-2 text-sm"><input type="checkbox" aria-label="I checked these inputs against the source document" disabled={starting || checking || !documentGate.ready || issues.length > 0} checked={documentReviewed} onChange={event => setDocumentReviewed(event.target.checked)} />I checked these inputs against the source document. Run still uses the current workflow permissions and approvals.</label>}
       {issues.length > 0 && <div role="status" aria-label="Required run inputs" className="border-l-2 border-amber-400 pl-3 text-xs text-amber-800 dark:text-amber-200"><ul className="list-disc space-y-1 pl-4">{issues.slice(0, 12).map((issue, index) => <li key={index}>{issue}</li>)}</ul></div>}
-      {!blockers.length && onHelp && issues.length > 0 && <Button variant="secondary" disabled={starting || checking} onClick={() => onHelp(workflowRunHelpMessage(record, issues))}>Ask the assistant about these inputs</Button>}
+      {onHelp && issues.length > 0 && <Button variant="secondary" disabled={starting || checking} onClick={() => onHelp(workflowRunHelpMessage(record, issues))}>Ask the assistant about these inputs</Button>}
       {(error || notice) && <p role="alert" className="text-sm text-amber-700">{[error, notice].filter(Boolean).join(" ")}</p>}
-      <div className="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-700"><Button variant="secondary" disabled={starting} onClick={onClose}>Cancel</Button><Button type="submit" disabled={blocked}>{starting ? "Starting…" : "Start workflow"}</Button></div>
+      <div className="space-y-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+        {blockedReason && <p id={blockedReasonId} role="status" className="text-xs leading-5 text-amber-800 dark:text-amber-200">{blockedReason}</p>}
+        <div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" disabled={starting} onClick={onClose}>Cancel</Button><Button type="submit" disabled={blocked} aria-describedby={blockedReason ? blockedReasonId : undefined}>{starting ? "Starting…" : "Start workflow"}</Button></div>
+      </div>
     </form>}
   </Container>;
 }

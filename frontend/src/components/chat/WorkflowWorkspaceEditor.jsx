@@ -233,6 +233,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
   const pendingProposal = (proposal && !resolvedProposals.includes(proposal.id) ? proposal : null) || savedProposals.findLast((item) => item.workflowId === workflowId && item.status === "PROPOSED" && (item.scope === "workflow" || item.baseVersion === record?.version && item.baseHash === record?.contentHash) && !resolvedProposals.includes(item.id));
   const modelInsertionDisabled = busy || record?.readinessUnknown || Boolean(pendingProposal) || !placementModel.valid || modelInsertionStale || !supportsModelInsertion;
   const staleProposal = pendingProposal && (pendingProposal.baseVersion !== version || pendingProposal.baseHash !== contentHash);
+  const blockingProposal = Boolean(pendingProposal && !staleProposal);
   const select = id => {
     setSelected(id); writeWorkspaceValue(selectionStorageKey ? `${selectionStorageKey}.node` : null, id); setProposal(null);
     if (docked) {
@@ -287,14 +288,14 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
     const target = placementModel.placements.find(item => item.scopeKey === scopeKey && item.beforeNodeId === beforeId);
     return target ? <FlowPlacementPoint key={target.key} target={target} model={placementModel} moving={moving} revision={{ workflowId, baseVersion: record.version, baseHash: record.contentHash }} disabled={busy || record.readinessUnknown || Boolean(pendingProposal)} onInsert={value => { setMoving(null); setInsertTarget({ target: value, workflowId, baseVersion: record.version, baseHash: record.contentHash }); }} onMove={previewMove} /> : null;
   };
-  const attemptRun = async (input = runInput) => {
-    if (!canControl || busy || record.readinessUnknown || !record.can_attempt_run || runPending.current) return null;
-    if (pendingProposal) { setNotice("Apply or discard the preview before running. Runs use the saved published workflow, not browser edits."); return; }
+  const attemptRun = async (input = runInput, startOptions = {}) => {
+    if (!canControl || busy || record.readinessUnknown || runPending.current) return null;
+    if (blockingProposal) { setNotice("Apply or discard the preview before running. Runs use the saved published workflow, not browser edits."); return; }
     if (submittingRun || unconfirmedRun || recovery.pending || recovery.checking || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status)) return;
     runPending.current = true; setSubmittingRun(true); setShowResults(true); setError(""); setNotice("");
     try {
       const options = record.operation_job_admission === "operation-job/v1" ? { mode: "async-operation", idempotencyKey: crypto.randomUUID() } : record.read_job_admission === "read-job-v1" ? { mode: "async-read", idempotencyKey: crypto.randomUUID() } : {};
-      const admissionOptions = { ...options, ...(actorId ? { expectedActorId: actorId } : {}) };
+      const admissionOptions = { ...options, ...(startOptions.startRevision ? { startRevision: startOptions.startRevision } : record.start_revision ? { startRevision: record.start_revision } : {}), ...(actorId ? { expectedActorId: actorId } : {}) };
       const result = await workflowService.run(workflowId, input, ...(Object.keys(admissionOptions).length ? [admissionOptions] : []));
       if (typeof result?.id !== "string" || !result.id.trim() || result.workflowId && result.workflowId !== workflowId) throw new Error("The original run receipt could not be confirmed.");
       setRun(result); setShowResults(true);
@@ -311,19 +312,19 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
     } finally { runPending.current = false; setSubmittingRun(false); }
   };
   if (!record) return <div className="p-5"><p className="text-xs text-gray-500">Loading saved workflow…</p>{error && <p role="alert" className="mt-3 text-xs text-red-600">{error}</p>}<button className={button} onClick={() => perform(load)}>Reload</button></div>;
-  const runInputsDisabled = !canControl || busy || record.readinessUnknown || Boolean(pendingProposal) || submittingRun || recovery.checking || recovery.pending || unconfirmedRun || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status);
+  const runInputsDisabled = !canControl || busy || record.readinessUnknown || blockingProposal || submittingRun || recovery.checking || recovery.pending || unconfirmedRun || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status);
   const cannotRun = runInputsDisabled || !record.can_attempt_run;
   return <div className="relative flex min-h-0 flex-1 flex-col">
     {simple && pendingProposal && <section aria-label="Pending workflow change" className="shrink-0 border-b border-primary/20 bg-primary/5 px-3 py-3 text-xs">
-      <p className="font-semibold">New changes are waiting for review</p>
-      <p className="mt-1 leading-5">The canvas shows saved draft v{record.version}, not the proposed changes. {staleProposal ? "The saved draft changed; ask the assistant for a fresh proposal." : "Review the proposal, then save it to update the canvas. Saving does not publish or run it."}</p>
+      <p className="font-semibold">{staleProposal ? "An older change proposal is available" : "New changes are waiting for review"}</p>
+      <p className="mt-1 leading-5">The canvas shows saved draft v{record.version}, not the proposed changes. {staleProposal ? "This older proposal cannot change or block the current saved workflow. Request a fresh proposal if you want to edit it." : "Review the proposal, then save it to update the canvas. Saving does not publish or run it."}</p>
       {pendingProposal.validation?.passed === false && <p className="mt-1 text-amber-700 dark:text-amber-300">The proposal still has issues. Saving it will not make the workflow ready to run.</p>}
       <button type="button" disabled={busy || record.readinessUnknown || staleProposal || !canEdit} onClick={() => setShowSaveDialog(true)} className="mt-2 rounded-md border border-primary/30 px-3 py-2 font-semibold text-primary disabled:opacity-50">Review proposed changes</button>
     </section>}
     {docked && workspace.chatWorkflowHost && createPortal(<section aria-label="Chat workflow actions" className="border-b border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
       <div className="flex flex-wrap items-center gap-2"><p className="min-w-0 flex-1 truncate text-xs font-semibold" title={preview.name}>{preview.name} <span className="font-normal text-gray-500">· saved draft v{record.version}</span></p>
         <button type="button" className={`${button} border border-gray-200 dark:border-gray-700`} disabled={!canEdit || !pendingProposal || busy || record.readinessUnknown || staleProposal} onClick={() => setShowSaveDialog(true)} title={pendingProposal ? "Review and save this exact change" : "This draft is already saved. Request or preview a change to save another revision."}>Save draft</button>
-        <button type="button" className={`${button} bg-primary text-white hover:bg-primary/90`} disabled={!canControl || busy || record.readinessUnknown || Boolean(pendingProposal) || submittingRun || recovery.checking || recovery.pending || unconfirmedRun || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status)} onClick={() => setShowRunDialog(true)} title={!record.can_attempt_run ? "Check what is needed before this workflow can run" : "Review inputs and start the published workflow"}>{submittingRun ? "Starting…" : runActive ? "Running…" : "Run workflow"}</button>
+        <button type="button" className={`${button} bg-primary text-white hover:bg-primary/90`} disabled={!canControl || busy || record.readinessUnknown || blockingProposal || submittingRun || recovery.checking || recovery.pending || unconfirmedRun || runActive || ["RECOVERY_REQUIRED", "RECONCILIATION_REQUIRED", "RECONCILED"].includes(shownRun?.status)} onClick={() => setShowRunDialog(true)} title={!record.can_attempt_run ? "Check what is needed before this workflow can run" : "Review inputs and start the published workflow"}>{submittingRun ? "Starting…" : runActive ? "Running…" : "Run workflow"}</button>
         <button type="button" className={`${button} text-primary`} aria-expanded={showResults} onClick={() => setShowResults(value => !value)}>{showResults ? "Hide results" : `Results${shownRun ? ` · ${shownRun.status}` : ""}`}</button>
       </div>
       <RunAdmissionRecoveryPanel recovery={recovery} execution={shownRun} onReleased={() => { setRun(null); setTimeline([]); setUnconfirmedRun(false); setNotice("The recorded terminal run was reviewed. A new run requires an explicit click."); }} />
@@ -332,9 +333,23 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       {notice && <p role="status" className="mt-2 text-xs text-gray-500">{notice}</p>}
     </section>, workspace.chatWorkflowHost, "chat-workflow-actions")}
     <WorkflowRunDialog open={showRunDialog} inline={showRunDialog === "canvas"} workflowId={workflowId} initialRecord={record} onClose={() => setShowRunDialog(false)} onRun={attemptRun} disabled={runInputsDisabled} error={error} onReadinessChanged={setRecord}
+      disabledReason={blockingProposal ? "Review and save or discard the pending workflow change before starting a run." : runActive ? "This workflow already has an active run. Check its results instead of starting it again." : !canControl ? "Your account cannot start this workflow." : recovery.pending || unconfirmedRun ? "A previous run is unconfirmed. Recover its original status before starting another run." : "A workflow action or recovery check is pending. Finish it, then recheck readiness."}
+      onPublishReviewed={canEdit && !runInputsDisabled ? async revision => {
+        if (busy || blockingProposal || record.readinessUnknown) throw new Error("Finish the pending workflow review before publishing.");
+        setBusy(true);
+        try {
+          const fresh = await workflowService.readiness(workflowId);
+          if (fresh.version !== revision.version || fresh.contentHash !== revision.contentHash) { setRecord(fresh); throw new Error("The saved draft changed. Recheck readiness and review the latest draft before publishing."); }
+          if (!fresh.validation?.passed || fresh.readinessUnknown) { setRecord(fresh); throw new Error("The current draft still needs validation or tool review. Resolve those issues before publishing."); }
+          await workflowService.publish(workflowId, "Explicitly reviewed publication from workflow input panel", fresh);
+          const next = await load();
+          await onChatChanged?.();
+          return next;
+        } finally { setBusy(false); }
+      } : undefined}
       beforeInputs={showRunDialog === "canvas" ? <RunAdmissionRecoveryPanel recovery={recovery} execution={shownRun} onReleased={() => { setRun(null); setTimeline([]); setUnconfirmedRun(false); setNotice("The recorded terminal run was reviewed. A new run requires an explicit click."); }} /> : null}
-      onHelp={workspace?.requestWorkflowHelp ? text => { setShowRunDialog(false); workspace.requestWorkflowHelp(workflowId, text); } : undefined}
-      onReview={workspace?.openCanvasTools ? () => { setShowRunDialog(false); workspace.openCanvasTools(); } : undefined} />
+      onHelp={workspace?.requestWorkflowHelp ? text => { if (showRunDialog !== "canvas") setShowRunDialog(false); workspace.requestWorkflowHelp(workflowId, text); } : undefined}
+      onReview={workspace?.openCanvasTools ? () => { if (showRunDialog !== "canvas") setShowRunDialog(false); workspace.openCanvasTools(); } : undefined} />
     <WorkflowDialog open={showSaveDialog && Boolean(pendingProposal)} title="Save workflow draft" onClose={() => setShowSaveDialog(false)} busy={busy}>
       {pendingProposal && <div className="space-y-4 text-sm"><p>{pendingProposal.summary || `Review the change to ${pendingProposal.nodeId || "this workflow"}.`}</p><p className="text-xs text-gray-500">Save this exact proposal to draft v{pendingProposal.baseVersion + 1}. Saving does not publish, run or approve any ERP transaction.</p>
         <details><summary className="cursor-pointer text-primary">Before</summary><ReadableValue value={pendingProposal.before} /></details><div><p className="mb-2 font-semibold">Proposed change</p><ReadableValue value={pendingProposal.after} /></div>

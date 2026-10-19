@@ -19,7 +19,7 @@ export const catalogService = {
  * Performs the tool Groups operation on groups for the catalog service module.
  ******************************************************************************/
   async toolGroups() {
-    const tools = await this.tools({ status: "active_mcp_schema_present" });
+    const tools = await this.tools();
     const groups = new Map();
     tools.forEach((tool, index) => {
       const moduleName = tool.module || tool.erp_system || "General";
@@ -30,7 +30,8 @@ export const catalogService = {
  *
  * Performs the parameters operation on the application for the catalog service module.
  ******************************************************************************/
-      const parameters = Object.fromEntries((tool.required_parameters || []).map((name) => [name, `{{input.${name}}}`]));
+      const inputSchema = tool.input_schema?.type === "object" ? tool.input_schema : null;
+      const parameters = Object.fromEntries((inputSchema?.required || []).map(name => [name, `{{input.${name}}}`]));
       groups.get(key).push({
         label: tool.display_name || tool.name,
         action: tool.name,
@@ -40,6 +41,7 @@ export const catalogService = {
         roles: tool.allowed_roles || [],
         tone: tones[index % tones.length],
         parameters,
+        inputSchema,
       });
     });
     return Array.from(groups, ([title, groupedTools]) => ({ title, description: `${groupedTools.length} registered tools`, tools: groupedTools }));

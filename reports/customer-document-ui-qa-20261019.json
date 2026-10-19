@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-19",
+  "timezone": "Asia/Colombo",
+  "target": "https://workflow-automation-44201.web.app",
+  "qualification": "Targeted hosted UI and API verification; not complete production acceptance",
+  "data": "Fictional customer registration, no identity or financial data",
+  "chatId": "chat_999_80ab6f69",
+  "workflowId": "wf_1005_5d7111f4",
+  "customerName": "Greenfield Stationery 1019-E",
+  "document": {
+    "filename": "customer-registration.png",
+    "documentId": "document_ba850851cecf5034b6d0dcde68b03e83",
+    "pipelineRecordId": "pipeline_record_58cda51e6bc650198c1c4eaa7b417232",
+    "version": 1,
+    "collection": "erp_lib_v1_erpnext_customer_standard_fcb618e9547c6b07ca531aad",
+    "status": "READY",
+    "extractionState": "SUCCEEDED",
+    "extractedCharacters": 568,
+    "warnings": [],
+    "uiUploadAndReview": "PASS",
+    "uiSearchAndResolve": "PASS",
+    "chatRetrieveAndDisplay": "PASS",
+    "chatResponseMessageId": "msg_1037_d08411c8"
+  },
+  "workflow": {
+    "draftVersion": 2,
+    "erpActionSteps": 4,
+    "approvalNodeVisible": true,
+    "generateSaveAndEditInChat": "PASS",
+    "published": false,
+    "executionBlocker": "Independent transaction reviewers are not configured; one master-reference requirement remains in the saved draft"
+  },
+  "readWorkflow": {
+    "workflowId": "wf_629_56a88923",
+    "publishedVersion": 3,
+    "initialRunId": "run-65fd1e6a02053e1a",
+    "initialStatus": "FAILED",
+    "repair": "Exact RAG reference-read routing; no write grant or policy switch disabled",
+    "verifiedRunId": "run-7d2c244e1a28fcc8",
+    "verifiedStatus": "DONE",
+    "erpReads": 12,
+    "typedReturnSteps": 1,
+    "timelineEntries": 13,
+    "nonDoneEntries": 0,
+    "durationMs": 28326,
+    "uiResultsVisible": true
+  },
+  "policy": {
+    "rag": "ON",
+    "localJson": "OFF",
+    "missingTerritoryDecision": "review",
+    "completeFieldsDecision": "allow",
+    "policyEvaluationPerformedERPWrite": false
+  },
+  "tests": {
+    "backendReadRoutingSuite": { "passed": 211, "failed": 0 },
+    "backendAdministratorChatSuite": { "passed": 95, "failed": 0 },
+    "rag": { "passed": 151, "failed": 0 },
+    "frontendComponentSuites": { "suites": 5, "passed": 55, "failed": 0 },
+    "note": "Backend suite counts overlap; do not sum as unique tests. Live UI results are recorded separately above."
+  },
+  "deployment": {
+    "ragImage": "erp-policy-rag:lcwe-20261019-reference-read-v1",
+    "ragBuildId": "cmp",
+    "ragDigest": "sha256:5eb6f58b6825c1a00cced47dcd16e6170c84aa921db3543cf05e6cc83f01d679",
+    "apiRevision": "api-00035-nod",
+    "chatRevision": "executechattask-00031-xir",
+    "readRevision": "executereadtask-00022-veq",
+    "administratorChatReadRepair": "Current read-only annotation is checked before sending readOnly:true to RAG; write proposals and confirmations remain separate",
+    "privateTaskInvoker": "Restored existing runtime-service-account permission after Firebase CLI invoker-policy error; all four task workers remain non-public",
+    "frontendRedeployed": false,
+    "erpbridgeSourceChanged": false,
+    "pipelineSourceChanged": false
+  },
+  "email": {
+    "sendingConfirmed": false,
+    "reviewRequestedFor": ["resend-email-send", "resend-email-get"],
+    "grantsApplied": false,
+    "blocker": "Both remote tools omit outputSchema and cannot pass exact capability admission. Plain-text send additionally needs explicit sender, recipient-array and stable idempotency-key adapter support. No email was sent."
+  },
+  "customerCreation": {
+    "status": "SUCCEEDED",
+    "confirmed": true,
+    "method": "One-off administrator chat action, not execution of the saved workflow",
+    "operatorConfirmation": "QA simulated the explicitly authorized administrator confirmation using the exact four reviewed fields",
+    "prerequisites": ["Filtered customer-name search returned no matches", "Customer group exists", "Territory exists"],
+    "tool": "create_customer",
+    "name": "Greenfield Stationery 1019-E",
+    "doctype": "Customer",
+    "customerType": "Company",
+    "customerGroup": "Demo Customer Group",
+    "territory": "Sri Lanka",
+    "docstatus": 0,
+    "erpCreatedAt": "2026-10-19 05:53:47.609337",
+    "chatLiveReadback": "PASS",
+    "independentFreshMcpGetCustomerReadback": "PASS",
+    "emailWrittenToERP": false,
+    "additionalCreatesOrBlindWriteRetries": 0,
+    "warning": "Do not run the saved customer-create draft for this same name again. The record now exists."
+  },
+  "remainingIssues": [
+    "Intermittent Functions initialization-unconfirmed responses were observed; unknown requests were not blindly replayed",
+    "Document search results currently have identical labels; operator must open a match to inspect its actual identity"
+  ],
+  "evidence": ["customer-ocr-retrieval-20261019.png", "customer-created-chat-readback-20261019.png", "twelve-step-rag-on-pass-20261019.png"]
+}

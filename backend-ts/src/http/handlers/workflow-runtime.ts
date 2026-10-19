@@ -1,3 +1,4 @@
+import { prepareWorkflowStart } from "../../workflows/start-preparation.js";
 import { randomBytes } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -251,6 +252,13 @@ export async function runWorkflowFor(
     if (!["", "execute", "deterministic-read", "async-operation"].includes(parsed.data.mode) || parsed.data.idempotencyKey !== "")
       return reply.status(422).send(fail("Model fixtures are not a run admission mode", { code: "UNSUPPORTED_EXECUTION_MODE", traceId }));
     return handleReadFixtureSimulation(request, reply, services, user, workflow, parsed.data.simulation, parsed.data.input ?? {}, traceId);
+  }
+  if (parsed.data.startRevision) {
+    if (parsed.data.dryRun || parsed.data.retry || parsed.data.simulation !== undefined)
+      throw new HandlerFailure(400, "Draft start cannot be combined with simulation or retry", { code: "START_REVISION_INVALID" });
+    if (!["async-read", "async-operation"].includes(parsed.data.mode) || !/^[A-Za-z0-9_-]{16,128}$/.test(parsed.data.idempotencyKey))
+      throw new HandlerFailure(400, "Start requires queued execution and a stable request identity", { code: "START_IDENTITY_REQUIRED" });
+    workflow = await prepareWorkflowStart(workflow, parsed.data.startRevision, parsed.data.input ?? {}, request, user, services);
   }
   const operationPublication = await services.repository.read((state) => (state.versions[workflow.id] ?? []).findLast((version) => version.version === workflow.publishedVersion && version.artifactState === "PUBLISHED"));
   if (operationPublication?.compiledOperation || parsed.data.mode === "async-operation") {

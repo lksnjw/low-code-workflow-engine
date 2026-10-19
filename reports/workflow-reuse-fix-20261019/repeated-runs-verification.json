@@ -1,0 +1,9 @@
+{
+  "startedAt": "2026-10-19T13:49:17.898Z",
+  "workflowId": "wf_1722_21d0216c",
+  "status": "FAILED",
+  "erpWrites": 0,
+  "runs": [],
+  "reason": "Deployed API 422",
+  "finishedAt": "2026-10-19T13:49:36.400Z"
+}

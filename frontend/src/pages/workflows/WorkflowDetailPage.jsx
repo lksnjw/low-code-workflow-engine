@@ -18,6 +18,7 @@ import RunAdmissionRecoveryPanel from "../../components/executions/RunAdmissionR
 import { useNavigate } from "react-router-dom";
 import { saveWorkflowForChatEdit } from "../../utils/workflowCanvas.utils";
 import { useState } from "react";
+import { workflowService } from "../../services/workflow.service";
 
 /*******************************************************************************
  * Function: WorkflowDetailPage
@@ -38,9 +39,21 @@ function WorkflowDetailPage() {
   const [inputWorkflowId, setInputWorkflowId] = useState(null);
   const runDisabled = runState.loading || Boolean(runState.result) || runState.unconfirmed || hasPendingGenerationApproval;
 
-  const submitRun = async input => {
+  const submitRun = async (input, options) => {
     if (!canRun || runDisabled || inputWorkflowId !== workflow?.id) return;
-    return handleRun(input);
+    return handleRun(input, options);
+  };
+  const publishFromRunInputs = async revision => {
+    if (!canWrite || runDisabled || inputWorkflowId !== workflow?.id) throw new Error("Finish the pending workflow action before publishing.");
+    const fresh = await workflowService.readiness(workflow.id);
+    if (fresh.version !== revision.version || fresh.contentHash !== revision.contentHash) throw new Error("The saved draft changed. Recheck readiness and review the latest draft before publishing.");
+    if (!fresh.validation?.passed || fresh.readinessUnknown) throw new Error("The current draft needs validation or tool review. Resolve its reported issues before publishing.");
+    await workflowService.publish(workflow.id, "Explicitly reviewed publication from saved-workflow input dialog", fresh);
+    const next = await workflowService.readiness(workflow.id);
+    // Publication is separate from execution. A list refresh failure must not
+    // invite another publication or discard already-entered run inputs.
+    void refetch().catch(() => {});
+    return next;
   };
   const openRunHelp = text => {
     setInputWorkflowId(null);
@@ -92,7 +105,10 @@ function WorkflowDetailPage() {
         </div>
       </div>
 
-      <WorkflowRunDialog key={`inputs:${actorId}:${workflow.id}`} open={canRun && inputWorkflowId === workflow.id} workflowId={workflow.id} onClose={() => setInputWorkflowId(null)} onRun={submitRun} disabled={runDisabled} error={runState.error} onHelp={has("chat:use") ? openRunHelp : undefined} onReview={canEditInChat ? () => { setInputWorkflowId(null); navigate(`/chat?workflow=${encodeURIComponent(workflow.id)}`); } : undefined} />
+      <WorkflowRunDialog key={`inputs:${actorId}:${workflow.id}`} open={canRun && inputWorkflowId === workflow.id} workflowId={workflow.id} onClose={() => setInputWorkflowId(null)} onRun={submitRun} disabled={runDisabled}
+        disabledReason={hasPendingGenerationApproval ? "Resolve the pending workflow approval before starting." : runState.unconfirmed ? "The previous run is unconfirmed. Recover its original result before starting another run." : runState.result ? "Review the previous run result and dismiss it before starting another run." : "A run or recovery check is in progress. Wait for it to finish."}
+        error={runState.error} onPublishReviewed={canWrite ? publishFromRunInputs : undefined}
+        onHelp={has("chat:use") ? openRunHelp : undefined} onReview={canEditInChat ? () => { setInputWorkflowId(null); navigate(`/chat?workflow=${encodeURIComponent(workflow.id)}`); } : undefined} />
 
       {hasPendingGenerationApproval && (
         <PendingGenerationApprovalCard

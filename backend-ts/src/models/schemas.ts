@@ -125,6 +125,7 @@ export const validationTokenSchema = z.object({
 export type PublicValidationToken = z.infer<typeof validationTokenSchema>;
 
 export const runWorkflowRequestSchema = z.object({
+  startRevision: z.object({ baseVersion: z.number().int().min(1), baseHash: z.string().regex(/^sha256:[a-f0-9]{64}$/) }).strict().optional(),
   input: jsonObjectSchema.nullable().default(null),
   mode: z.string().default(""),
   dryRun: z.boolean().default(false),

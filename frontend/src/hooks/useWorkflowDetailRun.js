@@ -17,18 +17,17 @@ export function useWorkflowDetailRun(workflowId, onChanged, actorId) {
   const state = { ...local, result: recovery.denied ? null : recovery.run || (recovery.pending ? null : local.result), loading: local.loading || recovery.checking,
     error: recovery.error || (recovery.run ? null : local.error), unconfirmed: recovery.pending && !recovery.run || local.unconfirmed && !recovery.run };
   const save = frame => setFrames(previous => new Map(previous).set(scope, frame));
-  const run = async (input = {}) => {
+  const run = async (input = {}, options = {}) => {
     if (!workflowId || recovery.pending || recovery.checking || locks.current.has(scope)) return;
     locks.current.add(scope); save({ ...empty, loading: true });
     let sent = false;
     try {
       const readiness = await workflowService.readiness(workflowId);
-      if (readiness.can_attempt_run !== true) throw new Error("This publication is not ready. Open the canvas to review its current validation, tools and inputs.");
       const mode = readiness.operation_job_admission === "operation-job/v1" ? "async-operation" : readiness.read_job_admission === "read-job-v1" ? "async-read" : null;
       if (!mode) throw new Error("Queued execution is unavailable. Open the canvas to inspect supported run options.");
       const idempotencyKey = crypto.randomUUID();
       sent = true;
-      const result = await executionService.run(workflowId, input, { mode, idempotencyKey, ...(actorId ? { expectedActorId: actorId } : {}) });
+      const result = await executionService.run(workflowId, input, { mode, idempotencyKey, ...(options.startRevision ? { startRevision: options.startRevision } : readiness.start_revision ? { startRevision: readiness.start_revision } : {}), ...(actorId ? { expectedActorId: actorId } : {}) });
       if (typeof result?.id !== "string" || !result.id.trim()) throw new Error("The run receipt has no execution ID.");
       save({ ...empty, result });
       void Promise.resolve().then(() => onChanged?.()).catch(() => {});

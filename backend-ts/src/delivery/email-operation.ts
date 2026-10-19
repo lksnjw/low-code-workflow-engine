@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { stringify } from "yaml";
@@ -79,7 +80,7 @@ function binding(tool: ToolDefinition, draft: EmailDraft): Record<string, string
   return { [contract.recipient_parameter]: draft.to, [contract.subject_parameter]: draft.subject, [contract.body_parameter]: draft.body };
 }
 function candidate(services: HandlerServices, role: string, draft: EmailDraft) {
-  const matches = services.registries.snapshot().tools.filter(tool => tool.allowed_roles.includes(role) && tool.email_delivery_contract !== undefined);
+  const matches = services.registries.snapshot().tools.filter(tool => toolRoleAllowed(tool.allowed_roles, role) && tool.email_delivery_contract !== undefined);
   if (matches.length !== 1) deny(matches.length ? "More than one email connector is eligible; an administrator must leave one explicit binding" : "No explicitly bound email connector is available", 422);
   const tool = matches[0]!, args = binding(tool, draft);
   return { tool, args, contractHash: capabilityContractHash(tool) };

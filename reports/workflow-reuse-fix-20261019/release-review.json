@@ -1,0 +1,52 @@
+{
+  "status": "DEPLOYING_FULL_CATALOG_EXTENSION",
+  "targetProject": "workflow-automation-44201",
+  "changes": [
+    "All authenticated roles can discover and use admitted workflow tools; actual actor identities and account ownership remain checked.",
+    "The workflow authoring turn runs through the Pi agent with the complete live admitted tool catalog and exact schemas.",
+    "New workflows and edits validate declared input fields, types, required fields and tool bindings before reporting readiness.",
+    "Chat accepts multiple reviewed document identities; run preparation supports up to six images or PDFs with explicit record selection.",
+    "Builder execution opens the OCR and input review dialog before dispatch.",
+    "Saved workflows reuse unchanged tool contracts with fresh inputs and approval for every effect; unrelated catalog changes do not require republication.",
+    "An old proposal no longer prevents a current published draft from running.",
+    "Generic digest-pinned MCP mutation tools, including delete and cancel, use exact human approval and acknowledged-return evidence."
+  ],
+  "validation": {
+    "backendTestsPassed": 968,
+    "backendSuitesPassed": 17,
+    "frontendTestsPassed": 206,
+    "frontendSuitesPassed": 9,
+    "typecheck": "PASS",
+    "functionsBuildAndArtifactVerification": "PASS",
+    "hostingBuildAndArtifactVerification": "PASS",
+    "diffWhitespaceCheck": "PASS",
+    "liveOcrWithNewRelease": "PNG_AND_PDF_PASSED",
+    "liveErpWrite": "NOT_PERFORMED"
+  },
+  "savedHostedDraft": {
+    "workflowId": "wf_1722_21d0216c",
+    "version": 2,
+    "name": "Customer Registration from Image or PDF",
+    "toolSteps": [
+      "get_customer_group",
+      "get_territory",
+      "create_customer"
+    ],
+    "requiredInputs": [
+      "customer_name",
+      "customer_type",
+      "customer_group",
+      "territory"
+    ],
+    "publishedOrExecuted": false,
+    "screenshot": "customer-workflow-saved-draft.png"
+  },
+  "runtimeRules": [
+    "A configured business policy and exact human transaction approval still apply.",
+    "An explicitly configured independent reviewer policy remains required for non-admin requesters.",
+    "With shared access and no configured reviewer policy, each active requester can explicitly confirm their own exact transaction.",
+    "Multiple customer records are selected and run individually; automatic batch writes and file watching are not implemented.",
+    "Actual used contract, connection, source or authority changes still require renewed review."
+  ],
+  "releaseGate": "backend-ts/scripts/verify-functions-artifact.mjs requires explicit authorization for the partial Functions lifecycle preview before deployment."
+}

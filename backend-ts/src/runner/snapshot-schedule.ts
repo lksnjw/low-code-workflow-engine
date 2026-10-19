@@ -62,7 +62,7 @@ export async function admitReadSnapshot(services: HandlerServices, workflow: Wor
       durationMs: 0, tokens: { input: 0, output: 0, total: 0 }, costUsd: 0, startedBy: { id: actor.id, name: actor.name },
       snapshotScheduleSource: structuredClone(source), readProgress: newReadProgress(services.repository), stepOutputs: {},
       ...(workflow.chatSessionId ? { chatSessionId: workflow.chatSessionId } : {}),
-      workflowSnapshot: { version: workflow.publishedVersion, contentHash: compiled.plan.sourceHash, registryHash: compiled.receipt.registryHash,
+      workflowSnapshot: { version: workflow.publishedVersion, contentHash: compiled.plan.sourceHash, registryHash: services.registries.hash(),
         yaml: workflow.yaml, input: structuredClone(input), compilation: compiled.receipt,
         executionProfile: compiled.plan.ir.schemaVersion === "workflow-read-ir/v3" ? "structured-read-v1" : compiled.plan.ir.flow ? "conditional-read-v1" : "sequential-read-v1" } };
     assertCurrentRunController(state, execution, actor.id, actor.role);

@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-19",
+  "environment": "https://workflow-automation-44201.web.app",
+  "scope": "Standalone pages, not chat; Platform Admin session; synthetic registration image",
+  "overall": "CORE_PATH_PASS_WITH_GAPS",
+  "checks": [
+    {"page": "/settings/rag-policy", "check": "Connection", "result": "PASS", "evidence": "Connected directly through backend; RAG On; 21 finance chunks; 13 actions; 3 indexed record policies"},
+    {"page": "/settings/rag-policy", "check": "Missing customer fields", "result": "PASS", "evidence": "review action; required field conditions; 1 retrieved clause and 1 citation; no ERP operation"},
+    {"page": "/settings/rag-policy", "check": "Delete protection", "result": "PASS", "evidence": "deny action; reviewed delete-protection policy; 1 clause and 1 citation; no deletion performed"},
+    {"page": "/settings/rag-policy", "check": "Invoice approval knowledge question", "result": "GAP", "evidence": "No policy in knowledge base addresses this question; 0 clauses and 0 citations; UI correctly warns not validated approval"},
+    {"page": "/datafeed/upload", "check": "Image intake and destination", "result": "PASS", "evidence": "customer-complete.png; detected erpnext / Customer / registration_form; five required fields; background OCR checked before confirmation"},
+    {"page": "/datafeed/upload", "check": "Missing-field validation", "result": "PASS", "evidence": "Clearing territory displayed required error and blocked save; restoring source value plus explicit source review enabled save"},
+    {"page": "/datafeed/upload", "check": "Confirmed indexing", "result": "PASS", "evidence": "Saved and searchable; document_db9548270fba5b1abe49275ed4e85c44 v1; erp_lib_v1_erpnext_customer_standard_fcb618e9547c6b07ca531aad; no ERP creation"},
+    {"page": "/datafeed/search", "check": "Search and resolve", "result": "PASS_WITH_GAP", "evidence": "REG-20261019-H01 returned 6 matches across 3 permitted collections; second match resolved customer-complete.png and Hillside Office 1019 H01, Company, Demo Customer Group, Sri Lanka and matching registration reference; stored text expanded", "gap": "Exact-looking reference query also returned unrelated customer and HR documents; result labels omit filename/reference until opened, making selection ambiguous"}
+  ],
+  "automatedChecks": {"suites": 3, "passed": 20, "failed": 0, "tests": ["RagPolicyPage.test.jsx", "PipelineSearchPage.test.jsx", "PipelineUploadPage.test.jsx"]},
+  "screenshot": "standalone-document-retrieval-20261019.png",
+  "mutations": ["One synthetic document uploaded and reviewed/indexed via standalone UI"],
+  "notPerformed": ["ERP creation or deletion", "Policy publishing or policy permission changes", "Code fixes or deployment", "All-role coverage", "PDF upload in this standalone-page check", "Latency qualification"]
+}

@@ -8,7 +8,7 @@ import type { RouteDefinition } from "../generated-routes.js";
 import { appendAudit, bodyRecord, HandlerFailure, type CurrentUser, type HandlerServices, isRecord, nextID, now, queryRecord, requestParam, stringValue } from "./common.js";
 import { capabilityAdmissionCatalog, DEFAULT_BRIDGE_CONNECTION, disableCapability, observeCapabilities, reviewCapability } from "../../registry/capability-admission.js";
 import { residentExecutionAllowed } from "../../runner/execution-host.js";
-import { importDiscoveredCapability } from "../../registry/capability-import.js";
+import { importDiscoveredCapability, importFullCatalog } from "../../registry/capability-import.js";
 import { liveErpTools } from "../../registry/live-erp-tools.js";
 
 export const REGISTRY_UNHANDLED = Symbol("registry-unhandled");
@@ -37,7 +37,11 @@ export async function handleRegistryRoute(route: RouteDefinition, request: Fasti
       const selected = capabilityConnection(request, services);
       if (route.path === `${base}/registry/capabilities` && route.method === "GET") { const query = queryRecord(request); return reply.send(ok(await capabilityAdmissionCatalog(services.repository, Number(query.offset ?? 0), Number(query.limit ?? 10), { registries: services.registries, session: selected.session, connectionId: selected.id, connections: selected.connections }), "Connection-scoped review records loaded; discovery is not permission", null)); }
       if (route.path === `${base}/registry/capabilities/discovery`) return reply.send(ok(await observeCapabilities({ repository: services.repository, registries: services.registries, session: selected.session, connectionId: selected.id, user, request, ...(request.signal ? { signal: request.signal } : {}) }), "Connection-scoped discovery observations saved; no authority granted; drift may block existing review", null));
-      if (route.path === `${base}/registry/capabilities/import`) return reply.send(ok(await importDiscoveredCapability({ repository: services.repository, registries: services.registries, session: selected.session, connectionId: selected.id, user, request, body: request.body, ...(request.signal ? { signal: request.signal } : {}) }), "Explicit reviewed discovered contract persisted; no ERP business call performed", null));
+      if (route.path === `${base}/registry/capabilities/import`) {
+        const fullCatalog = isRecord(request.body) && request.body.profile === "workspace-full-tool-access/v1";
+        const imported = await (fullCatalog ? importFullCatalog : importDiscoveredCapability)({ repository: services.repository, registries: services.registries, session: selected.session, connectionId: selected.id, user, request, body: request.body, ...(request.signal ? { signal: request.signal } : {}) });
+        return reply.send(ok(imported, "Explicit reviewed discovered contracts persisted; no ERP business call performed", null));
+      }
       if (route.path === `${base}/registry/capabilities/:id/review`) return reply.send(ok(await reviewCapability({ repository: services.repository, registries: services.registries, session: selected.session, connectionId: selected.id, user, capabilityId: requestParam(request, "id"), body: request.body, request }), "Explicit connection-scoped capability review saved", null));
       if (route.path === `${base}/registry/capabilities/:id/disable`) return reply.send(ok(await disableCapability({ repository: services.repository, user, connectionId: selected.id, capabilityId: requestParam(request, "id"), body: request.body, request }), "Capability disabled for this connection; remote rollback is not implied", null));
     }

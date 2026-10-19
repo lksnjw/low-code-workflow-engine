@@ -70,12 +70,12 @@ test("different file and removal clear old document values, and OCR refresh does
   await choose("another.png"); expect(screen.getByLabelText("Customer name").value).toBe(""); expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Remove document" })); expect(screen.queryByRole("checkbox")).toBeNull();
 });
-test("pipeline outage is not called storage success; source inputs can be reviewed without bypassing readiness", async () => {
+test("pipeline outage is not called storage success; reviewed source inputs can be submitted for backend validation", async () => {
   documents.prepare.mockResolvedValue({ ...prepared, upload: undefined, pipelineStorageConfirmed: false, attachment: { ...prepared.attachment, uploadId: undefined } });
   mount({ initialRecord: { ...ready, can_attempt_run: false } }); await read();
   expect(screen.getByText(/Pipeline storage is not confirmed/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Use extracted values" })); fireEvent.click(screen.getByRole("checkbox"));
-  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(false);
 });
 test("batch extraction cannot silently choose one customer", async () => {
   documents.prepare.mockResolvedValue({ ...prepared, attachment: { ...prepared.attachment, rows: [{ customer_name: "A" }, { customer_name: "B" }] } });
@@ -161,4 +161,33 @@ test("more than six files are rejected before upload", async () => {
   mount(); await chooseMany(7);
   expect(screen.getByRole("alert").textContent).toContain("up to six");
   expect(documents.prepare).not.toHaveBeenCalled();
+});
+
+test("a multi-customer PDF requires explicit row selection and a fresh source review after changing records", async () => {
+  const onRun = jest.fn();
+  documents.prepare.mockResolvedValue({ ...prepared, attachment: { ...prepared.attachment, filename: "customers.pdf", fields: {}, rows: [{ customer_name: "First", quantity: 1 }, { customer_name: "Second" }] } });
+  mount({ onRun }); await choose("customers.pdf"); fireEvent.click(screen.getByRole("button", { name: "Read document" }));
+  const select = await screen.findByRole("combobox", { name: "Record for this run" });
+  expect(select.value).toBe(""); expect(screen.getByRole("button", { name: "Use extracted values" }).disabled).toBe(true);
+  fireEvent.change(select, { target: { value: "0" } }); fireEvent.click(screen.getByRole("button", { name: "Use extracted values" }));
+  expect(screen.getByLabelText("Customer name").value).toBe("First");
+  fireEvent.click(screen.getByLabelText("I checked these inputs against the source document"));
+  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(false);
+  fireEvent.change(select, { target: { value: "1" } });
+  expect(screen.getByLabelText("Customer name").value).toBe(""); expect(screen.getByLabelText("I checked these inputs against the source document").checked).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Use extracted values" }));
+  expect(screen.getByLabelText("Customer name").value).toBe("Second"); expect(screen.getByLabelText("Quantity").value).toBe("");
+  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(true); expect(onRun).not.toHaveBeenCalled();
+});
+
+test("separate image and PDF customers reuse the same schema without merging identities", async () => {
+  documents.prepare.mockResolvedValueOnce({ ...prepared, attachment: { ...prepared.attachment, fields: { customer_name: "Image Customer", quantity: 1 } } })
+    .mockResolvedValueOnce({ ...prepared, attachment: { ...prepared.attachment, fields: { customer_name: "PDF Customer", quantity: 3 } } });
+  mount(); fireEvent.click(screen.getByRole("button", { name: "Fill inputs from a document" })); await waitFor(() => expect(chatService.models).toHaveBeenCalled());
+  fireEvent.change(screen.getByLabelText("Workflow input document"), { target: { files: [new File(["image"], "one.png"), new File(["pdf"], "two.pdf")] } });
+  fireEvent.click(screen.getByRole("button", { name: "Read documents" }));
+  const separate = await screen.findByRole("checkbox", { name: "These files contain separate customers or records." }); fireEvent.click(separate);
+  const select = screen.getByRole("combobox", { name: "Record for this run" }); expect(select.textContent).toContain("one.png"); expect(select.textContent).toContain("two.pdf");
+  fireEvent.change(select, { target: { value: "1" } }); fireEvent.click(screen.getByRole("button", { name: "Use extracted values" }));
+  expect(screen.getByLabelText("Customer name").value).toBe("PDF Customer"); expect(screen.getByLabelText("Quantity").value).toBe("3");
 });

@@ -1,0 +1,28 @@
+{
+  "date":"2026-10-19",
+  "scope":"Frontend presentation only; no ERPBridge, RAG, pipeline or backend permission changes",
+  "features":[
+    "Acknowledged approval/rejection closes the inline review; completed runs no longer keep consumed review banners in chat or canvas",
+    "An unknown acknowledgement does not count as a decision; original review evidence and execution history remain available",
+    "Each new checkpoint resets the prior decision display and requests fresh review",
+    "Display-only Inputs & documents entry precedes ERP nodes when the workflow declares inputs",
+    "Clicking that entry opens document uploads and required fields inside the canvas, not in the chat header or a page-wide modal",
+    "Canvas preparation reuses existing validation, source confirmation, missing-field blocking and explicit Start; it does not change saved ERP steps",
+    "Original-run recovery is available inside the canvas panel when a previous admission must be reviewed"
+  ],
+  "automatedChecks":[{"suites":6,"passed":183,"failed":0},{"suites":3,"passed":136,"failed":0,"note":"Final repeat after adding canvas recovery; counts overlap"}],
+  "hosting":"DEPLOYED",
+  "build":"PASS",
+  "runtimeApprovalBackendChanged":false,
+  "liveUiVerification":"PASS",
+  "liveChecks":[
+    "Deployed completed run shows Results DONE without consumed review banners in chat or canvas",
+    "First Inputs & documents canvas entry opens the Canvas workflow inputs region without a page-wide modal",
+    "Four required item fields are displayed; typing an item code removes only its missing-field error",
+    "Image chooser accepts item-complete.png inside the canvas and enables Read document",
+    "Missing fields keep Start workflow disabled; no workflow was started or ERP record created during this check",
+    "Close canvas inputs returns to the graph and preserves the three saved ERP steps"
+  ],
+  "screenshots":["canvas-inline-document-inputs-20261019.png","canvas-completed-review-hidden-20261019.png"],
+  "userInProgressUploadPreserved":true
+}

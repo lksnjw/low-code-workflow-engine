@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { createHash } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
@@ -65,7 +66,7 @@ export async function prepareEmailDraft(services: HandlerServices, user: Current
     else if (!services.providerRuntime?.configured) reason = "PROVIDER_NOT_CONFIGURED";
     else {
       try {
-        const tools = (await discoverTools(services.erpbridgeSession, services.registries)).filter((tool) => tool.is_read_only && tool.allowed_roles.includes(user.role));
+        const tools = (await discoverTools(services.erpbridgeSession, services.registries)).filter((tool) => tool.is_read_only && toolRoleAllowed(tool.allowed_roles, user.role));
         if (!tools.length) reason = "NO_ADMITTED_READ_TOOLS";
         else {
           // No prior model-produced draft is a source of ERP facts. Sending is

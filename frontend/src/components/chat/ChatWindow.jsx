@@ -373,7 +373,7 @@ function ChatWindow({ messages, onSend, onRevise, loading, readOnly = false, una
             setUsingModelPreview(false); setDocumentContext(value); setDismissedContextKey(contextKey); setDraft(documentWorkflowRequest(options.instruction || draft, options.prepareSchedule === true));
           } : undefined} />, "documents")}
           {usingModelPreview && <p role="status" className="mb-2 text-xs text-primary">Using manually reviewed model-preview values, not confirmed OCR or pipeline storage.</p>}
-          {documentContext && <p role="status" className="mb-2 text-xs text-primary">Using reviewed document v{documentContext.version} for an ERP workflow proposal. <button type="button" className="underline" disabled={busy} onClick={() => setDocumentContext(null)}>Remove document context</button></p>}
+          {documentContext && <p role="status" className="mb-2 text-xs text-primary">{documentContext.documents ? `Using ${documentContext.documents.length} reviewed documents` : `Using reviewed document v${documentContext.version}`} for an ERP workflow proposal. <button type="button" className="underline" disabled={busy} onClick={() => setDocumentContext(null)}>Remove document context</button></p>}
           {canUploadDocuments && nodeContext && <p className="mb-2 text-xs text-gray-500">Exit selected-node editing to review chat documents.</p>}
           <div className={`rounded-2xl border bg-white px-4 py-3 transition dark:bg-darkBackgroundVery ${
             loading

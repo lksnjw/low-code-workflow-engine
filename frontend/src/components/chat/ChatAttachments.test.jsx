@@ -293,3 +293,28 @@ test("upload-only users can review documents but are not offered workflow author
   await screen.findByText("form.txt · Searchable");
   expect(screen.queryByRole("button", { name: "Use reviewed data for ERP workflow" })).toBeNull();
 });
+
+test("multiple image/PDF uploads recover only the unfinished file using its original request key", async () => {
+  service.stage.mockResolvedValueOnce({ ...staged, id: "first", filename: "one.png" }).mockRejectedValueOnce(new Error("Second upload unconfirmed"))
+    .mockResolvedValueOnce({ ...staged, id: "second", filename: "two.pdf" });
+  service.list.mockResolvedValue({ items: [{ ...staged, id: "first", filename: "one.png" }, { ...staged, id: "second", filename: "two.pdf" }] });
+  await open(); fireEvent.change(screen.getByLabelText("Choose chat attachment"), { target: { files: [new File(["one"], "one.png"), new File(["two"], "two.pdf")] } });
+  fireEvent.click(screen.getByRole("button", { name: "Upload privately" })); await screen.findByText("Second upload unconfirmed");
+  const key = service.stage.mock.calls[1][2]; fireEvent.click(screen.getByRole("button", { name: "Upload privately" }));
+  await screen.findByText(/2 forms uploaded privately/); expect(service.stage).toHaveBeenCalledTimes(3); expect(service.stage.mock.calls[2][2]).toBe(key);
+  expect(service.confirm).not.toHaveBeenCalled();
+});
+
+test("only explicitly selected current reviewed source identities enter workflow drafting", async () => {
+  const onUseForWorkflow = jest.fn();
+  service.list.mockResolvedValue({ items: [
+    { ...staged, id: "one", filename: "one.png", status: "READY", document_id: "doc-one", version: 1 },
+    { ...staged, id: "two", filename: "two.pdf", status: "READY", document_id: "doc-two", version: 2 },
+    { ...staged, id: "pending", filename: "unreviewed.pdf", status: "REVIEW" },
+  ] });
+  await open({ onUseForWorkflow });
+  const use = screen.getByRole("button", { name: "Use selected forms for reusable workflow" }); expect(use.disabled).toBe(true);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Use one.png for workflow" })); fireEvent.click(screen.getByRole("checkbox", { name: "Use two.pdf for workflow" }));
+  fireEvent.click(use); expect(onUseForWorkflow).toHaveBeenCalledWith({ purpose: "erp_record_proposal", documents: [{ uploadId: "one", documentId: "doc-one", version: 1 }, { uploadId: "two", documentId: "doc-two", version: 2 }] }, expect.any(Object));
+  expect(screen.queryByRole("checkbox", { name: "Use unreviewed.pdf for workflow" })).toBeNull(); expect(service.confirm).not.toHaveBeenCalled();
+});

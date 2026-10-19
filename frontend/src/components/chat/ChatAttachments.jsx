@@ -18,6 +18,8 @@ export default function ChatAttachments({ sessionId, model, disabled, onCreateCh
   const [batchRows, setBatchRows] = useState(null);
   const [busy, setBusy] = useState(""), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
+  const [pendingBatch, setPendingBatch] = useState([]), [workflowSources, setWorkflowSources] = useState([]);
+  const batchReceipts = useRef(new Map());
   const [uploadUnconfirmed, setUploadUnconfirmed] = useState(false);
   const [modelAssist, setModelAssist] = useState(true);
   const [workflowOutcome, setWorkflowOutcome] = useState(""), [prepareSchedule, setPrepareSchedule] = useState(false);
@@ -34,6 +36,7 @@ export default function ChatAttachments({ sessionId, model, disabled, onCreateCh
   };
   useEffect(() => {
     setSelected(null); setItems([]); setPendingFile(null); setUploadUnconfirmed(false); setError(""); setNotice(""); setBusy(""); setFields({}); setBatchRows(null);
+    setPendingBatch([]); setWorkflowSources([]); batchReceipts.current = new Map();
     setInstruction(""); setSchemaId(""); setType(""); setChoiceId(""); setReviewed(false); setAcknowledged(false); setShare(false); setVersionId("");
     setWorkflowOutcome(""); setPrepareSchedule(false);
     if (previewAttempt.current) { previewAttempt.current.cancelled = true; clearTimeout(previewAttempt.current.timer); }
@@ -68,7 +71,7 @@ export default function ChatAttachments({ sessionId, model, disabled, onCreateCh
       const refreshed = uploads.items.find(item => item.id === selected.id);
       if (refreshed) {
         if (refreshed.revision !== selected.revision) { setReviewed(false); setAcknowledged(false); }
-        setSelected(current => current && refreshed.revision < current.revision ? current : ({ ...current, ...refreshed }));
+        setSelected(current => current?.id !== refreshed.id || refreshed.revision < current.revision ? current : ({ ...current, ...refreshed }));
       }
     }
     return uploads.items ?? [];
@@ -173,6 +176,31 @@ export default function ChatAttachments({ sessionId, model, disabled, onCreateCh
     }
     if (isCurrent()) await load();
   });
+  const uploadBatch = () => run("Uploading forms…", async () => {
+    if (!pendingBatch.length || !sessionId) return;
+    const receipts = [];
+    for (const entry of pendingBatch) {
+      if (!isCurrent()) return;
+      setNotice(`Uploading file ${receipts.length + 1} of ${pendingBatch.length}. Each file keeps its own request identity.`);
+      let receipt = batchReceipts.current.get(entry.key);
+      if (!receipt) {
+        receipt = await service.stage(sessionId, entry.file, entry.key);
+        if (!isCurrent()) return;
+        batchReceipts.current.set(entry.key, receipt);
+      }
+      receipts.push(receipt);
+      setItems(current => [receipt, ...current.filter(item => item.id !== receipt.id)]);
+    }
+    if (!isCurrent()) return;
+    adopt(receipts[0]); setPendingBatch([]);
+    if (modelAssist && model && schemas.length) pendingAnalysis.current = { uploadId: receipts[0].id,
+      body: { instruction: instruction.trim() || workflowInstruction.trim() || "Extract all customer or business form fields and rows for review. Do not create an ERP record or run a workflow.", createRecord, model, ...(schemaId ? { schemaId } : {}) } };
+    setNotice(`${receipts.length} forms uploaded privately. OCR runs for each file. Select each attachment to review and index its fields, then select the reviewed sources for one reusable workflow.`);
+    await load();
+  });
+  const reviewedSources = items.filter(item => item.status === "READY" && item.document_id && item.version);
+  const sourceKey = item => `${item.id}:${item.version}`;
+  const selectedSources = reviewedSources.filter(item => workflowSources.includes(sourceKey(item)));
   const confirm = () => run("Confirming & indexing…", async () => {
     if (!selected || !schema || !reviewed || fieldIssues.length) return;
     const document = inventory?.documents?.find(item => item.id === versionId);
@@ -193,10 +221,15 @@ export default function ChatAttachments({ sessionId, model, disabled, onCreateCh
       <div className="flex items-center justify-between gap-2"><p className="font-semibold">Upload → review → index</p><Button variant="ghost" disabled={blocked} onClick={() => run("Refreshing…", load)}>Refresh</Button></div>
       <p className="text-gray-500">Files stay private until reviewed. Original ERP creation is not performed here.</p>
       {!sessionId ? <Button disabled={blocked} onClick={() => run("Creating conversation…", onCreateChat)}>Start document conversation</Button> : <div className="flex flex-wrap items-end gap-2">
-        <label className="min-w-0 flex-1">Attachment (up to 16 MiB)<input aria-label="Choose chat attachment" className="mt-1 block w-full text-xs" type="file" accept={EXTENSIONS} disabled={blocked} onChange={event => {
-          clearPreview(); setPendingFile(event.target.files?.[0] ?? null); setUploadUnconfirmed(false); uploadIdentity.current = crypto.randomUUID(); setError("");
-        }} /></label><Button disabled={blocked || !pendingFile} onClick={upload}>{uploadUnconfirmed ? "Retry same upload request" : "Upload privately"}</Button>
+        <label className="min-w-0 flex-1">Attachments (up to six, 16 MiB total)<input aria-label="Choose chat attachment" className="mt-1 block w-full text-xs" type="file" multiple accept={EXTENSIONS} disabled={blocked} onChange={event => {
+          const files = Array.from(event.target.files || []);
+          clearPreview(); setPendingFile(null); setPendingBatch([]); batchReceipts.current = new Map(); setUploadUnconfirmed(false); uploadIdentity.current = crypto.randomUUID(); setError("");
+          if (files.some(file => !EXTENSIONS.split(",").some(extension => file.name.toLowerCase().endsWith(extension)))) { event.target.value = ""; setError("Unsupported file type. Use one of the listed formats."); return; }
+          if (files.length > 6 || files.reduce((sum, file) => sum + file.size, 0) > 16 * 1024 * 1024 || files.some(file => !file.size)) { event.target.value = ""; setError("Choose up to six supported non-empty files, at most 16 MiB in total."); return; }
+          if (files.length > 1) setPendingBatch(files.map(file => ({ file, key: crypto.randomUUID() }))); else setPendingFile(files[0] ?? null);
+        }} /></label><Button disabled={blocked || !pendingFile && !pendingBatch.length} onClick={pendingBatch.length ? uploadBatch : upload}>{uploadUnconfirmed ? "Retry same upload request" : "Upload privately"}</Button>
       </div>}
+      {pendingBatch.length > 0 && <p className="break-words">Selected forms: {pendingBatch.map(entry => entry.file.name).join(", ")}. A retry keeps the original request keys and skips confirmed uploads.</p>}
       {uploadUnconfirmed && <div aria-label="Unconfirmed document upload" className="space-y-2 border-l-2 border-amber-400 pl-3">
         <p className="font-semibold">Upload confirmation needs checking</p>
         <p className="leading-5">The file may already be stored. Check its saved status, then select the original attachment below. A document preview or OK acknowledgement does not confirm storage.</p>
@@ -228,6 +261,11 @@ export default function ChatAttachments({ sessionId, model, disabled, onCreateCh
       {items.length > 0 && <label className="block">Uploaded in this conversation<select className={`${control} mt-1`} value={selected?.id ?? ""} disabled={blocked} onChange={event => run("Opening…", async () => {
         clearPreview(); if (!event.target.value) { setSelected(null); return; } const result = await service.get(sessionId, event.target.value); if (isCurrent()) adopt(result);
       })}><option value="">Choose an attachment</option>{items.map(item => <option key={item.id} value={item.id}>{item.filename} — {labels[item.status] ?? item.status}</option>)}</select></label>}
+      {reviewedSources.length > 1 && onUseForWorkflow && <section aria-label="Reusable workflow sources" className="space-y-2 border-l-2 border-primary pl-3">
+        <p className="font-semibold">Build one reusable workflow from reviewed forms</p><p>Select up to six reviewed sources. The builder checks the available ERP tools and their required fields. New forms can later use the same published workflow, one record per run with fresh approval.</p>
+        {reviewedSources.map(item => <label className="flex items-start gap-2" key={sourceKey(item)}><input type="checkbox" aria-label={`Use ${item.filename} for workflow`} checked={workflowSources.includes(sourceKey(item))} disabled={blocked || !workflowSources.includes(sourceKey(item)) && selectedSources.length >= 6} onChange={event => setWorkflowSources(current => event.target.checked ? [...current, sourceKey(item)] : current.filter(id => id !== sourceKey(item)))} />{item.filename} · version {item.version}</label>)}
+        <Button variant="secondary" disabled={blocked || !selectedSources.length} onClick={() => onUseForWorkflow({ purpose: "erp_record_proposal", documents: selectedSources.map(item => ({ uploadId: item.id, documentId: item.document_id, version: item.version })) }, { instruction: workflowOutcome.trim() || instruction.trim() || workflowInstruction.trim(), prepareSchedule })}>Use selected forms for reusable workflow</Button>
+      </section>}
       {selected && <div className="space-y-3 border-t border-gray-200 pt-3 dark:border-gray-700">
         <p className="font-semibold">{selected.filename} · {labels[selected.status] ?? selected.status}</p>
         {selected.status === "EXTRACTING" && <p role="status">Preparing your document in the background. You can continue chatting.</p>}

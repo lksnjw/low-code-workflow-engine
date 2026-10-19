@@ -35,7 +35,7 @@ async function setup(options: { noBridge?: boolean; roleId?: string; provider?: 
   const repository = await Repository.open(options.persistence ?? null);
   const tool = toolSchema.parse({ tool_id: "READ-1", name: "finance.read", mcp_tool_name: "invoice-read", allowed_roles: ["Platform Admin", "Client"],
     is_read_only: !options.write, input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false } });
-  let hash = "sha256:registry-v1";
+  let hash = `sha256:${"a".repeat(64)}`;
   const registries = { snapshot: () => ({ tools: [tool], rules: [], versions: { tools: "v1", rules: "v1" } }), hash: () => hash,
     findTool: (name: string) => [tool.name, tool.mcp_tool_name].includes(name) ? tool : undefined, findRule: () => undefined, enabledRules: () => [] } as unknown as RegistryService;
   const validator = new RegistryValidator(registries, repository);
@@ -59,7 +59,7 @@ async function setup(options: { noBridge?: boolean; roleId?: string; provider?: 
     await repository.mutate((state) => { state.workflows.read = workflow; state.versions.read = published ? [{ version: 1, artifactState: "PUBLISHED", yaml: source }] : []; });
   }
   const run = (payload: Record<string, unknown> = { input: { invoiceId: "invoice-requested" } }) => app.inject({ method: "POST", url: "/api/workflows/read/run", headers, payload });
-  return { app, services, repository, tool, validator, listTools, callTool, queryWithTools, headers, seed, run, drift: () => { hash = "sha256:registry-v2"; } };
+  return { app, services, repository, tool, validator, listTools, callTool, queryWithTools, headers, seed, run, drift: () => { hash = `sha256:${"b".repeat(64)}`; } };
 }
 
 test.each([false, true])("published two-node read executes exact bindings with provider configured=%s", async (provider) => {
@@ -68,7 +68,7 @@ test.each([false, true])("published two-node read executes exact bindings with p
   expect(response.statusCode, response.body).toBe(200);
   const execution = response.json().data;
   expect(execution).toMatchObject({ status: "DONE", tokens: { input: 0, output: 0, total: 0 }, costUsd: 0,
-    workflowSnapshot: { version: 1, yaml, registryHash: "sha256:registry-v1", executionProfile: "sequential-read-v1" } });
+    workflowSnapshot: { version: 1, yaml, registryHash: `sha256:${"a".repeat(64)}`, executionProfile: "sequential-read-v1" } });
   expect(s.callTool.mock.calls).toEqual([["invoice-read", { id: "invoice-requested", role: "admin" }], ["invoice-read", { id: "invoice-actual", role: "admin" }]]);
   const state = await s.repository.snapshot();
   expect(state.timelines[execution.id]?.map((step) => [step.nodeId, step.status])).toEqual([["lookup", "DONE"], ["details", "DONE"]]);
@@ -638,7 +638,7 @@ test.each(["disabled", "assignment", "registry"])("%s revocation after first nod
   expect(s.callTool).toHaveBeenCalledTimes(1);
   const state = await s.repository.snapshot(), execution = Object.values(state.executions)[0]!;
   expect(execution).toMatchObject({ status: "FAILED", failure: { failedStepId: "details" }, stepOutputs: { lookup: { structuredContent: { id: "actual-first-output" } } } });
-  expect(execution.workflowSnapshot?.registryHash).toBe("sha256:registry-v1");
+  expect(execution.workflowSnapshot?.registryHash).toBe(`sha256:${"a".repeat(64)}`);
 });
 
 test("run retains its exact published snapshot despite a later draft edit and redacts structured credentials", async () => {
@@ -674,11 +674,11 @@ test("server-only full-plan dispatch rejects a forged original verification rece
   expect(s.callTool).not.toHaveBeenCalled();
 });
 
-test("schema profile rejects ignored constraints, missing types and reserved reference traversal", async () => {
+test("schema profile retains unconstrained remote JSON and rejects unknown constraints and reserved traversal", async () => {
   const s = await setup();
   s.tool.input_schema = { type: "object", properties: { id: { description: "Missing type" } } };
-  expect(inspectReadWorkflow(parseWorkflowYAMLStrict(yaml), [s.tool], "Platform Admin")).not.toEqual([]);
-  s.tool.input_schema = { type: "object", properties: { id: { type: "string", minLength: 2 } } };
+  expect(inspectReadWorkflow(parseWorkflowYAMLStrict(yaml), [s.tool], "Platform Admin")).toEqual([]);
+  s.tool.input_schema = { type: "object", properties: { id: { type: "string", maxLength: 2 } } };
   expect(inspectReadWorkflow(parseWorkflowYAMLStrict(yaml), [s.tool], "Platform Admin")).not.toEqual([]);
   const blueprint = parseWorkflowYAMLStrict(yaml); blueprint.steps[0]!.parameters = { id: "{{input.__proto__.id}}" };
   expect(inspectReadWorkflow(blueprint, [s.tool], "Platform Admin")).not.toEqual([]);
@@ -730,7 +730,7 @@ test("read admission lookup recovers identity after draft changes without dispat
   for (let attempt = 0; attempt < 2; attempt++) {
     const receipt = await s.app.inject({ method: "GET", url: "/api/workflows/read/run-receipts/read-job-fixture-001?mode=async-read", headers: s.headers });
     expect(receipt.statusCode, receipt.body).toBe(200); expect(receipt.headers["cache-control"]).toBe("no-store");
-    expect(receipt.json().data).toEqual({ profile: "run-admission-receipt/v1", outcome: "RECORDED", workflowId: "read", mode: "async-read", executionId: id, status: "PENDING", noReplay: true });
+    expect(receipt.json().data).toEqual({ profile: "run-admission-receipt/v1", outcome: "RECORDED", workflowId: "read", mode: "async-read", executionId: id, status: "PENDING", noReplay: true, safeToReviewForNewRun: false });
     expect(receipt.body).not.toMatch(/private-queue-secret|inputCiphertext|requestFingerprint|idempotencyScope|workflowSnapshot/);
   }
   expect(await s.repository.snapshot()).toEqual(before); expect(s.callTool).not.toHaveBeenCalled(); expect(s.listTools).not.toHaveBeenCalled();
@@ -1359,4 +1359,48 @@ test("MCP discovery timeout fails preflight without an execution or cached readi
   expect((await s.run()).statusCode).toBe(503);
   expect(s.listTools).toHaveBeenCalledOnce(); expect(s.callTool).not.toHaveBeenCalled();
   expect((await s.repository.snapshot()).executions).toEqual({});
+});
+
+
+test("Start validates and snapshots an unpublished draft, reuses it with fresh inputs and deduplicates admission", async () => {
+  const s = await setup(); await s.seed(yaml, false);
+  const ready = (await s.app.inject({ method: "GET", url: "/api/workflows/read/readiness", headers: s.headers })).json().data;
+  expect(ready).toMatchObject({ published: false, can_attempt_run: true, start_revision: { baseVersion: 1, baseHash: workflowContentHash(yaml) } });
+  const payload = { mode: "async-read", idempotencyKey: "start-draft-key-0001", input: { invoiceId: "new-input" }, startRevision: ready.start_revision };
+  const response = await s.run(payload); expect(response.statusCode, response.body).toBe(202);
+  const first = await waitForTerminal(s.repository, response.json().data.id); expect(first.status).toBe("DONE");
+  expect((await s.run(payload)).json().data.id).toBe(first.id);
+  expect(s.callTool).toHaveBeenCalledTimes(2);
+  const next = await s.run({ ...payload, idempotencyKey: "start-draft-key-0002", input: { invoiceId: "another-input" } });
+  expect(next.statusCode, next.body).toBe(202); expect((await waitForTerminal(s.repository, next.json().data.id)).status).toBe("DONE");
+  const state = await s.repository.snapshot(); expect(state.versions.read?.filter(v => v.artifactState === "PUBLISHED")).toHaveLength(1);
+  expect(s.callTool.mock.calls[2]?.[1]).toMatchObject({ id: "another-input" });
+});
+
+test.each(["changed", "unknown-tool", "unresolved", "invalid-input", "missing-legacy-input"])("Start rejects %s before publication or dispatch", async scenario => {
+  const source = parseWorkflowYAMLStrict(yaml);
+  source.trigger.config = { inputSchema: { type: "object", properties: { invoiceId: { type: "string" } }, required: ["invoiceId"], additionalProperties: false } };
+  if (scenario === "missing-legacy-input") delete source.trigger.config;
+  if (scenario === "unknown-tool") source.steps[0]!.action = "invented_tool";
+  if (scenario === "unresolved") source.metadata = { unresolved_requirements: ["User requested unsupported automatic duplicate gating"] };
+  const value = stringify(source), s = await setup(); await s.seed(value, false);
+  const response = await s.run({ mode: "async-read", idempotencyKey: "start-rejected-key-001", input: scenario === "missing-legacy-input" ? {} : scenario === "invalid-input" ? { invoiceId: 3 } : { invoiceId: "valid" },
+    startRevision: { baseVersion: scenario === "changed" ? 2 : 1, baseHash: workflowContentHash(value) } });
+  expect(response.statusCode, response.body).toBe(scenario === "changed" ? 409 : 422);
+  const state = await s.repository.snapshot(); expect(state.versions.read).toEqual([]); expect(state.executions).toEqual({}); expect(s.callTool).not.toHaveBeenCalled();
+});
+
+test("missing output failure preserves safe stage, tool and reason through the HTTP response", async () => {
+  const s = await setup(); await s.seed(); s.callTool.mockResolvedValue({ content: [], structuredContent: {} });
+  const response = await s.run(); expect(response.statusCode).toBe(422);
+  expect(response.json().meta.failure).toMatchObject({ failedStepId: "details", failedToolName: "invoice-read", code: "READ_REFERENCE_UNAVAILABLE", stage: "input_resolution", retryable: false });
+  expect(response.json().message).toContain("prior step output is missing");
+});
+
+
+test("Start revalidates a valid legacy draft instead of requiring a separate validation action", async () => {
+  const s = await setup(); await s.seed(yaml, false);
+  await s.repository.mutate(state => { state.workflows.read!.status = "draft-unvalidated"; });
+  const response = await s.run({ mode: "async-read", idempotencyKey: "legacy-valid-start-001", input: { invoiceId: "valid" }, startRevision: { baseVersion: 1, baseHash: workflowContentHash(yaml) } });
+  expect(response.statusCode, response.body).toBe(202); expect((await waitForTerminal(s.repository, response.json().data.id)).status).toBe("DONE");
 });

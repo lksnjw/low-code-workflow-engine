@@ -87,19 +87,21 @@ export const runAdmissionService = {
         if (previous) { sent = true; return recover(scope, previous); }
         const readiness = unwrap(await apiClient.get(`/workflows/${encodeURIComponent(workflowId)}/readiness`));
         assertAccount(scope);
-        if (readiness?.can_attempt_run !== true) throw new Error("This publication is not ready. Open the canvas to review its tools, validation and inputs.");
         const mode = readiness.operation_job_admission === "operation-job/v1" ? "async-operation" : readiness.read_job_admission === "read-job-v1" ? "async-read" : null;
         if (!mode || options.mode && options.mode !== mode) throw new Error("A current supported queued admission is required. Reload the canvas.");
+        const startRevision = options.startRevision || readiness.start_revision || (readiness.can_attempt_run !== true && Number.isInteger(readiness.version) && readiness.contentHash ? { baseVersion: readiness.version, baseHash: readiness.contentHash } : undefined);
+        if (startRevision && (startRevision.baseVersion !== readiness.version || startRevision.baseHash !== readiness.contentHash))
+          throw new Error("The saved workflow changed. Review the latest fields and steps before starting.");
         const key = options.idempotencyKey ?? crypto.randomUUID(); if (!validKey(key)) throw new Error("A stable run request identity is required.");
         const entry = { profile: "run-admission-client/v1", key, mode, executionId: null, createdAt: new Date().toISOString() };
         write(scope, entry); assertAccount(scope); sent = true;
         let run;
         try { run = unwrap(await apiClient.post(options.retry ? `/executions/${encodeURIComponent(scope.retrySourceId)}/retry` : `/workflows/${encodeURIComponent(workflowId)}/run`,
-          { input, mode, idempotencyKey: key, expectedActorId: scope.actor, ...(options.retry ? { retry: options.retry } : {}) }, { timeout: 300000 })); }
+          { input, mode, idempotencyKey: key, expectedActorId: scope.actor, ...(options.retry ? { retry: options.retry } : startRevision ? { startRevision } : {}) }, { timeout: 300000 })); }
         catch (cause) {
           const executionId = cause?.response?.data?.meta?.executionId;
           if (id(executionId)) write(scope, { ...entry, executionId });
-          else if ([400, 401, 403, 404, 413, 422, 429].includes(cause?.response?.status) || cause?.response?.status === 409 && cause?.response?.data?.meta?.code === "EXECUTION_RETRY_BLOCKED") { write(scope, null); sent = false; throw cause; }
+          else if ([400, 401, 403, 404, 413, 422, 429].includes(cause?.response?.status) || cause?.response?.status === 409 && ["EXECUTION_RETRY_BLOCKED", "WORKFLOW_CHANGED", "WORKFLOW_BASE_CONFLICT", "DRAFT_REVISION_CONFLICT", "START_REVISION_INVALID", "WORKFLOW_REVIEW_REQUIRED"].includes(cause?.response?.data?.meta?.code)) { write(scope, null); sent = false; throw cause; }
           try { return await recover(scope, read(scope)); } catch { throw cause; }
         }
         if (!id(run?.id) || run.workflowId !== workflowId) throw new Error("The run response identity could not be confirmed.");

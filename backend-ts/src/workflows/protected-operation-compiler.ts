@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { z } from "zod";
 import { canonicalJSONBytes, resolvedParameterHashBytes } from "../core/canonical-json.js";
 import { assertBoundedFiniteJSON, boundedFiniteJSONBytes } from "../core/bounded-finite-json.js";
@@ -44,7 +45,7 @@ function buildProtectedOperationWorkflow(yaml: string, rawTools: readonly ToolDe
   const qualify = (toolId: string, contractHash: string, admission: ReadAdmissionPin | undefined, primary: boolean) => {
     const matches = tools.filter(tool => tool.tool_id === toolId), pin = pinSchema.parse(admission);
     if (matches.length !== 1 || capabilityContractHash(matches[0]!) !== contractHash || pin.contractHash !== contractHash ||
-        !matches[0]!.bridge_contract || primary && !matches[0]!.allowed_roles.includes(role)) throw new Error("Protected operation requires an exact original tool contract/pin/role");
+        !matches[0]!.bridge_contract || primary && !toolRoleAllowed(matches[0]!.allowed_roles, role)) throw new Error("Protected operation requires an exact original tool contract/pin/role");
     const tool = matches[0]!;
     if (!tool.is_read_only) supportedOperation(tool);
     else {

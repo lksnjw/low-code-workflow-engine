@@ -105,7 +105,7 @@ export class McpConnectionRuntime {
    * permission to call tools. Deferred admissions and live workers bind to
    * the same endpoint/token/revision without doing network I/O at admission. */
   get admissionConfigurationBinding(): string | undefined {
-    return this.#configured && this.#revision>0 ? createHash("sha256").update(JSON.stringify([this.connection.baseURL.trim(),this.connection.mcpToken,`${this.connection.id}:${this.#revision}`])).digest("hex") : undefined;
+    return this.#configured && this.#revision>0 ? createHash("sha256").update(JSON.stringify([this.connection.baseURL.trim(),this.connection.mcpToken,this.#configurationHash])).digest("hex") : undefined;
   }
   get primaryConnectionId() { return this.connection.id; }
   hasConnection(id: string) { return id === this.connection.id; }
@@ -166,7 +166,10 @@ export class McpConnectionRuntime {
     return boundedOperation(async () => {
       candidate = await (this.options.factory ?? createErpbridgeMcpSession)({ baseURL: this.connection.baseURL, token: this.connection.mcpToken,
         ...(this.options.userMcpCredentials ? { userMcpCredentials: this.options.userMcpCredentials } : {}),
-        timeoutMs: config.mcpTimeoutMs, validator, signal: controller.signal, connectionId: this.connection.id, connectionRevision: `${this.connection.id}:${revision}`,
+        // Session revisions fence old sockets and interrupted commands. Tool
+        // admission instead binds the real configuration, so a reconnect with
+        // the same endpoint, credential and role map preserves reviewed pins.
+        timeoutMs: config.mcpTimeoutMs, validator, signal: controller.signal, connectionId: this.connection.id, connectionRevision: this.#configurationHash,
         administratorChatActions:config.erpbridgeAdminChatActions===true,
         admissionAuthorizer: async (definition, binding, pin) => { await this.assertRevision(revision, epoch); await authorizer(definition, binding, pin); await this.assertRevision(revision, epoch); } });
       if (controller.signal.aborted || epoch !== this.#epoch || this.#stopped) { await this.dispose(candidate); throw new Error("MCP initialization superseded"); }
@@ -200,7 +203,7 @@ export class McpConnectionRuntime {
       persistence: !this.supportedStorage() ? "unsupported" : this.options.repository.persistence === null ? "memory-only" : "durable-single-writer",
       operationInProgress: durableBusy || this.#probeBusy || this.#state === "CONNECTING",
       supports: { connect: canInitialize, test: canInitialize, disconnect: this.supportedStorage() && !this.#stopped },
-      configurationChange: "Endpoint/secret rotation requires backend configuration and restart; re-review after connection revision changes" };
+      configurationChange: "Endpoint, credential or role-map changes require tool review. Reconnecting unchanged configuration preserves reviewed tools." };
   }
   async status(user: CurrentUser) {
     return this.options.repository.readAuthoritative(state => {

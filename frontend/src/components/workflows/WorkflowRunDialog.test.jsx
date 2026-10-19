@@ -59,33 +59,33 @@ test("popup loads authoritative requirements once; late results after close cann
   expect(screen.queryByRole("dialog")).toBeNull(); expect(workflowService.readiness).toHaveBeenCalledTimes(1); expect(props.onRun).not.toHaveBeenCalled();
 });
 
-test("blocked publication cannot run even after every visible field is completed", () => {
-  const onRun = jest.fn(); mount({ initialRecord: { ...ready, can_attempt_run: false }, onRun }); fill();
-  expect(screen.getByRole("alert").textContent).toContain("not ready to run"); expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(true); expect(onRun).not.toHaveBeenCalled();
+test("complete inputs can submit Start despite a stale readiness flag", async () => {
+  const onRun = jest.fn().mockResolvedValue({ id: "run-one" });
+  mount({ initialRecord: { ...ready, can_attempt_run: false }, onRun }); fill();
+  expect(screen.queryByRole("region", { name: "What to fix before running" })).toBeNull();
+  expect(screen.queryByText("Technical details")).toBeNull();
+  expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Start workflow" }));
+  await waitFor(() => expect(onRun).toHaveBeenCalledTimes(1));
 });
 
-test("blocked run explains saved requirements and offers chat help without submitting or inventing fields", () => {
-  const onRun = jest.fn(), onHelp = jest.fn(), onReview = jest.fn();
-  mount({ initialRecord: { ...ready, can_attempt_run: false, publishedVersion: 0, published: false, bridge: "not_connected", compilation: { state: "NOT_PUBLISHED" }, authoring: {},
-    yaml: "name: Registration\nsteps: []\nmetadata:\n  unresolved_requirements:\n    - A customer territory is still required", validation: { errors: ["Required steps are missing"] } }, onRun, onHelp, onReview });
-  expect(screen.getByRole("region", { name: "What to fix before running" }).textContent).toContain("A customer territory is still required");
-  expect(screen.getByText(/This draft has not been published/)).toBeTruthy();
-  expect(screen.queryByLabelText("Runtime input (JSON)")).toBeNull();
-  expect(screen.queryByText(/Check your ERP connection in Profile/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Help me fix this in chat" }));
-  expect(onHelp).toHaveBeenCalledWith(expect.stringContaining("A customer territory is still required"));
-  fireEvent.click(screen.getByRole("button", { name: "Review steps and publication" }));
-  expect(onReview).toHaveBeenCalledTimes(1); expect(onRun).not.toHaveBeenCalled();
+test("saved technical blockers and publication controls are absent from the input form", () => {
+  mount({ initialRecord: { ...ready, can_attempt_run: false, publishedVersion: 0, published: false,
+    yaml: "name: Registration\nsteps: []\nmetadata:\n  unresolved_requirements:\n    - Old generated readiness note", validation: { errors: ["Write workflow requires audit.write_audit_log."] } } });
+  expect(screen.queryByText(/Old generated readiness note/)).toBeNull();
+  expect(screen.queryByText(/audit.write_audit_log/)).toBeNull();
+  expect(screen.queryByRole("button", { name: /publish|Check again|Recheck run readiness/i })).toBeNull();
+  expect(screen.getByText(/This workflow is saved/)).toBeTruthy();
+  fill(); expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(false);
 });
 
-test("Check again refreshes run blockers while preserving the business inputs already entered", async () => {
-  const onRun = jest.fn(), onReadinessChanged = jest.fn();
-  jest.spyOn(workflowService, "readiness").mockResolvedValue(ready);
-  mount({ initialRecord: { ...ready, can_attempt_run: false, publishedVersion: 0 }, onRun, onReadinessChanged }); fill();
-  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(false));
+test("a backend rejection after Start keeps entered inputs for correction and a new explicit attempt", async () => {
+  const onRun = jest.fn().mockRejectedValue({ response: { data: { message: "Customer group is unavailable" } } });
+  mount({ initialRecord: { ...ready, can_attempt_run: false }, onRun }); fill();
+  fireEvent.click(screen.getByRole("button", { name: "Start workflow" }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Customer group is unavailable");
   expect(screen.getByLabelText("Customer name").value).toBe("New Customer");
-  expect(onReadinessChanged).toHaveBeenCalledWith(ready); expect(onRun).not.toHaveBeenCalled();
+  expect(onRun).toHaveBeenCalledTimes(1);
 });
 
 test("advanced malformed and non-object JSON cannot submit stale input", async () => {
@@ -102,4 +102,29 @@ test("nested inputs, choices and real dates are validated without treating zero/
   expect(workflowRunInputIssues(schema, { customer_name: "A", quantity: 0, reviewed: false, territory: "Sri Lanka" })).toEqual([]);
   expect(workflowRunInputIssues(schema, { customer_name: " ", quantity: -1, reviewed: "false", territory: "invented" }).length).toBe(4);
   expect(workflowRunInputIssues({ type: "object", properties: { date: { type: "string", format: "date" } } }, { date: "2026-02-30" })).toHaveLength(1);
+});
+
+
+test("validated draft starts with entered fields without publication controls", async () => {
+  const onRun = jest.fn().mockResolvedValue({ id: "run-draft" }), publish = jest.fn();
+  mount({ onRun, onPublishReviewed: publish, initialRecord: { ...ready, publishedVersion: 0, published: false, validation: { passed: true }, start_revision: { baseVersion: 1, baseHash: `sha256:${"a".repeat(64)}` } } });
+  fill(); expect(screen.queryByRole("button", { name: /Review & publish/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Start workflow" }));
+  await waitFor(() => expect(onRun).toHaveBeenCalledTimes(1)); expect(publish).not.toHaveBeenCalled();
+});
+
+
+test("the same saved workflow can reopen with fresh inputs for another explicit run", async () => {
+  const onRun = jest.fn().mockResolvedValue({ id: "run-one" }), onClose = jest.fn();
+  const props = { workflowId: "wf", initialRecord: { ...ready, can_attempt_run: false }, onRun, onClose };
+  const view = render(<WorkflowRunDialog open {...props} />); fill();
+  fireEvent.click(screen.getByRole("button", { name: "Start workflow" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  view.rerender(<WorkflowRunDialog open={false} {...props} />);
+  view.rerender(<WorkflowRunDialog open {...props} />);
+  expect(screen.getByLabelText("Customer name").value).toBe("");
+  fill(); fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Another customer" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start workflow" }));
+  await waitFor(() => expect(onRun).toHaveBeenCalledTimes(2));
+  expect(onRun.mock.calls[1][0]).toMatchObject({ customer_name: "Another customer" });
 });

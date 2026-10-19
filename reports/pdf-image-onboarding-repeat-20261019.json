@@ -1,0 +1,15 @@
+{
+  "date":"2026-10-19",
+  "target":"https://workflow-automation-44201.web.app",
+  "scope":"Deployed UI, existing saved customer/item workflows, synthetic PDF/PNG fixtures; no automatic duplicate ERP submissions",
+  "sourceChanges":false,
+  "automatedChecks":{"frontend":{"suites":4,"passed":40},"backend":{"suites":3,"passed":18},"note":"Automated assertions do not substitute for live UI results"},
+  "checks":[
+    {"file":"customers-six-mixed.pdf","workflow":"wf_1092_e8aa1a22","sourceChat":"chat_1274_615792f4","result":"BLOCKED_AS_EXPECTED","ocr":"SUCCEEDED","observedMissing":["row 2 customer_name","row 4 territory","row 6 customer_type"],"note":"All six records preserved; single-record mapping and Start were blocked; no partial ERP write"},
+    {"file":"customers-six-mixed.pdf","scenario":"Editable six-row source review","result":"PASS","note":"All six row forms visible. Correcting the three missing values plus explicit review enabled pipeline confirmation; clearing row 2 customer_name immediately disabled it and reset the review checkbox. No pipeline confirmation or ERP write was submitted for this batch"},
+    {"file":"customer-missing-territory.pdf","workflow":"wf_1092_e8aa1a22","scenario":"Saved Run accepts a different PDF, OCR and missing-field correction","result":"DONE","execution":"operation-4c0521aadcc06de0b58b9828b5b6254c","createdRecord":"Hillside Office 1019 H07","independentErpReadBack":true,"note":"Fresh fields extracted; territory stayed absent; Start and source review blocked until manually selected Sri Lanka. Exact source review enabled Start, clicked once. Master reads completed, run paused before write with approval in chat and canvas. Exact Super Admin confirmation recorded once, all steps acknowledged and current ERP record matches the reviewed arguments. Fresh ERP lookup was empty before submission"},
+    {"file":"items-three-mixed.pdf","workflow":"wf_1161_1af971df","sourceChat":"chat_1281_cfa88852","result":"BLOCKED_AS_EXPECTED","ocr":"SUCCEEDED; completed status confirmed in UI after refresh","observedMissing":["H02 stock_uom","H03 item_name"],"note":"All three rows preserved; no row selected; Use extracted values and Start disabled; no ERP item write"}
+  ],
+  "capabilityBoundary":"Saved Run currently maps declared scalar fields for one record. A multi-record document is not a completed reusable batch-onboarding feature. It must not silently choose a row.",
+  "previousLiveEvidence":"See document-ui-repeat-qa-20261019.json for customer/item image creation, new-image reuse, human approval and vector retrieval results"
+}

@@ -4,14 +4,15 @@ import type { FastifyRequest } from "fastify";
 import { canonicalJSONBytes } from "../core/canonical-json.js";
 import type { Repository, RepositoryState } from "../repository/store.js";
 import type { ErpbridgeMcpSession } from "../tools/erpbridge-mcp-client.js";
-import { exactBridgeName } from "../tools/erpbridge-contract.js";
+import { exactBridgeName, matchesBridgeContract } from "../tools/erpbridge-contract.js";
 import { toolSchema, type ToolDefinition } from "./schemas.js";
 import type { RegistryService } from "./service.js";
-import { discoveredContract, discoveredToolIdentity, remoteContractHash } from "./discovered-contract.js";
+import { discoveredContract, discoveredToolIdentity, remoteContractHash, remoteCatalogHash } from "./discovered-contract.js";
 import { activeBinding, administrator, admissionSchema, capabilityContractHash, capabilityIdFor, DEFAULT_BRIDGE_CONNECTION,
   observationSchema, publicRevision, requireAdmissionStorage, revisionSchema, supportedOperation, supportedRead } from "./capability-admission.js";
 import { appendAudit, HandlerFailure, nextID, now, type CurrentUser } from "../http/handlers/common.js";
 import { modelDataClasses } from "../providers/egress-policy.js";
+import { allRolesToolAccess } from "../governance/tool-access.js";
 
 const fields = { remoteName: z.string().min(1).max(256), remoteHash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   decisionKey: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/), allowedRoles: z.array(z.string().trim().min(1).max(128)).min(1).max(32).refine(roles => new Set(roles).size === roles.length),
@@ -112,4 +113,61 @@ export async function importDiscoveredCapability(input: { repository: Repository
   });
   await restoreImportedCapabilities(repository, registries);
   return { ...saved, remoteHash: body.remoteHash };
+}
+
+const fullCatalogCommand = z.object({ profile: z.literal("workspace-full-tool-access/v1"), decisionKey: fields.decisionKey,
+  catalogHash: z.string().regex(/^sha256:[a-f0-9]{64}$/), offset: z.number().int().min(0).max(512).default(0), limit: z.number().int().min(1).max(20).default(10),
+  confirmed: z.literal(true), note: fields.note }).strict();
+
+/** An explicit workspace-owner decision, never discovery/model side effects.
+ * Every current tool keeps its exact server version, digest and schemas. All
+ * mutations still require policy and exact per-run human approval, no replay.
+ * Partial completion is resumable with the same decision and tool fingerprint. */
+export async function importFullCatalog(input: Parameters<typeof importDiscoveredCapability>[0]): Promise<Record<string, unknown>> {
+  if (!allRolesToolAccess()) throw new HandlerFailure(403, "Full catalog access requires the configured shared workspace policy");
+  const parsed = fullCatalogCommand.safeParse(input.body);
+  if (!parsed.success) throw new HandlerFailure(400, "Full catalog activation requires its current fingerprint, confirmation, note and decision key");
+  const body = parsed.data, { repository, registries, session, user } = input;
+  requireAdmissionStorage(repository);
+  await repository.readAuthoritative(state => administrator(state, user));
+  const connectionId = input.connectionId ?? DEFAULT_BRIDGE_CONNECTION, binding = activeBinding(session), generation = session!.discoveryGeneration ?? 0;
+  const remote = await session!.listTools(input.signal);
+  if (remoteCatalogHash(remote) !== body.catalogHash) throw new HandlerFailure(409, "The live tool catalog changed; inspect its current fingerprint before activating it");
+  if (remote.length > 512 || new Set(remote.map(tool => tool.name)).size !== remote.length || canonicalJSONBytes(remote).length > 2000000)
+    throw new HandlerFailure(413, "The live catalog exceeds the bounded exact-contract budget");
+  const roles = await repository.readAuthoritative(state => { administrator(state, user); return Object.values(state.roles).map(role => role.name); });
+  const pinnedSession = { ...session!, get available() { return session!.available !== false; },
+    get discoveryGeneration() { return session!.discoveryGeneration ?? 0; }, listTools: async () => remote };
+  const admitted: Array<{ name: string; state: string }> = [], unsupported: Array<{ name: string; reason: string }> = [];
+  const selected = [...remote].sort((a, b) => a.name.localeCompare(b.name)).slice(body.offset, body.offset + body.limit);
+  for (const live of selected) {
+    input.signal?.throwIfAborted();
+    if (activeBinding(session) !== binding || (session!.discoveryGeneration ?? 0) !== generation) throw new HandlerFailure(409, "The live catalog changed during its explicit review");
+    let draft: ToolDefinition;
+    try { draft = discoveredContract(live, connectionId); }
+    catch { unsupported.push({ name: live.name, reason: "The connected service must supply a supported exact version, digest and schema" }); continue; }
+    const existing = await repository.readAuthoritative(state => {
+      const admission = state.capabilityAdmissions[capabilityIdFor(connectionId, draft.tool_id)];
+      const revision = admission && state.capabilityRevisions[String(admission.revisionId)];
+      return admission?.state === "AVAILABLE" && revision?.connectionBinding === binding && registries.snapshot().tools.some(tool => tool.tool_id === draft.tool_id &&
+        capabilityContractHash(tool) === revision.contractHash && matchesBridgeContract(tool, live)) ? revision : null;
+    });
+    if (existing) { admitted.push({ name: live.name, state: "CURRENT" }); continue; }
+    const read = live.annotations?.readOnlyHint === true;
+    const operation = draft.operation_contract;
+    if (!read && !operation) { unsupported.push({ name: live.name, reason: "The service did not provide an exact mutable-tool contract" }); continue; }
+    const hash = remoteContractHash(live);
+    const decisionKey = `full-${createHash("sha256").update(`${body.decisionKey}:${live.name}:${hash}:${binding}`).digest("hex")}`;
+    await importDiscoveredCapability({ ...input, session: pinnedSession, body: {
+      remoteName: live.name, remoteHash: hash, allowedRoles: roles, confirmed: true, decisionKey, retryPolicy: "never", note: body.note,
+      effectClass: read ? "read" : operation!.effect_class, riskClass: read ? "low" : "medium", dataClass: read ? "restricted" : "confidential",
+      ...(!read ? { sideEffects: [`Exact approved invocation of ${live.name}`], operationContract: operation, requireIndependentApproval: true } : {}),
+    } });
+    admitted.push({ name: live.name, state: "AVAILABLE" });
+  }
+  await repository.mutate(state => { administrator(state, user); appendAudit(state, user, "capability.catalog.enabled", "connection", connectionId, null,
+    { catalogHash: body.catalogHash, available: admitted.length, unsupported: unsupported.length, humanApprovalRequiredForChanges: true }, input.request); });
+  return { profile: "workspace-full-tool-access/v1", connectionId, catalogCount: remote.length, admittedCount: admitted.length,
+    offset: body.offset, nextOffset: body.offset + body.limit < remote.length ? body.offset + body.limit : null,
+    tools: admitted, unsupported, humanApprovalRequiredForChanges: true, erpToolsDispatched: 0 };
 }

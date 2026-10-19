@@ -1,3 +1,4 @@
+import { allRolesToolAccess, toolRoleAllowed } from "../../governance/tool-access.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { fail, ok } from "../../models/schemas.js";
 import type { RouteDefinition } from "../generated-routes.js";
@@ -18,6 +19,7 @@ import {
   SYNTHESIS_CANVAS_UNHANDLED,
 } from "./synthesis-canvas.js";
 import { getPersonalDashboard } from "./personal-dashboard.js";
+import { publicInputSchema } from "../../tools/public-input-schema.js";
 
 export const ANALYTICS_UNHANDLED = Symbol("analytics-unhandled");
 
@@ -54,7 +56,7 @@ export async function handleAnalyticsCatalogRoute(
     if (analyticsDashboardResponse !== ANALYTICS_DASHBOARD_UNHANDLED)
       return analyticsDashboardResponse;
     if (route.path === `${base}/tools/catalog`)
-      return toolsCatalog(request, reply, services);
+      return toolsCatalog(request, reply, user, services);
     if (route.path === `${base}/rules/catalog`)
       return rulesCatalog(request, reply, services);
     if (route.path === `${base}/semantic-search`)
@@ -88,6 +90,7 @@ export async function handleAnalyticsCatalogRoute(
 async function toolsCatalog(
   request: FastifyRequest,
   reply: FastifyReply,
+  user: CurrentUser,
   services: HandlerServices,
 ): Promise<unknown> {
   const query = queryRecord(request);
@@ -97,9 +100,10 @@ async function toolsCatalog(
   const liveTools = await discoverTools(services.erpbridgeSession ?? null, services.registries);
   const tools = liveTools.filter(
       (tool) =>
+        toolRoleAllowed(tool.allowed_roles, user.role) &&
         (moduleName === "" || tool.module.toLowerCase() === moduleName) &&
         (status === "" || tool.status.toLowerCase() === status) &&
-        (role === "" ||
+        (allRolesToolAccess() || role === "" ||
           tool.allowed_roles.length === 0 ||
           tool.allowed_roles.some((item) => item.toLowerCase() === role)),
     )
@@ -115,6 +119,7 @@ async function toolsCatalog(
       required_parameters: tool.required_parameters,
       optional_parameters: tool.optional_parameters,
       is_read_only: tool.is_read_only,
+      input_schema: publicInputSchema(tool.input_schema),
     }));
   return reply.send(ok(tools, "Tool catalog loaded", { count: tools.length }));
 }

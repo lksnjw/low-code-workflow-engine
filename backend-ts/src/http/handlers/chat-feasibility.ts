@@ -1,3 +1,4 @@
+import { allRolesToolAccess } from "../../governance/tool-access.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -80,7 +81,7 @@ export function checkFeasibility(request: string, userRole: string): { feasible:
   }
 
   const normalizedRole = userRole.trim();
-  const allowed = bestMatch.allowed_roles.some((r) => r.toLowerCase() === normalizedRole.toLowerCase()) || normalizedRole === "Platform Admin";
+  const allowed = allRolesToolAccess() || bestMatch.allowed_roles.some((r) => r.toLowerCase() === normalizedRole.toLowerCase()) || normalizedRole === "Platform Admin";
   if (!allowed) {
     const roleNote = catalog.role_notes[normalizedRole] ?? `Role "${normalizedRole}" does not have access to this workflow.`;
     return {

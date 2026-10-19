@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../../governance/tool-access.js";
 import { randomBytes } from "node:crypto";
 import { reviewedDocumentChatContext, documentContextSchema, documentProposalFailure, documentRetrievalReview } from "../../documents/chat-document-context.js";
 import { readAttachmentTicket, attachmentChatContext } from "../../documents/chat-attachment.js";
@@ -212,7 +213,7 @@ export async function processStoredChat(input: {
       let available;
       try { available = await discoverTools(services.erpbridgeSession ?? null, services.registries); }
       catch (error) { if (error instanceof ToolDiscoveryError) throw new ReadAdmissionUnavailableError(); throw error; }
-      const matches = available.filter(tool => [tool.name, tool.mcp_tool_name].includes(name) && tool.is_read_only && tool.allowed_roles.includes(user.role));
+      const matches = available.filter(tool => [tool.name, tool.mcp_tool_name].includes(name) && tool.is_read_only && toolRoleAllowed(tool.allowed_roles, user.role));
       if (matches.length !== 1) throw new ReadAdmissionUnavailableError();
       return readTool(name, args);
     }, intent === "ACTION" ? "workflow" : "chat");
@@ -288,7 +289,7 @@ export async function processStoredChat(input: {
       intent, blocked: true, operation: { success: false, code } }, "Message processed; ERP operation unavailable", null);
   }
   if (intent === "CAPABILITIES") {
-    const liveCapTools = (await discoverTools(services.erpbridgeSession ?? null, services.registries)).filter(tool => tool.allowed_roles.includes(user.role));
+    const liveCapTools = (await discoverTools(services.erpbridgeSession ?? null, services.registries)).filter(tool => toolRoleAllowed(tool.allowed_roles, user.role));
     const capText = services.erpbridgeSession ? buildCapabilitiesResponse(liveCapTools) :
       "The ERPBridge connection is currently unavailable. Check your ERP connection and try again when it is connected. No ERP tools or business operations were invoked.";
     const assistantMessage = await chatMutation((state) => {
@@ -305,7 +306,7 @@ export async function processStoredChat(input: {
     let readOnlyTools: readonly import("../../registry/schemas.js").ToolDefinition[] = [];
     if (services.erpbridgeSession !== undefined) {
       readOnlyTools = (await discoverTools(services.erpbridgeSession, services.registries))
-        .filter((tool) => tool.is_read_only && tool.allowed_roles.includes(user.role));
+        .filter((tool) => tool.is_read_only && toolRoleAllowed(tool.allowed_roles, user.role));
     }
     if (services.erpbridgeSession && readOnlyTools.length === 0) return processMissingReadCapability(input, intent, chatMutation);
     const workspaceStatus = await services.repository.readAuthoritative(state => chatWorkspaceStatus(state, user, sessionId));
@@ -437,6 +438,17 @@ export async function processStoredChat(input: {
   }
   if (automationRequest && !hasRecurringCompositionCapability(automationRequest, liveToolsForSynthesis, user.role))
     return preserveRecurringShell(automationRequest, "NO_REVIEWED_COMPOSITION_CAPABILITY");
+  if (!liveToolsForSynthesis.some(tool => toolRoleAllowed(tool.allowed_roles, user.role))) {
+    const message = await chatMutation(state => {
+      const chat = assertChatAuthority(state, user, sessionId);
+      const value = { id: nextID(state, "msg"), role: "assistant", createdAt: now(), traceId,
+        text: "I checked the current ERP tool connection before building. No reviewed tools are available for your role, so I have not generated or saved an unusable workflow. Check the ERP connection and reviewed tool access, then send this same request again. No ERP action was dispatched.",
+        artifacts: { intent: "WORKFLOW_ERROR", code: "WORKFLOW_TOOLS_UNAVAILABLE", can_execute: false, toolsDispatched: false,
+          ...(body.documentContext === undefined ? {} : { documentContext: body.documentContext }) } };
+      chat.messages.push(value); chat.messageCount = chat.messages.length; chat.updatedAt = now(); return value;
+    });
+    return ok({ session: stored.session, userMessage: stored.userMessage, assistantMessage: message, answer: message.text, intent: "WORKFLOW_ERROR" }, "Tool preflight needs attention", null);
+  }
   let result;
   await hooks?.stage("GENERATING");
   try { result = preGeneratedCandidate
@@ -477,13 +489,15 @@ export async function processStoredChat(input: {
   const chatSessionId = sessionId;
   const chatMessageId = stringValue(stored.userMessage.id);
   let autoSavedWorkflowId: string | null = null;
+  let emptyProposal = false;
   // Build acceptance and runtime transaction checkpoints are separate. Saving
   // or accepting this draft never removes or authorizes runtime approval nodes.
   let pendingGenerationApproval: { steps: Array<{ stepId: string; description: string }>; requestedAt: string } | null = null;
   try {
     let blueprint;
     try { blueprint = parseWorkflowYAMLStrict(result.yaml); } catch { blueprint = null; }
-    if (blueprint !== null && user.permissions.includes("workflow:write")) {
+    emptyProposal = blueprint !== null && blueprint.steps.length === 0;
+    if (blueprint !== null && blueprint.steps.length > 0 && user.permissions.includes("workflow:write")) {
       const approvalSteps = blueprint.steps
         .filter((s) => s.kind === "approval")
         .map((s) => ({ stepId: s.id, description: (s.description ?? "").trim() || `Approval required for step ${s.id}` }));
@@ -530,6 +544,7 @@ export async function processStoredChat(input: {
   const assistantText = [
     autoSavedWorkflowId ? automationComposition ? "Recurring workflow steps saved as an editable draft. They have not been published, scheduled or executed." : "Workflow draft saved. It has not been published or executed." : "Workflow proposal prepared, but no saved draft was acknowledged.",
     result.validation.passed ? "Structural and registry validation passed; this is not execution readiness." : "Validation failed; review the reported issues before publishing.",
+    emptyProposal ? "No executable tool steps were produced, so no empty workflow was saved. Resolve the missing capabilities or fields in chat before building it." : "",
     automationComposition ? `${automationComposition.mappedSteps.length} workflow step${automationComposition.mappedSteps.length === 1 ? " was" : "s were"} mapped. ${automationComposition.remainingRequirements.length} requirement${automationComposition.remainingRequirements.length === 1 ? " remains" : "s remain"}; no schedule is active.` : "",
     missingTools.length ? "Some requested actions have no admitted live ERPBridge contract. The original proposal was preserved." : "",
     pendingGenerationApproval ? "Build acceptance is pending. Runtime approval checkpoints remain required for each transaction." : "",

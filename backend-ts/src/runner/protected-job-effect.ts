@@ -57,10 +57,11 @@ export async function executeOwnedProtectedEffect(services: HandlerServices, exe
     const result = await prepared.session.clientFor(prepared.definition, prepared.pin).execute(prepared.action, resolved.capability,
       prepared.args, prepared.identity, options.signal, undefined, options.guard, permit);
     const evidence = consumeAcknowledgedProtectedEffectResult(result, permit, prepared.definition, prepared.args, prepared.identity);
-    if (!evidence || result.isError === true || validateToolInput(prepared.definition.bridge_contract!.output_schema, evidence.result.structuredContent).length)
+    const outputKey = prepared.definition.operation_contract?.confirmation.source === "mcp-envelope" ? "jsonContent" : "structuredContent";
+    if (!evidence || result.isError === true || validateToolInput(prepared.definition.bridge_contract!.output_schema, evidence.result[outputKey]).length)
       throw new Error("Protected effect has no genuine contract-valid governed SDK completion");
     assertErpnextWriteReceipt(prepared.definition, prepared.args, evidence.result.structuredContent);
-    let confirmation: unknown = evidence.result.structuredContent;
+    let confirmation: unknown = prepared.definition.operation_contract!.confirmation.source === "mcp-envelope" ? evidence.result : evidence.result.structuredContent;
     for (const part of prepared.definition.operation_contract!.confirmation.path)
       confirmation = confirmation && typeof confirmation === "object" && !Array.isArray(confirmation) && Object.hasOwn(confirmation, part)
         ? (confirmation as Record<string, unknown>)[part] : undefined;

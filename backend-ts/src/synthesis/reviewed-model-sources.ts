@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import type { CurrentUser, HandlerServices } from "../http/handlers/common.js";
 import { assertActorAuthority } from "../http/handlers/model-selection.js";
 import { captureCapabilityAdmissionPin, reviewedCapabilityDataClass } from "../registry/capability-admission.js";
@@ -22,7 +23,7 @@ export async function reviewedModelSourceContext(services: HandlerServices, user
   return services.repository.readAuthoritative(state => {
     assertActorAuthority(state, user);
     const sources: ReviewedModelSourceContext["sources"] = [];
-    for (const tool of offered.filter(value => value.allowed_roles.includes(user.role))) {
+    for (const tool of offered.filter(value => toolRoleAllowed(value.allowed_roles, user.role))) {
       let dataClass: ModelDataClass = "restricted", review: "REVIEWED" | "UNKNOWN" = "UNKNOWN";
       try {
         const { session } = boundMcpConnection(services, connectionId);

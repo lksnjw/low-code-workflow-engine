@@ -1,3 +1,4 @@
+import { toolRoleAllowed } from "../governance/tool-access.js";
 import { canonicalJSONBytes, resolvedParameterHashBytes } from "../core/canonical-json.js";
 import type { RepositoryState } from "../repository/store.js";
 import { capabilityContractHash } from "../registry/capability-admission.js";
@@ -24,7 +25,7 @@ export function validateHistoricalOperationReadback(state: Readonly<RepositorySt
       source.factsHashes[job.baseVersion - 1] !== job.factsHash || !binding || binding.toolId !== job.targetId || binding.contractHash !== job.targetHash ||
       !same(binding.admission, job.admission) || source.connectionBinding !== job.connectionBinding || revision?.connectionBinding !== job.connectionBinding ||
       revision.capabilityId !== job.admission.capabilityId || revision.connectionId !== job.admission.connectionId || revision.contractHash !== job.targetHash ||
-      !parsed.success || !parsed.data.allowed_roles.includes(job.admittedRole) || capabilityContractHash(parsed.data) !== job.targetHash ||
+      !parsed.success || !toolRoleAllowed(parsed.data.allowed_roles, job.admittedRole) || capabilityContractHash(parsed.data) !== job.targetHash ||
       !same(job.arguments, resolveOperationReadbackArguments(source.tool, parsed.data, source.args)))
     throw new Error("Original operation or reviewed query evidence changed");
   if (job.state === "ANSWERED") {
