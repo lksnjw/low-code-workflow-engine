@@ -2,6 +2,7 @@
 import React from "react";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { cleanup, fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
+import { NotificationProvider } from "../../context/NotificationContext";
 import ChatWorkspaceLayout from "./ChatWorkspaceLayout";
 import WorkflowRunApproval from "./WorkflowRunApproval";
 import { executionService } from "../../services/execution.service";
@@ -135,4 +136,44 @@ test("acknowledged decisions close the inline review before background execution
   fireEvent.click(screen.getByRole("button", { name: "Record approval" }));
   await waitFor(() => expect(screen.queryByRole("region", { name: "Workflow transaction approval" })).toBeNull());
   expect(screen.queryByRole("button", { name: "Review transaction" })).toBeNull();
+});
+
+
+const automaticWorkspace = execution => <NotificationProvider><ChatWorkspaceLayout storageKey="automatic.approval" chat={<textarea aria-label="Workflow chat" />} canvas={<WorkflowRunApproval autoOpen execution={execution} />} /></NotificationProvider>;
+
+test("a background waiting update opens one review and a persistent notice in chat and canvas without refresh", async () => {
+  const approve = jest.spyOn(executionService, "approve"), reject = jest.spyOn(executionService, "reject");
+  const pending = { ...run, pendingApproval: { stepId: "create", requestedAt: "2026-10-19T12:00:00Z" } };
+  const view = render(automaticWorkspace({ ...pending, status: "RUNNING" }));
+  expect(executionService.getApproval).not.toHaveBeenCalled();
+  view.rerender(automaticWorkspace(pending));
+  await screen.findByRole("region", { name: "Exact transaction review" });
+  expect(screen.getAllByRole("region", { name: /Workflow human approval —/ })).toHaveLength(2);
+  expect(screen.getAllByRole("region", { name: "Workflow transaction approval" })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Review approval" })).toBeTruthy();
+  expect(executionService.getApproval).toHaveBeenCalledTimes(1);
+  view.rerender(automaticWorkspace({ ...pending }));
+  expect(screen.getAllByRole("button", { name: "Review approval" })).toHaveLength(1);
+  expect(executionService.getApproval).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Close transaction review" }));
+  fireEvent.click(screen.getByRole("button", { name: "Review approval" }));
+  await screen.findByRole("region", { name: "Exact transaction review" });
+  expect(approve).not.toHaveBeenCalled(); expect(reject).not.toHaveBeenCalled();
+  view.rerender(automaticWorkspace({ ...pending, status: "RUNNING" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Review approval" })).toBeNull());
+  expect(screen.queryByRole("region", { name: "Workflow transaction approval" })).toBeNull();
+});
+
+test("a new checkpoint refreshes an already open automatic review and resets consent", async () => {
+  const first = { ...run, pendingApproval: { stepId: "create", requestedAt: "2026-10-19T12:00:00Z" } };
+  const view = render(automaticWorkspace(first)); await screen.findByRole("region", { name: "Exact transaction review" });
+  fireEvent.click(screen.getByRole("checkbox", { name: /I reviewed these exact details/ }));
+  expect(screen.getByRole("button", { name: "Record approval" }).disabled).toBe(false);
+  executionService.getApproval.mockResolvedValue({ ...exact, runtimeApproval: { ...exact.runtimeApproval, id: "second-approval", reviewHash: `sha256:${"b".repeat(64)}`, arguments: { customer: "Second customer", quantity: 1 } } });
+  view.rerender(automaticWorkspace({ ...run, pendingApproval: { stepId: "update", requestedAt: "2026-10-19T12:05:00Z" } }));
+  await screen.findByText("Second customer");
+  expect(screen.queryByText("LOCAL test customer")).toBeNull();
+  expect(screen.getByRole("button", { name: "Record approval" }).disabled).toBe(true);
+  expect(executionService.getApproval).toHaveBeenCalledTimes(2);
+  expect(screen.getAllByRole("button", { name: "Review approval" })).toHaveLength(1);
 });

@@ -351,7 +351,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
       <span>{record.readinessUnknown ? "Workflow inputs unavailable · reload" : "Enter inputs and run"}</span>
       <button type="button" onClick={workspace.openCanvasTools} className="ml-auto font-medium text-primary">Review draft controls</button>
     </div>}
-    {shownRun && <WorkflowRunApproval ref={approvalRef} key={`${actorId || ""}:${shownRun.id}`} execution={shownRun} onChanged={monitor.refresh} />}
+    {shownRun && <WorkflowRunApproval autoOpen ref={approvalRef} key={`${actorId || ""}:${shownRun.id}`} execution={shownRun} onChanged={monitor.refresh} />}
     {inTools(<div className={docked ? "mb-4 border-b border-gray-200 pb-4 dark:border-gray-800" : "border-b border-gray-200 px-5 py-4 dark:border-gray-800"}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

@@ -50,3 +50,33 @@ test("current generation binds exposed schemas and delegates saved execution wit
   expect(prompt).toContain("human approval checkpoints remain observable and authoritative");
   expect(systemInstructionsFor("prompt/candidate/v27")).not.toContain("EXPOSED TOOLS AND AGENT EXECUTION");
 });
+
+
+test("active generation checks exposed tool requirements and uses supported runtime human-review checkpoints", async () => {
+  const { CANDIDATE_PROMPT_VERSION } = await import("../src/providers/runtime.js");
+  const current = systemInstructionsFor(CANDIDATE_PROMPT_VERSION);
+  expect(CANDIDATE_PROMPT_VERSION).toBe("prompt/candidate/v29");
+  expect(current).toContain("TOOL CONTRACT CHECK AND REQUIRED RUN FORM");
+  expect(current).toContain("including nested object requirements");
+  expect(current).toContain("Do not mark optional fields mandatory");
+  expect(current).toContain("do not assume an email, username, role, password or permissions field exists");
+  expect(current).toContain("HUMAN-IN-THE-LOOP DECISIONS");
+  expect(current).toContain("Creating a customer, creating a user");
+  expect(current).toContain("read-only get, list, search, lookup, count and report-fetching");
+  expect(current).toContain("changed arguments require fresh approval");
+  expect(current).toContain("rather than emitting a separate kind: approval step");
+  expect(current).not.toContain("Do not add kind: approval:");
+  const previous = systemInstructionsFor("prompt/candidate/v28");
+  expect(previous).not.toContain("HUMAN-IN-THE-LOOP DECISIONS");
+  expect(previous).toContain("Do not add kind: approval:");
+});
+
+
+test("generation scenarios distinguish direct reads, protected effects and missing contracts", async () => {
+  const { CANDIDATE_PROMPT_VERSION } = await import("../src/providers/runtime.js");
+  const prompt = systemInstructionsFor(CANDIDATE_PROMPT_VERSION);
+  for (const scenario of ["Create a customer from a form", "Create a user:", "List customers or fetch stock", "Update sensitive details", "Delete or disable a record", "Missing required value in a reusable workflow", "Read then create", "Tool unavailable or schema changed"]) expect(prompt).toContain(scenario);
+  expect(prompt).toContain("illustrative, not additional tools or permissions");
+  expect(prompt).toContain("Never copy a scenario's example field into a tool that does not declare it");
+  expect(systemInstructionsFor("prompt/candidate/v28")).not.toContain("EXAMPLE SCENARIOS (illustrative");
+});

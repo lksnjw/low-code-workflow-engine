@@ -41,7 +41,7 @@ function WorkflowDetailPage() {
 
   const submitRun = async (input, options) => {
     if (!canRun || runDisabled || inputWorkflowId !== workflow?.id) return;
-    return handleRun(input, options);
+    return handleRun(input, ...(options ? [options] : []));
   };
   const publishFromRunInputs = async revision => {
     if (!canWrite || runDisabled || inputWorkflowId !== workflow?.id) throw new Error("Finish the pending workflow action before publishing.");

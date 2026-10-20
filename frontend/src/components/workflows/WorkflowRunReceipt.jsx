@@ -1,3 +1,4 @@
+import WorkflowRunApproval from "../chat/WorkflowRunApproval";
 import { parseWorkflowPreview } from "../chat/workflowPreview";
 import GovernanceBlockPanel from "../executions/GovernanceBlockPanel";
 import { Link } from "react-router-dom";
@@ -28,6 +29,7 @@ export default function WorkflowRunReceipt({ initialExecution, onDismiss, extern
         title="Only a confirmed Done, Failed or Cancelled run can be dismissed here. Review uncertain outcomes in run details."
         onClick={() => onDismiss(execution)}>Dismiss run summary</button>}
     </div>
+    {!externalMonitor && <WorkflowRunApproval key={execution.id} autoOpen execution={execution} onChanged={monitor.refresh} />}
     <p className="break-all font-mono text-xs text-gray-500">{execution.id}</p>
     {monitor.error && <p role="status" className="text-sm text-amber-700">{monitor.error} Saved evidence may be stale; no run was restarted.</p>}
     {execution.agentSummary && <p className="text-sm text-gray-700 dark:text-gray-300">{execution.agentSummary}</p>}

@@ -42,7 +42,7 @@ export function NotificationProvider({ children }) {
  *
  * Performs the value operation on the application for the NotificationContext module.
  ******************************************************************************/
-  const value = useMemo(() => ({ notifications, notify, activity, markActivityRead }), [notifications, notify, activity, markActivityRead]);
+  const value = useMemo(() => ({ notifications, notify, dismiss, activity, markActivityRead }), [notifications, notify, dismiss, activity, markActivityRead]);
 
   return (
     <NotificationContext.Provider value={value}>
@@ -93,3 +93,7 @@ export function useNotifications() {
   }
   return context;
 }
+
+// Embedded workflow views can still render their inline approval when mounted
+// outside the application notification shell.
+export function useOptionalNotifications() { return useContext(NotificationContext); }

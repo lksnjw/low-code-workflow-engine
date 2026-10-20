@@ -3,6 +3,7 @@ import React from "react";
 import { afterEach, expect, jest, test } from "@jest/globals";
 import { act, cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { NotificationProvider } from "../../context/NotificationContext";
 import WorkflowRunReceipt from "./WorkflowRunReceipt";
 import { executionService, normalizeExecution } from "../../services/execution.service";
 
@@ -73,4 +74,32 @@ test("draft requirement notes remain visible without hiding completed saved tool
   expect(screen.getByLabelText("Workflow requirement notes").textContent).toContain("Follow up on duplicate branching");
   expect(screen.getByText("Confirmed customer")).toBeTruthy();
   expect(screen.queryByText(/Edit those requirements/)).toBeNull();
+});
+
+
+test("saved workflow polling shows approval and its notification automatically, then clears them when the run continues", async () => {
+  jest.useFakeTimers();
+  try {
+    let current = initial("RUNNING");
+    const writes = mockMonitor(current);
+    executionService.getEvents.mockImplementation(async () => ({ events: [], cursor: 0, lastSequence: 0, hasMore: false, status: current.status, profile: "legacy-no-journal" }));
+    executionService.get.mockImplementation(async () => current);
+    const review = jest.spyOn(executionService, "getApproval").mockResolvedValue({ ...initial("AWAITING_APPROVAL"), runtimeApproval: { state: "PENDING", canDecide: false } });
+    const approve = jest.spyOn(executionService, "approve"), reject = jest.spyOn(executionService, "reject");
+    await act(async () => { render(<MemoryRouter><NotificationProvider><WorkflowRunReceipt initialExecution={current} /></NotificationProvider></MemoryRouter>); });
+    expect(screen.queryByRole("button", { name: "Review approval" })).toBeNull();
+    current = { ...initial("AWAITING_APPROVAL"), hasRuntimeApproval: true, pendingApproval: { stepId: "create", requestedAt: "2026-10-19T12:00:00Z" } };
+    await act(async () => { await jest.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByTestId("execution-status").textContent).toBe("Awaiting approval");
+    expect(screen.getByRole("button", { name: "Review approval" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Workflow transaction approval" })).toBeTruthy();
+    expect(review).toHaveBeenCalledTimes(1);
+    current = initial("DONE");
+    await act(async () => { await jest.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByTestId("execution-status").textContent).toBe("Done");
+    expect(screen.queryByRole("button", { name: "Review approval" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Workflow transaction approval" })).toBeNull();
+    expect(approve).not.toHaveBeenCalled(); expect(reject).not.toHaveBeenCalled();
+    for (const spy of Object.values(writes)) expect(spy).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
 });
