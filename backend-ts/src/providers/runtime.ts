@@ -9,7 +9,7 @@ import { generationPromptHash, toolQuerySystemInstructionsFor } from "../prompts
 import { assertModelEgress, normalizeModelEgressPolicy, type ModelEgressPolicy } from "./egress-policy.js";
 
 export const ANALYSIS_PROMPT_VERSION = "prompt/analysis/v2";
-export const CANDIDATE_PROMPT_VERSION = "prompt/candidate/v29";
+export const CANDIDATE_PROMPT_VERSION = "prompt/candidate/v30";
 
 export type RuntimeProviderConfiguration = {
   id: string;

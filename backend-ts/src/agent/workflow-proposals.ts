@@ -75,7 +75,7 @@ export async function processWorkflowProposal(input: Input, mutate: Mutation) {
   await hooks?.stage("GENERATING_WORKFLOW_PROPOSAL");
   let generated;
   try {
-    generated = await runWorkflowAuthoringAgent({ prompt, version: "prompt/workflow-modifier/v6", ...(signal ? { signal } : {}) }, agentSignal => services.providerRuntime!.generateCandidate(prompt, "prompt/workflow-modifier/v6", response => { parseWorkflowProposal(response.text); }, agentSignal,
+    generated = await runWorkflowAuthoringAgent({ prompt, version: "prompt/workflow-modifier/v7", ...(signal ? { signal } : {}) }, agentSignal => services.providerRuntime!.generateCandidate(prompt, "prompt/workflow-modifier/v7", response => { parseWorkflowProposal(response.text); }, agentSignal,
       { traceId, sessionId, workflowId: workflow.id, actor: { id: user.id, role: user.role }, egress: { purpose: "interactive", dataClass: "restricted" } }));
   } catch {
     if (signal?.aborted) throw new HandlerFailure(409, "Workflow change request was cancelled");

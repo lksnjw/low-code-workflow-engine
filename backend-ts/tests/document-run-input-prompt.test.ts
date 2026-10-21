@@ -3,7 +3,7 @@ import { generationPromptHash, systemInstructionsFor } from "../src/prompts/cont
 import { CANDIDATE_PROMPT_VERSION } from "../src/providers/runtime.js";
 
 test("reusable form authoring uses declared runtime fields, not the example record", () => {
-  expect(CANDIDATE_PROMPT_VERSION).toBe("prompt/candidate/v29");
+  expect(CANDIDATE_PROMPT_VERSION).toBe("prompt/candidate/v30");
   const current = systemInstructionsFor(CANDIDATE_PROMPT_VERSION);
   expect(current).toContain("REUSABLE DOCUMENT-BASED RUN INPUTS");
   expect(current).toContain("trigger.config.inputSchema");

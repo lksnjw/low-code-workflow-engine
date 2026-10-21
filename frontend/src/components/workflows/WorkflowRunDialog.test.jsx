@@ -75,7 +75,7 @@ test("saved technical blockers and publication controls are absent from the inpu
   expect(screen.queryByText(/Old generated readiness note/)).toBeNull();
   expect(screen.queryByText(/audit.write_audit_log/)).toBeNull();
   expect(screen.queryByRole("button", { name: /publish|Check again|Recheck run readiness/i })).toBeNull();
-  expect(screen.getByText(/This workflow is saved/)).toBeTruthy();
+  expect(screen.getByText(/Complete the run fields below/)).toBeTruthy();
   fill(); expect(screen.getByRole("button", { name: "Start workflow" }).disabled).toBe(false);
 });
 
@@ -127,4 +127,17 @@ test("the same saved workflow can reopen with fresh inputs for another explicit 
   fireEvent.click(screen.getByRole("button", { name: "Start workflow" }));
   await waitFor(() => expect(onRun).toHaveBeenCalledTimes(2));
   expect(onRun.mock.calls[1][0]).toMatchObject({ customer_name: "Another customer" });
+});
+
+
+test.each([undefined, { type: "object", properties: {}, additionalProperties: false }])("fixed email workflow starts with saved settings and no document requirement", async inputSchema => {
+  const onRun = jest.fn().mockResolvedValue({ id: "email-run" });
+  mount({ initialRecord: { ...ready, name: "Sales order email", authoring: { inputSchema } }, onRun });
+  expect(screen.getByText(/This workflow uses its saved settings and retrieved data/)).toBeTruthy();
+  expect(screen.queryByText("Enter fields or upload an image / PDF")).toBeNull();
+  expect(screen.queryByRole("status", { name: "Required run inputs" })).toBeNull();
+  const start = screen.getByRole("button", { name: "Start workflow" });
+  expect(start.disabled).toBe(false);
+  fireEvent.click(start);
+  await waitFor(() => expect(onRun).toHaveBeenCalledWith({}));
 });

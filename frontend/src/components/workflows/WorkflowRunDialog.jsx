@@ -25,6 +25,7 @@ function WorkflowRunReview({ workflowId, initialRecord, onClose, onRun, onHelp, 
     return () => { generation.current = epoch + 1; };
   }, [opening]);
   const record = frame?.record, schema = record?.authoring?.inputSchema;
+  const hasInputFields = schema?.type === "object" && Object.keys(schema.properties || {}).length > 0;
   const issues = [...workflowRunInputIssues(schema || { type: "object" }, input), ...Object.values(parseErrors).filter(Boolean)];
   const blocked = disabled || starting || checking || !record || issues.length > 0 || documentGate.selected && (!documentGate.ready || !documentReviewed);
   const applyReadiness = next => {
@@ -53,13 +54,13 @@ function WorkflowRunReview({ workflowId, initialRecord, onClose, onRun, onHelp, 
       catch (cause) { if (generation.current === epoch) setNotice(cause?.response?.data?.message || cause?.message || "The run was not confirmed. Check its original receipt before another run."); }
       finally { inFlight.current = false; if (generation.current === epoch) setStarting(false); }
     }}>
-      <p className="text-sm text-gray-600 dark:text-gray-300">{record.name || "Saved workflow"}. This workflow is saved. Enter new inputs to run it again. Configured ERP approvals still apply.</p>
-      {schema?.type === "object" && Object.keys(schema.properties || {}).length > 0 && <section aria-label="Choose how to provide run inputs" className="space-y-1 text-sm">
+      <p className="text-sm text-gray-600 dark:text-gray-300">{record.name || "Saved workflow"}. {hasInputFields ? "Complete the run fields below." : "This workflow uses its saved settings and retrieved data. No business inputs are required."} Configured approvals still apply.</p>
+      {hasInputFields && <section aria-label="Choose how to provide run inputs" className="space-y-1 text-sm">
         <h3 className="font-semibold">Enter fields or upload an image / PDF</h3>
         <p className="text-xs leading-5 text-gray-500">Type the fields below, or choose “Fill inputs from a document” to extract them from new images or PDFs. Review the values and complete anything missing, then choose Start workflow. You do not need to generate the workflow again.</p>
       </section>}
       {record.approval_setup_required && <div className="space-y-2 text-sm"><p>No transaction has been started. Reviewers must be configured before an ERP-changing run can begin.</p>{record.can_manage_approval_policy ? <a href="/settings" className="inline-block font-semibold text-primary underline underline-offset-4">Configure transaction reviewers in Settings</a> : <p>Ask your administrator to configure transaction reviewers in Settings.</p>}</div>}
-      {schema?.type === "object" && Object.keys(schema.properties || {}).length > 0 && <WorkflowDocumentInput key={JSON.stringify(schema)} schema={schema} workflowName={record.name} disabled={starting || checking || disabled} onReset={() => { changeInput({}); setParseErrors({}); }} onPrepared={values => { changeInput(values); setParseErrors({}); }} onGate={gate => { setDocumentGate(gate); setDocumentReviewed(false); }} />}
+      {hasInputFields && <WorkflowDocumentInput key={JSON.stringify(schema)} schema={schema} workflowName={record.name} disabled={starting || checking || disabled} onReset={() => { changeInput({}); setParseErrors({}); }} onPrepared={values => { changeInput(values); setParseErrors({}); }} onGate={gate => { setDocumentGate(gate); setDocumentReviewed(false); }} />}
       {schema ? <WorkflowRunInputs schema={schema} value={input} onChange={changeInput} disabled={starting || checking || disabled} onError={(path, value) => setParseErrors(current => ({ ...current, [path]: value }))} /> : <><p className="text-sm text-gray-500">No business inputs are required for this run.</p><details><summary className="cursor-pointer text-xs text-primary">Advanced input</summary><div className="mt-2"><WorkflowRunInputs value={input} onChange={changeInput} disabled={starting || checking || disabled} onError={(path, value) => setParseErrors(current => ({ ...current, [path]: value }))} /></div></details></>}
       {documentGate.selected && <label className="flex items-start gap-2 text-sm"><input type="checkbox" aria-label="I checked these inputs against the source document" disabled={starting || checking || !documentGate.ready || issues.length > 0} checked={documentReviewed} onChange={event => setDocumentReviewed(event.target.checked)} />I checked these inputs against the source document. Run still uses the current workflow permissions and approvals.</label>}
       {issues.length > 0 && <div role="status" aria-label="Required run inputs" className="border-l-2 border-amber-400 pl-3 text-xs text-amber-800 dark:text-amber-200"><ul className="list-disc space-y-1 pl-4">{issues.slice(0, 12).map((issue, index) => <li key={index}>{issue}</li>)}</ul></div>}

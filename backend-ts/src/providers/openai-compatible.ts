@@ -112,7 +112,7 @@ export function interactiveQueryReasoningProfile(baseURL: string, model: string,
 }
 export function interactiveGenerationReasoningProfile(baseURL: string, model: string, context?: ProviderInvocationContext) {
   if (baseURL.trim().replace(/\/+$/, "") === "https://openrouter.ai/api/v1" && model === "google/gemini-3.8-flash" &&
-      context?.egress?.purpose === "interactive" && ["prompt/local-policy/v2", "prompt/workflow-modifier/v3", "prompt/workflow-modifier/v4", "prompt/workflow-modifier/v5", "prompt/workflow-modifier/v6"].includes(context.promptTemplateVersion ?? ""))
+      context?.egress?.purpose === "interactive" && ["prompt/local-policy/v2", "prompt/workflow-modifier/v3", "prompt/workflow-modifier/v4", "prompt/workflow-modifier/v5", "prompt/workflow-modifier/v6", "prompt/workflow-modifier/v7"].includes(context.promptTemplateVersion ?? ""))
     return "openrouter-gemini-bounded-low/v1" as const;
   return baseURL.trim().replace(/\/+$/, "") === "https://openrouter.ai/api/v1" && model === "qwen/qwen3.8-flash" &&
     context?.egress?.purpose === "interactive" && context.promptTemplateVersion === "prompt/candidate/v21"

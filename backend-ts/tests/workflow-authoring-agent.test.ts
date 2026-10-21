@@ -55,7 +55,7 @@ test("current generation binds exposed schemas and delegates saved execution wit
 test("active generation checks exposed tool requirements and uses supported runtime human-review checkpoints", async () => {
   const { CANDIDATE_PROMPT_VERSION } = await import("../src/providers/runtime.js");
   const current = systemInstructionsFor(CANDIDATE_PROMPT_VERSION);
-  expect(CANDIDATE_PROMPT_VERSION).toBe("prompt/candidate/v29");
+  expect(CANDIDATE_PROMPT_VERSION).toBe("prompt/candidate/v30");
   expect(current).toContain("TOOL CONTRACT CHECK AND REQUIRED RUN FORM");
   expect(current).toContain("including nested object requirements");
   expect(current).toContain("Do not mark optional fields mandatory");
@@ -79,4 +79,20 @@ test("generation scenarios distinguish direct reads, protected effects and missi
   expect(prompt).toContain("illustrative, not additional tools or permissions");
   expect(prompt).toContain("Never copy a scenario's example field into a tool that does not declare it");
   expect(systemInstructionsFor("prompt/candidate/v28")).not.toContain("EXAMPLE SCENARIOS (illustrative");
+});
+
+
+test("fixed email configuration and derived report content are preserved in generation and saved edits", () => {
+  for (const version of ["prompt/candidate/v30", "prompt/workflow-modifier/v7"]) {
+    const prompt = systemInstructionsFor(version);
+    expect(prompt).toContain("FIXED REPORT EMAIL WORKFLOWS");
+    expect(prompt).toContain("An exact recipient address supplied by the user is a confirmed constant");
+    expect(prompt).toContain("derive the email body from the actual preceding declared compatible output");
+    expect(prompt).toContain("latest explicit corrections");
+    expect(prompt).toContain("remove only input properties and required entries no longer referenced anywhere");
+    expect(prompt).toContain("An unavailable email capability remains an explicit unmet outcome");
+    expect(prompt).toContain("independent exact email approval");
+  }
+  expect(systemInstructionsFor("prompt/candidate/v29")).not.toContain("FIXED REPORT EMAIL WORKFLOWS");
+  expect(systemInstructionsFor("prompt/workflow-modifier/v6")).not.toContain("FIXED REPORT EMAIL WORKFLOWS");
 });

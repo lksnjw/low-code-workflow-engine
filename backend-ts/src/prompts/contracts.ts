@@ -362,6 +362,7 @@ The document is one YAML object with name, description, trigger and steps, and o
     case "prompt/candidate/v27": return CANDIDATE_V27_SYSTEM_PROMPT;
     case "prompt/candidate/v28": return CANDIDATE_V28_SYSTEM_PROMPT;
     case "prompt/candidate/v29": return CANDIDATE_V29_SYSTEM_PROMPT;
+    case "prompt/candidate/v30": return CANDIDATE_V30_SYSTEM_PROMPT;
     case "prompt/node-patch/v2": return NODE_PATCH_SYSTEM_PROMPT;
     case "prompt/local-policy/v1": return LOCAL_POLICY_SYSTEM_PROMPT;
     case "prompt/local-policy/v2": return LOCAL_POLICY_V2_SYSTEM_PROMPT;
@@ -381,6 +382,7 @@ The document is one YAML object with name, description, trigger and steps, and o
     case "prompt/workflow-modifier/v4": return WORKFLOW_DOCUMENT_EDIT_SYSTEM_PROMPT;
     case "prompt/workflow-modifier/v5": return WORKFLOW_REUSABLE_DOCUMENT_EDIT_SYSTEM_PROMPT;
     case "prompt/workflow-modifier/v6": return WORKFLOW_ONBOARDING_EDIT_SYSTEM_PROMPT;
+    case "prompt/workflow-modifier/v7": return WORKFLOW_EMAIL_EDIT_SYSTEM_PROMPT;
     case "prompt/analysis/v2": return ANALYSIS_SYSTEM_PROMPT;
     case "prompt/runtime-agent/v1": return RUNTIME_AGENT_SYSTEM_PROMPT;
     case "prompt/runtime-agent/v2": return RUNTIME_AGENT_RECOVERY_SYSTEM_PROMPT;
@@ -524,3 +526,15 @@ export function generationMessages(prompt: string, version?: string): Array<{ ro
 export function generationPromptHash(prompt: string, version: string): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(generationMessages(prompt, version))).digest("hex")}`;
 }
+
+
+const FIXED_REPORT_EMAIL_GUIDANCE = `
+FIXED REPORT EMAIL WORKFLOWS
+Distinguish fixed configuration, computed values and genuinely changing run inputs. An exact recipient address supplied by the user is a confirmed constant: bind it directly to the offered email tool's actual recipient field, rather than asking for it again in trigger.config.inputSchema. Preserve the user's requested order limit and latest explicit corrections when editing an existing draft. Never replace a specified limit with a default page size; follow the offered pagination contract and describe any bounded scope honestly.
+For a request to fetch sales orders and email the results, obtain the records through the offered read contract and derive the email body from the actual preceding declared compatible output. Use a supported bounded analysis step when formatting is needed. Choose a concise descriptive subject automatically unless the user requires a specific subject; do not ask the user to write the report body or upload a document that the ERP read supplies. Do not fabricate report content, output paths or delivery tools. If the available output cannot support formatting/delivery, identify that specific missing contract.
+Declare run inputs only for values genuinely missing from the request and unavailable from preceding compatible outputs or protected connection configuration. A fully specified read-and-email workflow needs no business input form: omit trigger.config.inputSchema or use an empty object schema. Do not create recipient, subject, body, order-count or document fields merely because the email tool has required arguments. Keep genuinely missing required selectors as typed run inputs. This rule applies to any fixed-recipient email report, not just sales orders.
+When correcting a saved draft, replace redundant input references with their confirmed constants or actual output bindings, then remove only input properties and required entries no longer referenced anywhere in the resulting workflow. Preserve unrelated inputs, the exact recipient, requested scope and actual runtime policy/approval checkpoints. Remove only unresolved notes that this correction truly satisfies. An unavailable email capability remains an explicit unmet outcome; never claim that a read-and-format-only workflow sends email.
+Generation and editing do not send mail. Existing backend authorization, recipient/data-sharing checks and independent exact email approval remain required by the configured policy.
+`;
+const CANDIDATE_V30_SYSTEM_PROMPT = CANDIDATE_V29_SYSTEM_PROMPT.replace("(prompt/candidate/v29)", "(prompt/candidate/v30)") + FIXED_REPORT_EMAIL_GUIDANCE;
+const WORKFLOW_EMAIL_EDIT_SYSTEM_PROMPT = WORKFLOW_ONBOARDING_EDIT_SYSTEM_PROMPT.replace("prompt/workflow-modifier/v6", "prompt/workflow-modifier/v7") + FIXED_REPORT_EMAIL_GUIDANCE;

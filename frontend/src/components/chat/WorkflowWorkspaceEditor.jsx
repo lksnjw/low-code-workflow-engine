@@ -348,7 +348,7 @@ export default function WorkflowWorkspaceEditor({ workflowId, sessionId, actorId
     </WorkflowDialog>
     {docked && <div aria-label="Current canvas draft status" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 bg-white px-3 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-darkBackground">
       <span>Draft v{record.version} · {preview.steps.length} {preview.steps.length === 1 ? "step" : "steps"}</span>
-      <span>{record.readinessUnknown ? "Workflow inputs unavailable · reload" : "Enter inputs and run"}</span>
+      <span>{record.readinessUnknown ? "Workflow inputs unavailable · reload" : authoring?.inputSchema?.type === "object" && Object.keys(authoring.inputSchema.properties || {}).length ? "Enter inputs and run" : "Ready to start with saved settings"}</span>
       <button type="button" onClick={workspace.openCanvasTools} className="ml-auto font-medium text-primary">Review draft controls</button>
     </div>}
     {shownRun && <WorkflowRunApproval autoOpen ref={approvalRef} key={`${actorId || ""}:${shownRun.id}`} execution={shownRun} onChanged={monitor.refresh} />}

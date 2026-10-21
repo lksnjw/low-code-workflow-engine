@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadConfig } from "../src/config/config.js";
 import { buildApp } from "../src/http/app.js";
-import { ProviderRuntime } from "../src/providers/runtime.js";
+import { CANDIDATE_PROMPT_VERSION, ProviderRuntime } from "../src/providers/runtime.js";
 import { RegistryService } from "../src/registry/service.js";
 import { Repository } from "../src/repository/store.js";
 import { RegistryValidator } from "../src/validator/registry-validator.js";
@@ -188,7 +188,7 @@ test("connected recurring request saves exact useful capability steps without ru
   expect(workflows[0]).toMatchObject({ yaml: candidate.yaml, steps: 3, publishedVersion: 0, draftVersion: 1, canRun: false, trigger: { type: "manual" } });
   expect(state.schedules).toEqual({}); expect(state.executions).toEqual({}); expect(s.callTool).not.toHaveBeenCalled(); expect(s.fetchImplementation).toHaveBeenCalledOnce();
   const providerBody = JSON.parse(String(s.fetchImplementation.mock.calls[0]![1]?.body));
-  expect(providerBody.messages[0].content).toContain("prompt/candidate/v22");
+  expect(providerBody.messages[0].content).toContain(CANDIDATE_PROMPT_VERSION);
   const context = JSON.parse(providerBody.messages[1].content).SERVER_DERIVED_CONTEXT_JSON;
   expect(context.automation_request).toEqual(recurringAutomationCandidateContext(candidate.request).automation_request);
 });
@@ -229,7 +229,7 @@ test.each([false, true].flatMap(analysis => [false, true].map(async => [analysis
     expect(messages.at(-1).text).toContain("have not been published, scheduled or executed");
     expect(state.executions).toEqual({}); expect(state.schedules).toEqual({}); expect(s.callTool).not.toHaveBeenCalled(); expect(s.fetchImplementation).toHaveBeenCalledOnce();
     const body = JSON.parse(String(s.fetchImplementation.mock.calls[0]![1]?.body));
-    expect(body.messages[0].content).toContain("prompt/candidate/v22"); expect(body.messages[0].content).not.toContain(candidate.text);
+    expect(body.messages[0].content).toContain(CANDIDATE_PROMPT_VERSION); expect(body.messages[0].content).not.toContain(candidate.text);
     expect(JSON.parse(body.messages[1].content).SERVER_DERIVED_CONTEXT_JSON.automation_request.decision_request.originalRequest).toBe(candidate.text);
     if (asynchronous) {
       const replay = await s.send(candidate.text, extra); expect(replay.statusCode).toBe(202); expect(replay.json().data.operation.id).toBe(response.json().data.operation.id);
@@ -259,7 +259,7 @@ test.each(["reports", "branch-analysis", "joined-analysis", "cross-join-keys"].f
     expect(readiness.statusCode, readiness.body).toBe(200); expect(readiness.json().data.can_attempt_run).toBe(false);
     expect((await s.app.inject({ method: "POST", url: "/api/workflows/" + workflow.id + "/publish", headers: s.headers, payload: {} })).statusCode).toBe(422);
     expect(state.executions).toEqual({}); expect(state.schedules).toEqual({}); expect(s.callTool).not.toHaveBeenCalled(); expect(s.fetchImplementation).toHaveBeenCalledOnce();
-    const body = JSON.parse(String(s.fetchImplementation.mock.calls[0]![1]?.body)); expect(body.messages[0].content).toBe(systemInstructionsFor("prompt/candidate/v22"));
+    const body = JSON.parse(String(s.fetchImplementation.mock.calls[0]![1]?.body)); expect(body.messages[0].content).toBe(systemInstructionsFor(CANDIDATE_PROMPT_VERSION));
     expect(body.messages[0].content).not.toContain(candidate.text);
     expect(JSON.parse(body.messages[1].content).SERVER_DERIVED_CONTEXT_JSON.automation_request.decision_request.originalRequest).toBe(candidate.text);
     if (asynchronous) {
